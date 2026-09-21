@@ -22,6 +22,11 @@ def clean_html(html_str: str) -> str:
     return "".join(line.strip() for line in str(html_str).strip().splitlines() if line.strip())
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
+    return build_comprehensive_analytics(df_logs)
+
+
 # Mapping each feature to its specific analytics section tab
 FEATURE_SECTION_MAP = {
     "email_open_tracking": {
@@ -168,7 +173,7 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
     st.markdown(clean_html(banner_markup), unsafe_allow_html=True)
 
     # Build analytics data
-    analytics_data = build_comprehensive_analytics(df_logs)
+    analytics_data = get_cached_analytics(df_logs)
     totals = analytics_data["totals"]
     records = analytics_data["leads_records"]
 

@@ -37,10 +37,15 @@ engine = _init_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 
 Base = declarative_base()
+_DB_INITIALIZED = False
 
 
 def init_db():
     """Ensures all tables are created and applies non-breaking schema migrations."""
+    global _DB_INITIALIZED
+    if _DB_INITIALIZED:
+        return
+
     from sqlalchemy import inspect, text
     import Backend.models  # Ensure all model tables are registered on Base
 
@@ -88,5 +93,7 @@ def init_db():
                         conn.commit()
                     except Exception:
                         conn.rollback()
+
+    _DB_INITIALIZED = True
 
 

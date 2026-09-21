@@ -20,15 +20,18 @@ def get_image_base64(image_path: str) -> str:
 
 load_dotenv(override=True)
 
-import importlib
 import Email.outlook_mailer
-importlib.reload(Email.outlook_mailer)
 import Email
-importlib.reload(Email)
 import Backend.crud
-importlib.reload(Backend.crud)
 import Email.draft_options
-importlib.reload(Email.draft_options)
+
+if os.getenv("DASHBOARD_DEV_RELOAD", "").lower() in {"1", "true", "yes"}:
+    import importlib
+
+    importlib.reload(Email.outlook_mailer)
+    importlib.reload(Email)
+    importlib.reload(Backend.crud)
+    importlib.reload(Email.draft_options)
 
 from Agent.agents.composer import compose_email
 from Backend.crud import (
@@ -59,32 +62,20 @@ from services.excel_logger import (
 )
 from utils.text_cleaner import extract_text_from_ai_message
 from utils.token import generate_token
-import importlib
 import services.analytics_service
 import services.analytics_export
 import analytics_view
-try:
-    importlib.reload(services.analytics_service)
-    importlib.reload(services.analytics_export)
-    importlib.reload(analytics_view)
-except Exception:
-    pass
 
 import reply_worker
-try:
-    importlib.reload(reply_worker)
-except Exception:
-    pass
 from reply_worker import ReplyDaemonManager, check_and_reply_inbox
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from services.template_service import load_all_templates, get_template_by_id, render_template
 
-init_db()
-
-# Auto-start continuous real-time background sync (Outlook replies & Bookings Excel)
-if not ReplyDaemonManager.is_running():
-    ReplyDaemonManager.start(interval_seconds=15)
+@st.cache_resource(show_spinner=False)
+def ensure_database_ready() -> bool:
+    init_db()
+    return True
 
 st.set_page_config(
     page_title="AINeotechnology | Lead Outreach & Intelligence",
@@ -92,6 +83,14 @@ st.set_page_config(
     page_icon="⚡",
     initial_sidebar_state="expanded",
 )
+
+ensure_database_ready()
+
+# Starting the Outlook monitor during dashboard boot makes page loads wait on
+# network-heavy work. Keep it opt-in; the Replies page still has a start button.
+if os.getenv("AUTO_START_REPLY_DAEMON", "").lower() in {"1", "true", "yes"}:
+    if not ReplyDaemonManager.is_running():
+        ReplyDaemonManager.start(interval_seconds=30)
 
 # Auto-expand sidebar if it was collapsed from a previous session
 if "sidebar_checked" not in st.session_state:
@@ -1468,14 +1467,10 @@ CAMPAIGN_LOG_COLUMNS = [
 ]
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def load_campaign_logs():
     db = SessionLocal()
     try:
-        try:
-            from Backend.crud import sync_excel_and_outlook_to_db
-            sync_excel_and_outlook_to_db(db)
-        except Exception as e:
-            print(f"Sync note: {e}")
         rows = db.query(CampaignLog).order_by(CampaignLog.created_at.desc()).all()
     finally:
         db.close()
@@ -1527,6 +1522,20 @@ def load_campaign_logs():
         }
         for r in rows
     ]
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def sync_external_sources_once() -> dict:
+    db = SessionLocal()
+    try:
+        from Backend.crud import sync_excel_and_outlook_to_db
+
+        return sync_excel_and_outlook_to_db(db)
+    except Exception as e:
+        print(f"Sync note: {e}")
+        return {"synced_bookings": 0, "synced_replies": 0}
+    finally:
+        db.close()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -3566,7 +3575,7 @@ def render_replies(df: pd.DataFrame) -> None:
 # ─────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 
-@st.fragment(run_every="5s")
+@st.fragment(run_every="20s")
 def render_live_telemetry_view(page_name: str):
     rows = load_campaign_logs()
     df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
