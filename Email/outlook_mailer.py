@@ -4,6 +4,7 @@ from typing import Optional
 
 import requests
 
+import utils.dns_patch
 from utils.microsoft_auth import MS_SENDER_EMAIL, get_graph_headers
 from .base import Mailer
 

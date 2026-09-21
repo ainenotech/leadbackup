@@ -53,44 +53,96 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
     # ═══════════════════════════════════════════════════════════════
     # TAB 1: TEMPLATE GALLERY & LIVE INSPECTOR
     # ═══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════
+    # TAB 1: TEMPLATE GALLERY & LIVE INSPECTOR
+    # ═══════════════════════════════════════════════════════════════
     with tab_gallery:
-        col_left, col_right = st.columns([1.1, 1.9], gap="large")
+        if "gallery_tpl_select" not in st.session_state:
+            st.session_state["gallery_tpl_select"] = templates[0]["id"]
+
+        selected_id = st.session_state["gallery_tpl_select"]
+        current_tpl = get_template_by_id(selected_id) or templates[0]
+
+        col_left, col_right = st.columns([1.15, 1.85], gap="large")
 
         with col_left:
-            st.markdown("### 🎨 Select & Configure Template")
-            
-            tpl_options = {t["id"]: f"{t['name']}" for t in templates}
-            selected_id = st.selectbox(
-                "Choose Template to Review",
-                options=list(tpl_options.keys()),
-                format_func=lambda tid: tpl_options[tid],
-                key="gallery_tpl_select",
-            )
-            current_tpl = get_template_by_id(selected_id) or templates[0]
-
-            # Template Details Card
-            badge_html = f'<span class="badge badge-info" style="font-size: 11px;">{current_tpl.get("badge", "Active")}</span>' if current_tpl.get("badge") else ""
+            st.markdown("### 📦 Choose Template (All Templates Box Sections)")
             st.markdown(
-                f"""
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; margin: 12px 0;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <strong style="color: #0F172A; font-size: 15px;">{current_tpl['name']}</strong>
-                        {badge_html}
-                    </div>
-                    <div style="font-size: 12px; color: #64748B; margin-bottom: 6px;">
-                        <strong>Category:</strong> {current_tpl.get('category', 'Outreach')}
-                    </div>
-                    <div style="font-size: 13px; color: #334155; line-height: 1.5;">
-                        {current_tpl.get('description', 'High-converting responsive HTML email template.')}
-                    </div>
-                    <div style="margin-top: 10px; padding: 8px 10px; background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 6px; font-size: 12px; color: #475569;">
-                        <strong>Subject Pattern:</strong><br>
-                        <code>{current_tpl.get('subject', '')}</code>
-                    </div>
-                </div>
-                """,
+                "<p style='font-size: 13px; color: #64748B; margin-top: -8px;'>Click any template box below to load and inspect its full content in the live preview.</p>",
                 unsafe_allow_html=True,
             )
+
+            # Quick jump selector (in sync with box clicks)
+            tpl_id_list = [t["id"] for t in templates]
+            current_index = tpl_id_list.index(selected_id) if selected_id in tpl_id_list else 0
+            
+            chosen_dropdown = st.selectbox(
+                "Quick Selector",
+                options=tpl_id_list,
+                index=current_index,
+                format_func=lambda tid: next((f"{t['name']}" for t in templates if t["id"] == tid), tid),
+                key="gallery_quick_dropdown",
+                label_visibility="collapsed",
+            )
+            if chosen_dropdown != selected_id:
+                st.session_state["gallery_tpl_select"] = chosen_dropdown
+                st.rerun()
+
+            # Render ALL 7 Templates as distinct interactive Box Sections
+            for idx, t in enumerate(templates, start=1):
+                is_active = (t["id"] == selected_id)
+                accent = t.get("accent_color", "#1A5CFF")
+                badge_text = t.get("badge", "Active")
+
+                # Active vs inactive styling
+                if is_active:
+                    box_border = f"2px solid {accent}"
+                    box_bg = "#F0F7FF"
+                    box_shadow = f"0 4px 14px -2px rgba(26, 92, 255, 0.2)"
+                    active_badge = f"""<span style="background: {accent}; color: #FFFFFF; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 12px; letter-spacing: 0.04em;">ACTIVE PREVIEW</span>"""
+                else:
+                    box_border = "1px solid #E2E8F0"
+                    box_bg = "#FFFFFF"
+                    box_shadow = "0 1px 3px rgba(0,0,0,0.04)"
+                    active_badge = f"""<span style="background: #F1F5F9; color: #475569; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 10px;">{badge_text}</span>"""
+
+                # Entire card is rendered inside a button-like container
+                # so clicking loads the preview immediately
+                card_label = f"👁️ {t['name']}" if not is_active else f"✓ {t['name']}"
+                if st.button(
+                    card_label,
+                    key=f"btn_card_{t['id']}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                    disabled=is_active,
+                ):
+                    st.session_state["gallery_tpl_select"] = t["id"]
+                    st.rerun()
+
+                st.markdown(
+                    f"""
+                    <div style="background: {box_bg}; border: {box_border}; border-left: 5px solid {accent}; border-radius: 10px; padding: 14px 16px; margin-bottom: 4px; margin-top: -10px; box-shadow: {box_shadow}; transition: all 0.2s ease;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                            <div style="font-weight: 700; font-size: 14.5px; color: #0F172A; line-height: 1.3;">
+                                {t['name']}
+                            </div>
+                            <div>{active_badge}</div>
+                        </div>
+                        <div style="font-size: 11.5px; color: #64748B; margin-bottom: 6px;">
+                            <strong style="color: #475569;">Category:</strong> {t.get('category', 'Outreach')}
+                        </div>
+                        <div style="font-size: 12.5px; color: #334155; line-height: 1.45; margin-bottom: 8px;">
+                            {t.get('description', '')}
+                        </div>
+                        <div style="font-size: 11.5px; background: rgba(255,255,255,0.8); border: 1px dashed #CBD5E1; padding: 6px 8px; border-radius: 6px; color: #334155; word-break: break-all;">
+                            <strong>Subject:</strong> <code>{html.escape(t.get('subject', ''))}</code>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
             # Add Custom Template Expander
             with st.expander("➕ Add New Custom Template (Expand to 10-15+)", expanded=False):
@@ -98,7 +150,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                     st.markdown("##### Create a Custom Outreach Template")
                     new_id = st.text_input("Template Unique ID", value=f"tpl_custom_{uuid.uuid4().hex[:6]}")
                     new_name = st.text_input("Template Name", placeholder="e.g. Template 8: Short Founder Video Intro")
-                    new_cat = st.selectbox("Category", ["Executive & Founder", "Technical & Architecture", "Case Study & Results", "Quick Check-in", "Custom"])
+                    new_cat = st.selectbox("Category", ["Executive & Velocity", "Voice & Inbound AI", "Technical Capabilities", "Operational Automation", "Team Augmentation", "Software Modernization", "Founder & Advisory", "Custom"])
                     new_subj = st.text_input("Subject Line Pattern", value="Quick question for {{Company}}")
                     new_desc = st.text_area("Description / Use Case", value="Custom tailored outreach template for specialized lead batches.")
                     new_html = st.text_area("HTML Email Template Code", height=250, placeholder="Paste inline-styled HTML code here...")
@@ -117,6 +169,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                                 "accent_color": "#2563EB",
                             })
                             if saved:
+                                st.session_state["gallery_tpl_select"] = new_id.strip()
                                 st.success(f"Template '{new_name}' successfully added to your library!")
                                 st.rerun()
                             else:
@@ -125,6 +178,8 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                             st.warning("Please fill in Template ID, Name, and HTML content.")
 
         with col_right:
+            st.markdown(f"### 🖥️ Live Preview: {current_tpl['name']}")
+
             # Render Interpolated HTML
             booking_url = os.getenv(
                 "BOOKING_FORM_URL",
@@ -138,26 +193,29 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                 booking_url=booking_url,
             )
 
+            # Subject Line Banner
             st.markdown(
                 f"""
-                <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
-                    <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; letter-spacing: 0.05em;">Subject Preview</div>
-                    <div style="font-size: 16px; font-weight: 600; color: #0F172A; margin-top: 2px;">{html.escape(interp_subject)}</div>
+                <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; letter-spacing: 0.05em;">Subject Preview</div>
+                        <div style="font-size: 15.5px; font-weight: 600; color: #0F172A; margin-top: 2px;">{html.escape(interp_subject)}</div>
+                    </div>
+                    <span style="background: #F1F5F9; color: #475569; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px;">{current_tpl.get('category', 'General')}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            # Frame simulation wrapper (Standard Desktop Card 620px)
+            # Clean preview container (no device frame toggles)
             st.markdown(
                 """
-                <div style="display: flex; justify-content: center; background: #F1F5F9; border-radius: 12px; padding: 16px; border: 1px solid #E2E8F0;">
-                    <div style="width: 620px; max-width: 100%; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); border-radius: 12px; overflow: hidden; background: #FFFFFF;">
+                <div style="background: #F8FAFC; border-radius: 12px; padding: 12px; border: 1px solid #CBD5E1;">
                 """,
                 unsafe_allow_html=True,
             )
-            components.html(interp_html, height=750, scrolling=True)
-            st.markdown("</div></div>", unsafe_allow_html=True)
+            components.html(interp_html, height=760, scrolling=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
             with st.expander("📄 Inspect & Edit Raw Template HTML Code", expanded=False):
                 st.markdown("<p style='font-size: 13px; color: #64748B; margin-bottom: 8px;'>Review and edit the HTML source code for this template below. Click <strong>Save Template Changes</strong> to apply and persist your edits.</p>", unsafe_allow_html=True)

@@ -19,776 +19,328 @@ DEFAULT_BOOKING_URL = os.getenv(
 # 4 USER-PROVIDED HIGH-CONVERTING HTML TEMPLATES
 # ─────────────────────────────────────────────────────────────
 
-RAW_TEMPLATE_1 = """<!DOCTYPE html>
+def _build_responsive_template_html(
+    title: str,
+    preheader: str,
+    intro_html: str,
+    callout_html: str,
+    cta_text: str,
+    section_heading: str,
+    bullets_html: str,
+    closing_html: str,
+    accent_color: str = "#1A5CFF",
+) -> str:
+    """Generates a pixel-perfect, fully responsive HTML email template
+    matching the user's executive design with Cloudinary CDN logo,
+    callout question box, bullets, and complete Tirth Patel signature.
+    """
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Quick idea for {{Company}}</title>
-</head>
-<body style="margin:0;padding:0;background:#eef1f6;">
-
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#eef1f6;">
-  A senior AI engineer, already vetted and ready to start, at a fixed monthly cost. 20 minutes to see if it fits {{Company}}.
-</div>
-
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f6;">
-<tr><td align="center" style="padding:32px 12px;">
-
-  <!-- Card -->
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #dfe4ee;">
-
-    <!-- Header band -->
-    <tr>
-      <td style="background:#0b1533;padding:26px 36px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td align="left" style="vertical-align:middle;">
-              <img src="LOGO_URL" alt="Neno Technology" width="150" style="display:block;border:0;height:auto;max-width:150px;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:bold;color:#ffffff;">
-            </td>
-            <td align="right" style="vertical-align:middle;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9fb0d6;">
-              AI &amp; engineering team, on demand
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-    <tr><td style="height:4px;line-height:4px;font-size:4px;background:#1a5cff;">&nbsp;</td></tr>
-
-    <!-- Intro -->
-    <tr>
-      <td style="padding:38px 36px 8px 36px;font-family:Arial,Helvetica,sans-serif;color:#1c2333;">
-        <p style="margin:0 0 20px 0;font-size:24px;line-height:32px;font-weight:bold;color:#0b1533;">
-          Hi {{FirstName}}, what if {{Company}} had a senior AI engineer starting next week?
-        </p>
-        <p style="margin:0 0 16px 0;font-size:16px;line-height:26px;color:#3a4358;">
-          I'm Tirth, Founder &amp; CEO of <strong style="color:#0b1533;">Nenotechnology</strong> in Ahmedabad, India. We help Australian agencies and businesses cut operational overhead with purpose-built AI solutions, without the enterprise price tag.
-        </p>
-        <p style="margin:0;font-size:16px;line-height:26px;color:#3a4358;">
-          Here is exactly what working with us looks like:
-        </p>
-      </td>
-    </tr>
-
-    <!-- Benefits -->
-    <tr>
-      <td style="padding:20px 36px 8px 36px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
-
-          <tr>
-            <td width="44" valign="top" style="padding:0 0 22px 0;">
-              <div style="width:34px;height:34px;line-height:34px;text-align:center;border-radius:8px;background:#e8efff;color:#1a5cff;font-size:17px;font-weight:bold;">&#9889;</div>
-            </td>
-            <td valign="top" style="padding:0 0 22px 0;">
-              <div style="font-size:16px;line-height:22px;font-weight:bold;color:#0b1533;">Forward Deployed Engineers</div>
-              <div style="font-size:15px;line-height:23px;color:#4a5468;padding-top:3px;">One person takes a requirement from build to deployment, using AI coding tools and agentic workflows to move several times faster than usual.</div>
-            </td>
-          </tr>
-
-          <tr>
-            <td width="44" valign="top" style="padding:0 0 22px 0;">
-              <div style="width:34px;height:34px;line-height:34px;text-align:center;border-radius:8px;background:#e8efff;color:#1a5cff;font-size:17px;font-weight:bold;">&#128187;</div>
-            </td>
-            <td valign="top" style="padding:0 0 22px 0;">
-              <div style="font-size:16px;line-height:22px;font-weight:bold;color:#0b1533;">A bench that is already built</div>
-              <div style="font-size:15px;line-height:23px;color:#4a5468;padding-top:3px;">AI agent, backend, full-stack and deployment engineers are ready now. No recruiting after you sign.</div>
-            </td>
-          </tr>
-
-          <tr>
-            <td width="44" valign="top" style="padding:0 0 22px 0;">
-              <div style="width:34px;height:34px;line-height:34px;text-align:center;border-radius:8px;background:#e8efff;color:#1a5cff;font-size:17px;font-weight:bold;">&#10003;</div>
-            </td>
-            <td valign="top" style="padding:0 0 22px 0;">
-              <div style="font-size:16px;line-height:22px;font-weight:bold;color:#0b1533;">You choose who joins</div>
-              <div style="font-size:15px;line-height:23px;color:#4a5468;padding-top:3px;">Every engineer clears our five-stage screening first. You interview the shortlist and pick.</div>
-            </td>
-          </tr>
-
-          <tr>
-            <td width="44" valign="top" style="padding:0 0 8px 0;">
-              <div style="width:34px;height:34px;line-height:34px;text-align:center;border-radius:8px;background:#e8efff;color:#1a5cff;font-size:17px;font-weight:bold;">$</div>
-            </td>
-            <td valign="top" style="padding:0 0 8px 0;">
-              <div style="font-size:16px;line-height:22px;font-weight:bold;color:#0b1533;">A fraction of local contract rates</div>
-              <div style="font-size:15px;line-height:23px;color:#4a5468;padding-top:3px;">One fixed monthly cost per developer. No payroll, no super, no desk, no notice-period risk.</div>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-
-    <!-- CTA block -->
-    <tr>
-      <td style="padding:24px 36px 8px 36px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f6fd;border-radius:12px;border-left:4px solid #1a5cff;">
-          <tr>
-            <td style="padding:26px 28px;font-family:Arial,Helvetica,sans-serif;">
-              <div style="font-size:19px;line-height:26px;font-weight:bold;color:#0b1533;">Worth a 20-minute call?</div>
-              <div style="font-size:15px;line-height:24px;color:#4a5468;padding:6px 0 20px 0;">
-                We will look at where AI and automation could save {{Company}} real time. No pitch deck, no obligation.
-              </div>
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td align="center" bgcolor="#1a5cff" style="border-radius:8px;">
-                    <a href="BOOKING_LINK" target="_blank" style="display:inline-block;padding:14px 30px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;">Book a free 20-minute call</a>
-                  </td>
-                </tr>
-              </table>
-              <div style="font-size:13px;line-height:20px;color:#7a8499;padding-top:14px;">
-                Prefer email? Just reply to this message. It comes straight to me.
-              </div>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-    <!-- P.S. -->
-    <tr>
-      <td style="padding:22px 36px 6px 36px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;color:#4a5468;">
-        <strong style="color:#0b1533;">P.S.</strong> Not the right time? Reply "later" and I will check back in a few months. If a different person handles this at {{Company}}, I would be grateful if you pointed me their way.
-      </td>
-    </tr>
-
-    <!-- Signature -->
-    <tr>
-      <td style="padding:26px 36px 34px 36px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e3e8f1;">
-          <tr>
-            <td style="padding-top:22px;font-family:Arial,Helvetica,sans-serif;">
-              <div style="font-size:14px;line-height:20px;color:#4a5468;">Warm regards,</div>
-              <div style="font-size:17px;line-height:26px;font-weight:bold;color:#0b1533;padding-top:2px;">Tirth Patel</div>
-              <div style="font-size:14px;line-height:21px;color:#4a5468;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
-              <div style="font-size:13px;line-height:20px;color:#7a8499;padding-top:4px;">TEDx Speaker &bull; 300,000+ followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
-              <div style="font-size:13px;line-height:22px;padding-top:8px;color:#7a8499;">
-                <a href="mailto:sales@nenotechnology.com" style="color:#1a5cff;text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
-                <a href="tel:+917863852024" style="color:#1a5cff;text-decoration:none;">+91 78638 52024</a> &nbsp;|&nbsp;
-                <a href="https://www.nenotechnology.com" style="color:#1a5cff;text-decoration:none;">nenotechnology.com</a> &nbsp;|&nbsp;
-                <a href="LINKEDIN_URL" style="color:#1a5cff;text-decoration:none;">LinkedIn</a>
-              </div>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-  </table>
-
-  <!-- Footer -->
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;">
-    <tr>
-      <td align="center" style="padding:18px 20px 0 20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#8b95a9;">
-        Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
-        You are receiving this because we think {{Company}} could benefit from our work.
-        <a href="UNSUBSCRIBE_LINK" style="color:#8b95a9;text-decoration:underline;">Unsubscribe</a>
-      </td>
-    </tr>
-  </table>
-
-</td></tr>
-</table>
-
-</body>
-</html>"""
-
-
-RAW_TEMPLATE_2 = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light">
-<title>Engineers for {{Company}}, without the hiring wait</title>
-</head>
-<body style="margin:0;padding:0;background:#f5f6fa;">
-
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f5f6fa;">
-  Vetted AI and full-stack engineers, fixed monthly cost, no payroll or notice-period risk.
-</div>
-
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f5f6fa">
-<tr><td align="center" style="padding:28px 12px;">
-
-  <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;background:#ffffff;border-radius:16px;overflow:hidden;">
-
-    <!-- HERO -->
-    <tr>
-      <td bgcolor="#1440d6" style="background:#1440d6;background-image:linear-gradient(135deg,#0d2a9c 0%,#1a5cff 100%);padding:34px 40px 40px 40px;">
-        <img src="LOGO_URL" alt="Neno Technology" width="140" style="display:block;border:0;height:auto;max-width:140px;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:bold;color:#ffffff;">
-        <div style="font-family:Georgia,'Times New Roman',serif;font-size:32px;line-height:40px;font-weight:bold;color:#ffffff;padding-top:30px;">
-          Ship AI projects faster, without the hiring wait.
-        </div>
-        <div style="font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#d6e2ff;padding-top:14px;">
-          Vetted AI and full-stack engineers for Australian agencies and businesses. Fixed monthly cost, ready to start.
-        </div>
-      </td>
-    </tr>
-
-    <!-- GREETING -->
-    <tr>
-      <td style="padding:36px 40px 6px 40px;font-family:Arial,Helvetica,sans-serif;color:#2b3448;">
-        <p style="margin:0 0 16px 0;font-size:16px;line-height:26px;">Hi {{FirstName}},</p>
-        <p style="margin:0 0 16px 0;font-size:16px;line-height:26px;color:#3f4960;">
-          I'm Tirth, Founder &amp; CEO of <strong style="color:#0b1533;">Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.) in Ahmedabad. We help teams like {{Company}} cut operational overhead with purpose-built AI, without the enterprise price tag.
-        </p>
-        <p style="margin:0;font-size:16px;line-height:26px;color:#3f4960;">
-          The simplest way to see the difference is to compare it with hiring locally:
-        </p>
-      </td>
-    </tr>
-
-    <!-- COMPARISON -->
-    <tr>
-      <td style="padding:22px 40px 8px 40px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e2e7f2;border-radius:12px;border-collapse:separate;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
-          <tr>
-            <td width="34%" bgcolor="#f5f7fc" style="padding:13px 16px;font-size:13px;font-weight:bold;color:#6a7590;border-bottom:1px solid #e2e7f2;">&nbsp;</td>
-            <td width="33%" bgcolor="#f5f7fc" style="padding:13px 16px;font-size:13px;font-weight:bold;color:#6a7590;border-bottom:1px solid #e2e7f2;">Local hire</td>
-            <td width="33%" bgcolor="#e8efff" style="padding:13px 16px;font-size:13px;font-weight:bold;color:#1440d6;border-bottom:1px solid #d3dfff;">With Neno</td>
-          </tr>
-          <tr>
-            <td style="padding:13px 16px;font-size:14px;font-weight:bold;color:#0b1533;border-bottom:1px solid #eef1f8;">Time to start</td>
-            <td style="padding:13px 16px;font-size:14px;color:#4a5468;border-bottom:1px solid #eef1f8;">Recruit, then wait</td>
-            <td bgcolor="#f6f9ff" style="padding:13px 16px;font-size:14px;color:#0b1533;font-weight:bold;border-bottom:1px solid #eef1f8;">Bench ready now</td>
-          </tr>
-          <tr>
-            <td style="padding:13px 16px;font-size:14px;font-weight:bold;color:#0b1533;border-bottom:1px solid #eef1f8;">Cost</td>
-            <td style="padding:13px 16px;font-size:14px;color:#4a5468;border-bottom:1px solid #eef1f8;">Local contract rates</td>
-            <td bgcolor="#f6f9ff" style="padding:13px 16px;font-size:14px;color:#0b1533;font-weight:bold;border-bottom:1px solid #eef1f8;">A fraction, fixed monthly</td>
-          </tr>
-          <tr>
-            <td style="padding:13px 16px;font-size:14px;font-weight:bold;color:#0b1533;border-bottom:1px solid #eef1f8;">Overheads</td>
-            <td style="padding:13px 16px;font-size:14px;color:#4a5468;border-bottom:1px solid #eef1f8;">Payroll, super, desk</td>
-            <td bgcolor="#f6f9ff" style="padding:13px 16px;font-size:14px;color:#0b1533;font-weight:bold;border-bottom:1px solid #eef1f8;">None</td>
-          </tr>
-          <tr>
-            <td style="padding:13px 16px;font-size:14px;font-weight:bold;color:#0b1533;">Who you get</td>
-            <td style="padding:13px 16px;font-size:14px;color:#4a5468;">Whoever applies</td>
-            <td bgcolor="#f6f9ff" style="padding:13px 16px;font-size:14px;color:#0b1533;font-weight:bold;">Five-stage vetted, you pick</td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-    <!-- FDE HIGHLIGHT -->
-    <tr>
-      <td style="padding:22px 40px 6px 40px;font-family:Arial,Helvetica,sans-serif;">
-        <div style="font-size:16px;line-height:26px;color:#3f4960;">
-          Our <strong style="color:#0b1533;">Forward Deployed Engineers</strong> take a requirement from build to deployment on their own, using AI coding tools and agentic workflows to move several times faster than usual. We also have AI agent, backend, full-stack and deployment engineers on the bench.
-        </div>
-      </td>
-    </tr>
-
-    <!-- HOW IT WORKS -->
-    <tr>
-      <td style="padding:26px 40px 6px 40px;font-family:Arial,Helvetica,sans-serif;">
-        <div style="font-size:18px;line-height:24px;font-weight:bold;color:#0b1533;padding-bottom:14px;">How it works</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td width="34" valign="top" style="padding:0 0 16px 0;">
-              <div style="width:26px;height:26px;line-height:26px;text-align:center;border-radius:13px;background:#1a5cff;color:#ffffff;font-size:13px;font-weight:bold;">1</div>
-            </td>
-            <td valign="top" style="padding:2px 0 16px 0;font-size:15px;line-height:23px;color:#3f4960;"><strong style="color:#0b1533;">20-minute call.</strong> You tell us where time is being lost.</td>
-          </tr>
-          <tr>
-            <td width="34" valign="top" style="padding:0 0 16px 0;">
-              <div style="width:26px;height:26px;line-height:26px;text-align:center;border-radius:13px;background:#1a5cff;color:#ffffff;font-size:13px;font-weight:bold;">2</div>
-            </td>
-            <td valign="top" style="padding:2px 0 16px 0;font-size:15px;line-height:23px;color:#3f4960;"><strong style="color:#0b1533;">Shortlist.</strong> You interview vetted engineers and choose.</td>
-          </tr>
-          <tr>
-            <td width="34" valign="top" style="padding:0 0 4px 0;">
-              <div style="width:26px;height:26px;line-height:26px;text-align:center;border-radius:13px;background:#1a5cff;color:#ffffff;font-size:13px;font-weight:bold;">3</div>
-            </td>
-            <td valign="top" style="padding:2px 0 4px 0;font-size:15px;line-height:23px;color:#3f4960;"><strong style="color:#0b1533;">Start building.</strong> Fixed monthly cost, no notice-period risk.</td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-    <!-- CTA -->
-    <tr>
-      <td align="center" style="padding:26px 40px 10px 40px;font-family:Arial,Helvetica,sans-serif;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td align="center" bgcolor="#1a5cff" style="border-radius:10px;">
-              <a href="BOOKING_LINK" target="_blank" style="display:inline-block;padding:16px 38px;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:10px;">Book a free 20-minute call</a>
-            </td>
-          </tr>
-        </table>
-        <div style="font-size:13px;line-height:20px;color:#7a8499;padding-top:14px;">
-          No pitch deck, no obligation. Or just reply to this email, it comes straight to me.
-        </div>
-      </td>
-    </tr>
-
-    <!-- SIGNATURE -->
-    <tr>
-      <td style="padding:30px 40px 34px 40px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e6eaf3;">
-          <tr>
-            <td style="padding-top:22px;font-family:Arial,Helvetica,sans-serif;">
-              <div style="font-size:14px;line-height:20px;color:#4a5468;">Warm regards,</div>
-              <div style="font-size:17px;line-height:26px;font-weight:bold;color:#0b1533;">Tirth Patel</div>
-              <div style="font-size:14px;line-height:21px;color:#4a5468;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
-              <div style="font-size:13px;line-height:20px;color:#7a8499;padding-top:3px;">TEDx Speaker &bull; 300,000+ followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
-              <div style="font-size:13px;line-height:22px;padding-top:8px;">
-                <a href="mailto:sales@nenotechnology.com" style="color:#1a5cff;text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
-                <a href="tel:+917863852024" style="color:#1a5cff;text-decoration:none;">+91 78638 52024</a> &nbsp;|&nbsp;
-                <a href="https://www.nenotechnology.com" style="color:#1a5cff;text-decoration:none;">nenotechnology.com</a> &nbsp;|&nbsp;
-                <a href="LINKEDIN_URL" style="color:#1a5cff;text-decoration:none;">LinkedIn</a>
-              </div>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-  </table>
-
-  <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;">
-    <tr>
-      <td align="center" style="padding:18px 20px 0 20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#8b95a9;">
-        Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
-        Not relevant for {{Company}}? <a href="UNSUBSCRIBE_LINK" style="color:#8b95a9;text-decoration:underline;">Unsubscribe</a>
-      </td>
-    </tr>
-  </table>
-
-</td></tr>
-</table>
-
-</body>
-</html>"""
-
-
-RAW_TEMPLATE_3 = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light">
-<title>Where AI could save {{Company}} time first</title>
+<title>{title}</title>
 <style>
-  @media only screen and (max-width:620px) {
-    .stack { display:block !important; width:100% !important; }
-    .pad { padding-left:22px !important; padding-right:22px !important; }
-    .h1 { font-size:26px !important; line-height:34px !important; }
-  }
+  body {{
+    margin: 0;
+    padding: 0;
+    background-color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }}
+  table {{
+    border-collapse: collapse;
+  }}
+  @media only screen and (max-width: 620px) {{
+    .outer-table {{ padding: 12px 6px !important; }}
+    .email-container {{ width: 100% !important; border-radius: 8px !important; }}
+    .content-cell {{ padding: 22px 18px !important; }}
+    .cta-btn {{ display: block !important; width: 100% !important; text-align: center !important; box-sizing: border-box !important; }}
+  }}
 </style>
 </head>
-<body style="margin:0;padding:0;background:#e9eef0;">
+<body style="margin:0;padding:0;background-color:#f1f5f9;">
 
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#e9eef0;">
-  Four places AI usually pays back first, and three ways to work with our engineers.
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f1f5f9;">
+  {preheader}
 </div>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#e9eef0">
-<tr><td align="center" style="padding:28px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="outer-table" style="background-color:#f1f5f9;padding:28px 12px;">
+<tr>
+  <td align="center">
+    <!-- Main Card Container -->
+    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:620px;max-width:100%;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+      <tr>
+        <td class="content-cell" style="padding:32px 36px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1e293b;text-align:left;">
+          
+          <!-- Logo -->
+          <div style="margin-bottom:24px;">
+            <img src="LOGO_URL" alt="Neno Technology" style="height:38px;max-height:42px;max-width:180px;display:block;border:0;outline:none;" />
+          </div>
 
-  <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;background:#ffffff;border-radius:14px;overflow:hidden;">
+          <!-- Greeting & Intro -->
+          <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#1e293b;">Dear {{FirstName}},</p>
+          <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#1e293b;">I hope you and the team at {{Company}} are doing well.</p>
+          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#1e293b;">
+            {intro_html}
+          </p>
 
-    <!-- Top bar -->
-    <tr>
-      <td class="pad" style="padding:24px 40px;border-bottom:1px solid #e6ebee;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td align="left"><img src="LOGO_URL" alt="Neno Technology" width="130" style="display:block;border:0;height:auto;max-width:130px;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:bold;color:#0f2a2e;"></td>
-            <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#0f766e;font-weight:bold;">Ahmedabad &rarr; Australia</td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+          <!-- Callout Question Box -->
+          <div style="border-left:3px solid {accent_color};background-color:#f8fafc;padding:14px 18px;margin:20px 0;border-radius:0 8px 8px 0;font-size:14.5px;line-height:1.55;color:#0f172a;font-weight:500;">
+            {callout_html}
+          </div>
 
-    <!-- Opening -->
-    <tr>
-      <td class="pad" style="padding:38px 40px 6px 40px;font-family:Arial,Helvetica,sans-serif;">
-        <div class="h1" style="font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:38px;font-weight:bold;color:#0f2a2e;">
-          {{FirstName}}, where is {{Company}} losing the most hours?
-        </div>
-        <p style="margin:20px 0 14px 0;font-size:16px;line-height:26px;color:#3b4a4d;">
-          I'm Tirth Patel, founder of Nenotechnology. We build AI solutions and provide vetted engineers for Australian agencies and businesses, at a fraction of local costs.
-        </p>
-        <p style="margin:0;font-size:16px;line-height:26px;color:#3b4a4d;">
-          In most teams, AI pays back first in one of these four places:
-        </p>
-      </td>
-    </tr>
+          <!-- CTA Button -->
+          <div style="margin:22px 0 26px 0;">
+            <a href="BOOKING_LINK" target="_blank" class="cta-btn" style="display:inline-block;background-color:{accent_color};color:#ffffff;padding:12px 24px;border-radius:6px;font-weight:600;font-size:14.5px;text-decoration:none;letter-spacing:0.01em;">
+              {cta_text}
+            </a>
+          </div>
 
-    <!-- Use cases 2x2 -->
-    <tr>
-      <td class="pad" style="padding:20px 40px 4px 40px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td class="stack" width="50%" valign="top" style="padding:0 6px 12px 0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f0f7f6" style="background:#f0f7f6;border-radius:10px;">
-                <tr><td style="padding:18px 18px;font-family:Arial,Helvetica,sans-serif;">
-                  <div style="font-size:15px;line-height:21px;font-weight:bold;color:#0f2a2e;">Lead follow-up</div>
-                  <div style="font-size:14px;line-height:21px;color:#4a5a5d;padding-top:5px;">AI agents that qualify, reply and book meetings while your team sleeps.</div>
-                </td></tr>
-              </table>
-            </td>
-            <td class="stack" width="50%" valign="top" style="padding:0 0 12px 6px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f0f7f6" style="background:#f0f7f6;border-radius:10px;">
-                <tr><td style="padding:18px 18px;font-family:Arial,Helvetica,sans-serif;">
-                  <div style="font-size:15px;line-height:21px;font-weight:bold;color:#0f2a2e;">Customer support</div>
-                  <div style="font-size:14px;line-height:21px;color:#4a5a5d;padding-top:5px;">First-line answers and ticket triage, with humans handling the hard cases.</div>
-                </td></tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td class="stack" width="50%" valign="top" style="padding:0 6px 12px 0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f0f7f6" style="background:#f0f7f6;border-radius:10px;">
-                <tr><td style="padding:18px 18px;font-family:Arial,Helvetica,sans-serif;">
-                  <div style="font-size:15px;line-height:21px;font-weight:bold;color:#0f2a2e;">Reporting and admin</div>
-                  <div style="font-size:14px;line-height:21px;color:#4a5a5d;padding-top:5px;">Weekly reports, data entry and document handling that run themselves.</div>
-                </td></tr>
-              </table>
-            </td>
-            <td class="stack" width="50%" valign="top" style="padding:0 0 12px 6px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f0f7f6" style="background:#f0f7f6;border-radius:10px;">
-                <tr><td style="padding:18px 18px;font-family:Arial,Helvetica,sans-serif;">
-                  <div style="font-size:15px;line-height:21px;font-weight:bold;color:#0f2a2e;">Custom internal tools</div>
-                  <div style="font-size:14px;line-height:21px;color:#4a5a5d;padding-top:5px;">Dashboards and workflow apps built around how you actually work.</div>
-                </td></tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+          <!-- Section Heading -->
+          <div style="font-size:16px;font-weight:700;color:#0f172a;margin:24px 0 14px 0;line-height:1.3;">
+            {section_heading}
+          </div>
 
-    <!-- Engagement options -->
-    <tr>
-      <td class="pad" style="padding:22px 40px 4px 40px;font-family:Arial,Helvetica,sans-serif;">
-        <div style="font-size:18px;line-height:24px;font-weight:bold;color:#0f2a2e;padding-bottom:6px;">Three ways to work with us</div>
+          <!-- Bullets -->
+          <div style="font-size:14.5px;line-height:1.65;color:#334155;">
+            {bullets_html}
+          </div>
 
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td style="padding:14px 0;border-bottom:1px solid #e6ebee;font-size:15px;line-height:23px;color:#3b4a4d;">
-              <strong style="color:#0f2a2e;">One dedicated engineer.</strong> A Forward Deployed Engineer who takes a requirement from build to deployment, using AI coding tools to move fast.
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:14px 0;border-bottom:1px solid #e6ebee;font-size:15px;line-height:23px;color:#3b4a4d;">
-              <strong style="color:#0f2a2e;">A small squad.</strong> AI agent, backend, full-stack and deployment engineers working as one team on your roadmap.
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:14px 0;font-size:15px;line-height:23px;color:#3b4a4d;">
-              <strong style="color:#0f2a2e;">A defined project.</strong> Tell us the outcome and we build and hand it over.
-            </td>
-          </tr>
-        </table>
+          <!-- Closing pitch -->
+          <p style="margin:20px 0 12px 0;font-size:14.5px;line-height:1.6;color:#1e293b;">
+            {closing_html}
+          </p>
+          <p style="margin:0 0 24px 0;font-size:13px;line-height:1.5;color:#64748b;">
+            Or simply reply to this email - it comes straight to me.
+          </p>
 
-        <p style="margin:14px 0 0 0;font-size:14px;line-height:22px;color:#5b6a6d;">
-          Every engineer clears a five-stage screening before you meet them, and you choose who joins. One fixed monthly cost per developer, with no payroll, super or notice-period risk.
-        </p>
-      </td>
-    </tr>
+          <!-- Warm Regards / Signature (Exact screenshot match) -->
+          <div style="margin-top:26px;padding-top:20px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <div style="font-size:14px;color:#475569;margin-bottom:3px;">Warm regards,</div>
+            <div style="font-size:16.5px;font-weight:700;color:#0f172a;line-height:1.3;">Tirth Patel</div>
+            <div style="font-size:13px;color:#334155;margin-top:2px;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
+            <div style="font-size:12px;color:#64748b;margin-top:3px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">Ahmedabad, Gujarat, India</div>
+            <div style="font-size:12px;color:#2563eb;margin-top:6px;">
+              <a href="mailto:sales@nenotechnology.com" style="color:#2563eb;text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="tel:+917863852024" style="color:#2563eb;text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
+              <a href="https://www.nenotechnology.com" target="_blank" style="color:#2563eb;text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="LINKEDIN_URL" target="_blank" style="color:#2563eb;text-decoration:none;">LinkedIn</a>
+            </div>
+          </div>
 
-    <!-- CTA -->
-    <tr>
-      <td class="pad" style="padding:26px 40px 8px 40px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0f2a2e" style="background:#0f2a2e;border-radius:12px;">
-          <tr>
-            <td align="center" style="padding:30px 26px;font-family:Arial,Helvetica,sans-serif;">
-              <div style="font-size:20px;line-height:28px;font-weight:bold;color:#ffffff;">Tell us your biggest bottleneck.</div>
-              <div style="font-size:15px;line-height:23px;color:#b7cbcd;padding:8px 0 20px 0;">
-                In 20 minutes we will point out where AI could help {{Company}} most. No pitch deck, no obligation.
-              </div>
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td align="center" bgcolor="#2dd4bf" style="border-radius:8px;">
-                    <a href="BOOKING_LINK" target="_blank" style="display:inline-block;padding:14px 32px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#06302b;text-decoration:none;border-radius:8px;">Pick a time that suits you</a>
-                  </td>
-                </tr>
-              </table>
-              <div style="font-size:13px;line-height:20px;color:#8fa9ac;padding-top:14px;">
-                Or reply with one line about the bottleneck and I will come back with ideas.
-              </div>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+        </td>
+      </tr>
+    </table>
 
-    <!-- Signature -->
-    <tr>
-      <td class="pad" style="padding:28px 40px 34px 40px;font-family:Arial,Helvetica,sans-serif;">
-        <div style="font-size:14px;line-height:20px;color:#4a5a5d;">Warm regards,</div>
-        <div style="font-size:17px;line-height:26px;font-weight:bold;color:#0f2a2e;">Tirth Patel</div>
-        <div style="font-size:14px;line-height:21px;color:#4a5a5d;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
-        <div style="font-size:13px;line-height:20px;color:#7a898c;padding-top:3px;">TEDx Speaker &bull; 300,000+ followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
-        <div style="font-size:13px;line-height:22px;padding-top:8px;">
-          <a href="mailto:sales@nenotechnology.com" style="color:#0f766e;text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
-          <a href="tel:+917863852024" style="color:#0f766e;text-decoration:none;">+91 78638 52024</a> &nbsp;|&nbsp;
-          <a href="https://www.nenotechnology.com" style="color:#0f766e;text-decoration:none;">nenotechnology.com</a> &nbsp;|&nbsp;
-          <a href="LINKEDIN_URL" style="color:#0f766e;text-decoration:none;">LinkedIn</a>
-        </div>
-      </td>
-    </tr>
+    <!-- Footer / Unsubscribe -->
+    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;margin-top:14px;">
+      <tr>
+        <td style="font-size:11.5px;line-height:1.5;color:#94a3b8;text-align:center;padding:8px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+          Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
+          Prefer not to hear from us? <a href="UNSUBSCRIBE_LINK" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a>
+        </td>
+      </tr>
+    </table>
 
-  </table>
-
-  <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;">
-    <tr>
-      <td align="center" style="padding:18px 20px 0 20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#7a898c;">
-        Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
-        Prefer not to hear from us? <a href="UNSUBSCRIBE_LINK" style="color:#7a898c;text-decoration:underline;">Unsubscribe</a>
-      </td>
-    </tr>
-  </table>
-
-</td></tr>
+  </td>
+</tr>
 </table>
 
 </body>
 </html>"""
 
 
-RAW_TEMPLATE_4 = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light">
-<title>Your next engineer doesn't need a job ad</title>
-<style>
-  @media only screen and (max-width:620px) {
-    .card { border-radius:0 !important; }
-    .pad { padding-left:22px !important; padding-right:22px !important; }
-    .h1 { font-size:32px !important; line-height:38px !important; }
-  }
-</style>
-</head>
-<body style="margin:0;padding:0;background:#f2f2f0;">
+# ─────────────────────────────────────────────────────────────
+# 7 DISTINCT, HIGH-CONVERTING RESPONSIVE HTML TEMPLATES
+# ─────────────────────────────────────────────────────────────
 
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f2f2f0;">
-  Picture an AI engineer already working on {{Company}}'s biggest time-drain. Here is how that happens.
-</div>
+RAW_TEMPLATE_1 = _build_responsive_template_html(
+    title="Quick idea for {{Company}}",
+    preheader="A senior AI engineer starting next week at a fixed monthly cost. 20 minutes to see if it fits {{Company}}.",
+    intro_html="I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.), based in Ahmedabad, India. We help Australian agencies and businesses cut operational overhead and unlock new efficiency through purpose-built AI solutions &mdash; without the enterprise price tag.",
+    callout_html="Would you be open to a 20-minute call to explore what would be most useful for {{Company}} right now? No pitch deck, no obligation &mdash; just a focused conversation about where AI and automation can save you real time.",
+    cta_text="Book a Free Consultation",
+    section_heading="What you get",
+    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Forward Deployed Engineers.</strong> One person who takes a requirement through build and deployment &mdash; using AI coding tools and agentic workflows to move at several times normal speed.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">AI and full-stack developers.</strong> AI agent developers, backend, full-stack and deployment engineers &mdash; already on our bench, not being recruited after you sign.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Vetted before you meet them.</strong> Every engineer clears our five-stage screening. You interview the shortlist and pick who joins you.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">A fraction of local contract rates.</strong> Fixed monthly cost per developer. No payroll, no super, no desk, no notice period risk.</p>""",
+    closing_html="Our goal is simple: help businesses like yours reduce operational overhead while improving efficiency and customer experience &mdash; at a fraction of local agency costs.",
+    accent_color="#1A5CFF",
+)
 
-<div style="padding:28px 12px;background:#f2f2f0;">
-  <div class="card" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:6px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
+RAW_TEMPLATE_2 = _build_responsive_template_html(
+    title="Zero Missed Inbound Leads for {{Company}} - AI Calling Agents",
+    preheader="What if {{Company}} could qualify every inbound customer call in under 60 seconds, 24/7?",
+    intro_html="I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.) in Ahmedabad. We build human-sounding, autonomous AI voice agents that pick up, qualify, and book inbound inquiries for Australian businesses within 60 seconds.",
+    callout_html="Could {{Company}} benefit from an AI voice agent answering customer calls in under 60 seconds 24/7? Let's take 15 minutes to run a live demonstration over the phone.",
+    cta_text="Experience a Live Voice AI Demo",
+    section_heading="How Autonomous Voice Agents Transform Your Pipeline",
+    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Sub-Second Voice Latency.</strong> Natural, human-like voice agents that navigate multi-turn conversations, answer service questions, and overcome objections flawlessly.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">24/7 Lead Capture.</strong> Never lose after-hours, holiday, or weekend leads again. Every call is answered, qualified, and scheduled on your calendar instantly.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Instant CRM &amp; Calendar Sync.</strong> Real-time call transcription, structured notes, and confirmed bookings pushed automatically to HubSpot, Salesforce, or Google Calendar.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Unlimited Concurrent Capacity.</strong> Handle 100 simultaneous calls during marketing spikes without hiring extra call center staff or paying per-minute agency fees.</p>""",
+    closing_html="Our voice agents eliminate missed opportunities, slash response latency from hours to seconds, and book meetings directly into your team's calendar.",
+    accent_color="#7C3AED",
+)
 
-    <!-- Logo -->
-    <div class="pad" style="padding:30px 44px 0 44px;">
-      <img src="LOGO_URL" alt="Neno Technology" width="120" style="display:block;border:0;height:auto;max-width:120px;font-size:17px;font-weight:bold;color:#1a1a1a;">
-    </div>
+RAW_TEMPLATE_3 = _build_responsive_template_html(
+    title="Ship AI projects faster at {{Company}}, without the hiring wait",
+    preheader="Senior AI and LLM engineers ready on bench to build your agentic workflows and custom features.",
+    intro_html="I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.) in Ahmedabad. We provide vetted AI &amp; LLM engineering squads who help tech teams build and ship production agentic workflows, RAG systems, and custom AI features in weeks.",
+    callout_html="Have an AI feature, RAG pipeline, or custom agent backlog waiting to be built at {{Company}}? Let's spend 20 minutes reviewing the technical architecture and delivery timeline.",
+    cta_text="Schedule an AI Architecture Call",
+    section_heading="Engineering Capabilities on Demand",
+    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Autonomous Agentic Workflows.</strong> Multi-agent systems built with LangGraph, LlamaIndex, and custom tool integrations that execute complex multi-step reasoning autonomously.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Enterprise RAG &amp; Hybrid Search.</strong> Highly accurate knowledge retrieval pipelines with semantic re-ranking, token-cost optimization, and strict anti-hallucination guardrails.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Bench Ready Next Week.</strong> Senior Python, TypeScript, FastAPI, and Next.js engineers who connect to your GitHub repo and Jira on day one &mdash; no recruiting lag.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Predictable Monthly Sprints.</strong> Fixed monthly pricing per engineer with transparent weekly deliverables and zero long-term vendor lock-in.</p>""",
+    closing_html="Whether you need an end-to-end AI product built from scratch or an extra engineer to clear your backlog, our squad delivers fast, production-grade code.",
+    accent_color="#0284C7",
+)
 
-    <!-- Headline -->
-    <div class="pad" style="padding:34px 44px 0 44px;">
-      <div class="h1" style="font-family:Georgia,'Times New Roman',serif;font-size:38px;line-height:44px;font-weight:bold;color:#111111;letter-spacing:-0.5px;">
-        Your next engineer doesn't need a job ad.
-      </div>
-      <div style="width:56px;height:5px;background:#ff5a1f;margin-top:22px;font-size:0;line-height:0;">&nbsp;</div>
-    </div>
+RAW_TEMPLATE_4 = _build_responsive_template_html(
+    title="Automating repetitive manual operations at {{Company}}",
+    preheader="Stop spending 15-20 hours every week manually copying data between email, spreadsheets, and CRM tools.",
+    intro_html="I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.) in Ahmedabad. We build unified automation pipelines that eliminate 15 to 20 hours every week of manual data transfer between emails, spreadsheets, WhatsApp, and CRMs.",
+    callout_html="Where is {{Company}} losing the most hours each week to repetitive copy-paste work? Let's take 20 minutes to pinpoint high-impact automation quick wins.",
+    cta_text="Review Automation Opportunities",
+    section_heading="What We Automate For Your Business",
+    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Cross-Platform Pipeline Sync.</strong> Connect your CRM, email inboxes, WhatsApp Business API, accounting platforms, and databases into zero-touch automated workflows.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Automated Document &amp; Invoice Parsing.</strong> Extract structured data from supplier invoices, client contracts, and receipts automatically with 99.8% precision.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Zero Manual Entry Errors.</strong> Replace fragile human data copying with automated schema validation, webhook alerts, and error failover logging.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Fast 7-14 Day Turnaround.</strong> Most operational bottlenecks can be fully automated within 1 to 2 weeks without disrupting your day-to-day business.</p>""",
+    closing_html="We free your top talent from low-value repetitive tasks so they can spend their energy speaking to clients and driving revenue.",
+    accent_color="#059669",
+)
 
-    <!-- Letter -->
-    <div class="pad" style="padding:28px 44px 0 44px;font-size:17px;line-height:29px;color:#3a3a3a;">
-      <p style="margin:0 0 18px 0;">Hi {{FirstName}},</p>
-      <p style="margin:0 0 18px 0;">
-        Every business has a task that quietly eats hours: chasing leads, writing the same reports, answering the same questions, moving data between tools. Everyone knows it should be automated. Nobody has the spare engineer to do it.
-      </p>
-      <p style="margin:0;">
-        I'm Tirth, and that gap is what <strong style="color:#111111;">Nenotechnology</strong> exists to close. We place vetted AI and full-stack engineers with Australian agencies and businesses, so the work starts without a hiring process.
-      </p>
-    </div>
+RAW_TEMPLATE_5 = _build_responsive_template_html(
+    title="Extending {{Company}}'s dev team with dedicated senior engineers",
+    preheader="Dedicated offshore AI engineering workbench in Ahmedabad, India &mdash; 60-70% lower overhead with full time-zone alignment.",
+    intro_html="I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.) in Ahmedabad, India. We build dedicated offshore engineering squads for Australian and global tech companies, delivering senior AI and full-stack developers at 60-70% lower overhead.",
+    callout_html="Considering scaling your development capacity this quarter? Let's do a quick 20-minute discussion on how our dedicated workbench model fits {{Company}}.",
+    cta_text="Explore Dedicated Workbench",
+    section_heading="How Our Dedicated Workbench Works",
+    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Direct Team Integration.</strong> Engineers work exclusively for {{Company}}, attend your daily standups, communicate in your Slack, and follow your coding standards.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Top 1% Indian Tech Talent.</strong> Every engineer clears our rigorous 5-stage technical screening, live system architecture rounds, and fluent English communication tests.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Guaranteed Time-Zone Alignment.</strong> Daily working hours synchronized with Australian Eastern Standard Time (AEST) and Western time zones for real-time collaboration.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Zero Office or HR Overhead.</strong> We take care of state-of-the-art office facilities, high-speed fiber, compliance, laptops, and payroll &mdash; you simply assign tasks.</p>""",
+    closing_html="Get the engineering velocity and senior talent of a dedicated development team without the local hiring costs, recruiting agency fees, or long-term liability.",
+    accent_color="#D97706",
+)
 
-    <!-- Picture this -->
-    <div class="pad" style="padding:34px 44px 0 44px;">
-      <div style="font-size:20px;line-height:26px;font-weight:bold;color:#111111;">Picture this at {{Company}}</div>
+RAW_TEMPLATE_6 = _build_responsive_template_html(
+    title="Modernizing legacy systems & internal portals for {{Company}}",
+    preheader="Replace clunky spreadsheets and outdated legacy tools with slick, modern web applications powered by AI intelligence.",
+    intro_html="I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.) in Ahmedabad. We replace brittle spreadsheets, outdated legacy software, and fragmented internal tools with slick, modern web applications powered by AI intelligence.",
+    callout_html="Are clunky internal tools slowing down {{Company}}'s daily operations? Let's connect for 20 minutes to see how a streamlined custom portal could accelerate your team.",
+    cta_text="Discuss System Modernization",
+    section_heading="Modern Portal &amp; Internal Tool Capabilities",
+    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Modern High-Performance Stack.</strong> Fast Next.js, React, Node, Python, and cloud-native serverless backends replacing slow legacy systems.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">AI-Assisted Dashboards.</strong> Real-time operational dashboards with natural-language AI query assistants so any team member can ask questions about company data.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Fast Prototype to Production.</strong> Interactive clickable prototypes delivered within 5 days, production deployment within 3-4 weeks.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Transparent Fixed Milestones.</strong> Clear milestone deliverables with no surprise hourly charges or scope creep.</p>""",
+    closing_html="Give your staff and clients a fast, modern digital interface that eliminates friction and unlocks real-time operational visibility.",
+    accent_color="#4F46E5",
+)
 
-      <div style="margin-top:18px;padding-left:18px;border-left:3px solid #ff5a1f;font-size:16px;line-height:26px;color:#3a3a3a;">
-        A lead fills in your website form at 11pm. By the time your team logs on, an AI agent has already replied, asked the right questions and put a meeting in the calendar.
-      </div>
-      <div style="margin-top:16px;padding-left:18px;border-left:3px solid #ff5a1f;font-size:16px;line-height:26px;color:#3a3a3a;">
-        The weekly client report that used to take someone half a day now lands in the inbox, drafted and checked, before Monday's first coffee.
-      </div>
-      <div style="margin-top:16px;padding-left:18px;border-left:3px solid #ff5a1f;font-size:16px;line-height:26px;color:#3a3a3a;">
-        A simple question from a customer gets a correct answer in seconds. Only the tricky ones reach a person.
-      </div>
-      <div style="margin-top:16px;font-size:14px;line-height:22px;color:#7a7a7a;">
-        These are examples of what we build. Yours will be shaped around how you actually work.
-      </div>
-    </div>
-
-    <!-- What you get -->
-    <div class="pad" style="padding:34px 44px 0 44px;">
-      <div style="font-size:20px;line-height:26px;font-weight:bold;color:#111111;">Why it is easy to say yes</div>
-      <div style="margin-top:14px;font-size:16px;line-height:27px;color:#3a3a3a;">
-        <div style="padding-bottom:10px;"><strong style="color:#111111;">You choose.</strong> Every engineer clears a five-stage screening first. You interview the shortlist and pick who joins.</div>
-        <div style="padding-bottom:10px;"><strong style="color:#111111;">They finish things.</strong> Our Forward Deployed Engineers take a requirement from build to deployment, using AI coding tools and agentic workflows to move much faster.</div>
-        <div><strong style="color:#111111;">One flat price.</strong> A fixed monthly cost per developer, well below local contract rates. No payroll, no super, no desk, no notice period.</div>
-      </div>
-    </div>
-
-    <!-- Fit / not fit -->
-    <div class="pad" style="padding:34px 44px 0 44px;">
-      <div style="background:#f6f6f4;border-radius:8px;padding:24px 26px;">
-        <div style="font-size:16px;line-height:24px;font-weight:bold;color:#111111;">A fair warning: we are not for everyone.</div>
-        <div style="font-size:15px;line-height:25px;color:#3a3a3a;padding-top:8px;">
-          We are a good match if you have real work to automate or build and want to start soon. We are probably not the right call if you only want a one-off quote for a tiny task, or you need someone sitting in your office.
-        </div>
-      </div>
-    </div>
-
-    <!-- CTA -->
-    <div class="pad" style="padding:38px 44px 0 44px;text-align:left;">
-      <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:33px;font-weight:bold;color:#111111;">Curious? Let's talk for 20 minutes.</div>
-      <div style="font-size:16px;line-height:26px;color:#3a3a3a;padding-top:8px;">
-        I will ask where your team loses time, and tell you honestly whether we can help. No slides, no pressure.
-      </div>
-      <div style="padding-top:22px;">
-        <a href="BOOKING_LINK" target="_blank" style="display:inline-block;background:#ff5a1f;color:#ffffff;font-size:17px;font-weight:bold;text-decoration:none;padding:16px 34px;border-radius:6px;">Choose a time</a>
-      </div>
-      <div style="font-size:14px;line-height:22px;color:#7a7a7a;padding-top:14px;">
-        Rather write it out? Reply with the task you would most like gone. It comes straight to me.
-      </div>
-    </div>
-
-    <!-- Signature -->
-    <div class="pad" style="padding:38px 44px 40px 44px;">
-      <div style="border-top:1px solid #e6e6e2;padding-top:24px;">
-        <div style="font-size:14px;line-height:20px;color:#5a5a5a;">Warm regards,</div>
-        <div style="font-size:18px;line-height:27px;font-weight:bold;color:#111111;">Tirth Patel</div>
-        <div style="font-size:14px;line-height:21px;color:#5a5a5a;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
-        <div style="font-size:13px;line-height:20px;color:#8a8a8a;padding-top:3px;">TEDx Speaker &bull; 300,000+ followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
-        <div style="font-size:13px;line-height:23px;padding-top:8px;">
-          <a href="mailto:sales@nenotechnology.com" style="color:#d9430f;text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
-          <a href="tel:+917863852024" style="color:#d9430f;text-decoration:none;">+91 78638 52024</a> &nbsp;|&nbsp;
-          <a href="https://www.nenotechnology.com" style="color:#d9430f;text-decoration:none;">nenotechnology.com</a> &nbsp;|&nbsp;
-          <a href="LINKEDIN_URL" style="color:#d9430f;text-decoration:none;">LinkedIn</a>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Footer -->
-  <div style="max-width:600px;margin:0 auto;padding:18px 20px 0 20px;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#8a8a8a;">
-    Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
-    Not relevant to {{Company}}? <a href="UNSUBSCRIBE_LINK" style="color:#8a8a8a;text-decoration:underline;">Unsubscribe</a>
-  </div>
-</div>
-
-</body>
-</html>"""
+RAW_TEMPLATE_7 = _build_responsive_template_html(
+    title="Founder-to-founder: Cutting overhead at {{Company}} with AI",
+    preheader="Strategic, founder-to-founder advisory on pinpointing high-ROI AI opportunities and scaling margins.",
+    intro_html="I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.) in Ahmedabad. As a founder who has scaled AI systems for hundreds of thousands of users, I offer candid, practical advice to business owners on where AI creates real profit.",
+    callout_html="No sales pitch, no slides &mdash; just founder-to-founder. Would you be open to a 20-minute chat about the top 2 bottlenecks holding back {{Company}}'s margins?",
+    cta_text="Book a Founder Strategy Call",
+    section_heading="What We Focus on During Our Call",
+    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Unvarnished Strategic Advice.</strong> Direct guidance from Tirth Patel on what AI can realistically solve today versus what is just marketing hype.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Tailored ROI Roadmap.</strong> Identify the specific 20% of repetitive workflows that will generate 80% of your operational savings.</p>
+<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Hands-On Implementation Squad.</strong> If there's a mutual fit, we provide the exact engineering team to execute the roadmap end-to-end.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Strict Confidentiality &amp; Full IP Ownership.</strong> 100% of all intellectual property, custom models, code, and automations belong entirely to {{Company}}.</p>""",
+    closing_html="I only take 3 advisory calls a week to ensure high impact. If you want a straight, honest perspective on AI for {{Company}}, let's connect.",
+    accent_color="#DC2626",
+)
 
 
-# Built-in Core Template Catalog
+# Built-in Core Template Catalog (7 Distinct Templates)
 BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
     {
-        "id": "tpl_exec_navy",
-        "name": "Template 1: Executive Dark Navy",
+        "id": "tpl_fde_velocity",
+        "name": "Template 1: Forward Deployed AI Engineers",
         "subject": "Quick idea for {{Company}}",
-        "category": "Enterprise & Agencies",
-        "description": "Premium dark navy header (#0b1533) with blue accent line, 4 feature bullet points (FDE, Pre-built Bench, 5-Stage Vetting, Low Overhead), and high-contrast consultation CTA.",
+        "category": "Executive & Engineering Velocity",
+        "description": "Executive pitch emphasizing Forward Deployed Engineers moving 3-5x faster with agentic coding, pre-built bench, and zero payroll risk.",
         "html_content": RAW_TEMPLATE_1,
         "style": "executive",
         "accent_color": "#1A5CFF",
         "badge": "Top Recommended",
     },
     {
-        "id": "tpl_blue_gradient",
-        "name": "Template 2: Blue Gradient Hero & Comparison",
-        "subject": "Engineers for {{Company}}, without the hiring wait",
-        "category": "Direct Pitch & Comparison",
-        "description": "Vibrant gradient hero banner with full side-by-side comparison table (Local Hire vs With Neno) and clear 1-2-3 onboarding timeline.",
+        "id": "tpl_voice_calling",
+        "name": "Template 2: Autonomous AI Voice & Calling Agents",
+        "subject": "Zero Missed Inbound Leads for {{Company}} - AI Calling Agents",
+        "category": "Voice & Inbound Lead Capture",
+        "description": "Specialized outreach highlighting autonomous 24/7 AI voice calling agents that qualify prospects in 60 seconds and sync with CRM.",
         "html_content": RAW_TEMPLATE_2,
-        "style": "modern_gradient",
-        "accent_color": "#1440D6",
-        "badge": "High Conversion",
-    },
-    {
-        "id": "tpl_teal_grid",
-        "name": "Template 3: Modern Teal Use-Case Grid",
-        "subject": "Where AI could save {{Company}} time first",
-        "category": "Problem-Solution & Use Cases",
-        "description": "Refined emerald/teal theme with 2x2 use-case grid (Lead Follow-up, Support, Admin/Reporting, Internal Tools) and dark contrasting consultation box.",
-        "html_content": RAW_TEMPLATE_3,
-        "style": "teal_grid",
-        "accent_color": "#0F766E",
-        "badge": "High Engagement",
-    },
-    {
-        "id": "tpl_editorial_letter",
-        "name": "Template 4: Editorial Personal Letter",
-        "subject": "Your next engineer doesn't need a job ad",
-        "category": "Personal Letter & Story",
-        "description": "Warm personal editorial layout with high readability, energetic orange accent bar (#FF5A1F), 'Picture this at {{Company}}', and candid fit/not-fit filter.",
-        "html_content": RAW_TEMPLATE_4,
-        "style": "editorial_letter",
-        "accent_color": "#FF5A1F",
-        "badge": "Executive Personal",
-    },
-    {
-        "id": "tpl_standard_fde",
-        "name": "Template 5: Forward Deployed Engineers (Clean)",
-        "subject": "Smarter Systems for {{Company}} - AI & Automation by Nenotechnology",
-        "category": "Technical Capabilities",
-        "description": "Clean, minimal white card with Cloudinary CDN header logo, focusing on forward-deployed engineer velocity and fixed monthly cost.",
-        "html_content": """<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1E293B;max-width:600px;margin:0 auto;background:#ffffff;padding:24px;border:1px solid #E2E8F0;border-radius:12px;">
-  <div style="margin-bottom:18px;border-bottom:1px solid #EEF0F4;padding-bottom:12px;"><img src="LOGO_URL" alt="Nenotechnology" width="132" style="display:block;max-width:132px;"></div>
-  <p>Dear {{FirstName}},</p>
-  <p>I hope you and the team at {{Company}} are doing well.</p>
-  <p>I'm Tirth Patel, Founder &amp; CEO of <strong>Nenotechnology</strong> in Ahmedabad. We help forward-thinking teams cut operational overhead with purpose-built AI solutions &mdash; without the enterprise price tag.</p>
-  <p>Our <strong>Forward Deployed Engineers</strong> take requirements from design to production using cutting-edge agentic workflows, moving 3-5x faster than conventional developers.</p>
-  <div style="margin:22px 0;text-align:center;">
-    <a href="BOOKING_LINK" target="_blank" style="display:inline-block;background:#2563EB;color:#FFFFFF;padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:600;font-size:15px;">Schedule a 20-Min AI Discovery Call</a>
-  </div>
-  <p style="font-size:14px;color:#64748B;">Warm regards,<br><strong style="color:#0F172A;">Tirth Patel</strong><br>Founder &amp; CEO, Nenotechnology</p>
-</div>""",
-        "style": "standard_minimal",
-        "accent_color": "#2563EB",
-        "badge": "Standard",
-    },
-    {
-        "id": "tpl_calling_agents",
-        "name": "Template 6: Autonomous AI Voice & Calling Agents",
-        "subject": "Zero Missed Opportunities for {{Company}} - Autonomous AI Calling Agents",
-        "category": "Calling & Voice AI",
-        "description": "Specialized B2B outreach highlighting autonomous inbound/outbound voice calling agents that qualify leads 24/7.",
-        "html_content": """<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1E293B;max-width:600px;margin:0 auto;background:#ffffff;padding:24px;border:1px solid #E2E8F0;border-radius:12px;">
-  <div style="margin-bottom:18px;border-bottom:1px solid #EEF0F4;padding-bottom:12px;"><img src="LOGO_URL" alt="Nenotechnology" width="132" style="display:block;max-width:132px;"></div>
-  <p>Hi {{FirstName}},</p>
-  <p>What if {{Company}} could instantly qualify every inbound lead within 60 seconds &mdash; 24/7?</p>
-  <p>At <strong>Nenotechnology</strong>, our autonomous AI voice agents handle natural two-way customer calls, answer complex service inquiries, and schedule confirmed appointments directly onto your calendar.</p>
-  <div style="background:#F8FAFC;border-left:4px solid #7C3AED;padding:14px 18px;margin:18px 0;border-radius:6px;">
-    <strong>Proven Impact:</strong> Up to 70% reduction in lead follow-up latency with zero extra staff hiring.
-  </div>
-  <div style="margin:22px 0;text-align:center;">
-    <a href="BOOKING_LINK" target="_blank" style="display:inline-block;background:#7C3AED;color:#FFFFFF;padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:600;font-size:15px;">Experience an AI Calling Demo</a>
-  </div>
-  <p style="font-size:14px;color:#64748B;">Best regards,<br><strong style="color:#0F172A;">Tirth Patel</strong><br>Founder &amp; CEO, Nenotechnology</p>
-</div>""",
         "style": "purple_modern",
         "accent_color": "#7C3AED",
         "badge": "Voice AI",
     },
     {
-        "id": "tpl_workflow_automation",
-        "name": "Template 7: Business Automation & ERP/CRM Integration",
-        "subject": "Automating Time-Consuming Operations at {{Company}}",
-        "category": "Enterprise Automation",
-        "description": "Operational efficiency pitch demonstrating automatic sync between WhatsApp, Email, CRM, and internal databases.",
-        "html_content": """<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1E293B;max-width:600px;margin:0 auto;background:#ffffff;padding:24px;border:1px solid #E2E8F0;border-radius:12px;">
-  <div style="margin-bottom:18px;border-bottom:1px solid #EEF0F4;padding-bottom:12px;"><img src="LOGO_URL" alt="Nenotechnology" width="132" style="display:block;max-width:132px;"></div>
-  <p>Dear {{FirstName}},</p>
-  <p>Most growing businesses spend 15-20 hours every week manually copying data between email, spreadsheets, and CRM tools.</p>
-  <p>At <strong>Nenotechnology</strong>, we build seamless, unified automation pipelines connecting your outreach, customer replies, and database in real-time so your core team can focus on closing deals.</p>
-  <div style="margin:22px 0;text-align:center;">
-    <a href="BOOKING_LINK" target="_blank" style="display:inline-block;background:#059669;color:#FFFFFF;padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:600;font-size:15px;">Review Automation Opportunities for {{Company}}</a>
-  </div>
-  <p style="font-size:14px;color:#64748B;">Warm regards,<br><strong style="color:#0F172A;">Tirth Patel</strong><br>Founder &amp; CEO, Nenotechnology</p>
-</div>""",
+        "id": "tpl_agentic_workflows",
+        "name": "Template 3: Custom Agentic Workflows & LLM Engineering",
+        "subject": "Ship AI projects faster at {{Company}}, without the hiring wait",
+        "category": "Technical Capabilities & LLMs",
+        "description": "Pitch for tech companies and agencies needing senior Python/TypeScript squads to build custom LangGraph/RAG pipelines without recruitment lag.",
+        "html_content": RAW_TEMPLATE_3,
+        "style": "sky_technical",
+        "accent_color": "#0284C7",
+        "badge": "High Conversion",
+    },
+    {
+        "id": "tpl_business_automation",
+        "name": "Template 4: Business Process & ERP/CRM Automation",
+        "subject": "Automating repetitive manual operations at {{Company}}",
+        "category": "Operational Automation",
+        "description": "Operational pitch aimed at businesses losing 15-20 hrs/week on manual copy-paste across emails, WhatsApp, Sheets, and CRMs.",
+        "html_content": RAW_TEMPLATE_4,
         "style": "emerald_enterprise",
         "accent_color": "#059669",
         "badge": "Automation",
+    },
+    {
+        "id": "tpl_dedicated_workbench",
+        "name": "Template 5: Dedicated Offshore AI Tech Workbench",
+        "subject": "Extending {{Company}}'s dev team with dedicated senior engineers",
+        "category": "Team Augmentation",
+        "description": "Dedicated offshore tech extension model in Ahmedabad, India with guaranteed Australian time-zone alignment and 60-70% lower overhead.",
+        "html_content": RAW_TEMPLATE_5,
+        "style": "amber_workbench",
+        "accent_color": "#D97706",
+        "badge": "High Engagement",
+    },
+    {
+        "id": "tpl_internal_dashboards",
+        "name": "Template 6: Legacy Modernization & Custom Internal Tools",
+        "subject": "Modernizing legacy systems & internal portals for {{Company}}",
+        "category": "Software Modernization",
+        "description": "Modernization outreach replacing slow legacy tools and brittle spreadsheets with slick Next.js web applications and AI dashboards.",
+        "html_content": RAW_TEMPLATE_6,
+        "style": "indigo_modern",
+        "accent_color": "#4F46E5",
+        "badge": "Modernization",
+    },
+    {
+        "id": "tpl_founder_strategy",
+        "name": "Template 7: Founder-to-Founder AI Strategy Audit",
+        "subject": "Founder-to-founder: Cutting overhead at {{Company}} with AI",
+        "category": "Founder & Advisory",
+        "description": "Candid founder-to-founder advisory consultation focusing on margin expansion, ROI roadmaps, and cutting operational fat.",
+        "html_content": RAW_TEMPLATE_7,
+        "style": "crimson_direct",
+        "accent_color": "#DC2626",
+        "badge": "Executive Direct",
     },
 ]
 
@@ -843,6 +395,41 @@ def save_custom_template(template_dict: Dict[str, Any]) -> bool:
         return True
     except Exception:
         return False
+
+
+def interpolate_lead_placeholders(
+    text: str,
+    first_name: str,
+    company_name: str,
+    pain_text: str = "manual operational overhead",
+) -> str:
+    """Bulletproof interpolation for all casing and brace variations of lead placeholders:
+    {FirstName}, {{FirstName}}, {name}, {{name}}, {company}, {{company}}, {pain}, etc.
+    """
+    if not text:
+        return ""
+    # Name / First Name variants
+    text = re.sub(
+        r'\{\{?\s*(?:first_?name|lead_?name|name|recipient_?name)\s*\}?\}',
+        first_name,
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Company variants
+    text = re.sub(
+        r'\{\{?\s*(?:company_?name|company|client|business)\s*\}?\}',
+        company_name,
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Pain point variants
+    text = re.sub(
+        r'\{\{?\s*(?:pain_?point|pain|challenge)\s*\}?\}',
+        pain_text,
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text
 
 
 def render_template(
@@ -900,16 +487,13 @@ def render_template(
     unsub_link = f"mailto:sales@nenotechnology.com?subject=Unsubscribe%20{company_name}"
 
     # Subject Interpolation
-    subj = tpl.get("subject", "Quick idea for {{Company}}")
-    subj = subj.replace("{{FirstName}}", first_name)
-    subj = subj.replace("{{Company}}", company_name if company_name != "your team" else "Your Business")
-    subj = subj.replace("{{Pain}}", pain_text)
+    raw_subj = tpl.get("subject", "Quick idea for {{Company}}")
+    subj_company = company_name if company_name != "your team" else "Your Business"
+    subj = interpolate_lead_placeholders(raw_subj, first_name=first_name, company_name=subj_company, pain_text=pain_text)
 
     # Body Interpolation
-    html = tpl.get("html_content", "")
-    html = html.replace("{{FirstName}}", first_name)
-    html = html.replace("{{Company}}", company_name)
-    html = html.replace("{{Pain}}", pain_text)
+    raw_html = tpl.get("html_content", "")
+    html = interpolate_lead_placeholders(raw_html, first_name=first_name, company_name=company_name, pain_text=pain_text)
     html = html.replace("LOGO_URL", l_url)
     html = html.replace("BOOKING_LINK", b_link)
     html = html.replace("LINKEDIN_URL", li_url)
@@ -951,22 +535,35 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
     def _infer_template(row):
         tid = row.get("template_id")
         if pd.notna(tid) and str(tid).strip() and str(tid).strip().lower() != "nan":
-            return str(tid).strip()
+            # Map legacy IDs to new canonical IDs if needed
+            t_str = str(tid).strip()
+            legacy_map = {
+                "tpl_exec_navy": "tpl_fde_velocity",
+                "tpl_calling_agents": "tpl_voice_calling",
+                "tpl_blue_gradient": "tpl_agentic_workflows",
+                "tpl_workflow_automation": "tpl_business_automation",
+                "tpl_standard_fde": "tpl_fde_velocity",
+                "tpl_teal_grid": "tpl_internal_dashboards",
+                "tpl_editorial_letter": "tpl_founder_strategy",
+            }
+            return legacy_map.get(t_str, t_str)
         # Infer from subject
         subj = str(row.get("subject") or "").lower()
-        if "quick idea" in subj:
-            return "tpl_exec_navy"
-        elif "without the hiring wait" in subj or "faster" in subj:
-            return "tpl_blue_gradient"
-        elif "where ai could save" in subj:
-            return "tpl_teal_grid"
-        elif "doesn't need a job ad" in subj or "job ad" in subj:
-            return "tpl_editorial_letter"
-        elif "voice" in subj or "calling" in subj:
-            return "tpl_calling_agents"
-        elif "automating" in subj or "erp" in subj:
-            return "tpl_workflow_automation"
-        return "tpl_standard_fde"
+        if "quick idea" in subj or "velocity" in subj or "forward deployed" in subj:
+            return "tpl_fde_velocity"
+        elif "voice" in subj or "calling" in subj or "inbound" in subj:
+            return "tpl_voice_calling"
+        elif "agentic" in subj or "hiring wait" in subj or "llm" in subj:
+            return "tpl_agentic_workflows"
+        elif "automating" in subj or "erp" in subj or "repetitive" in subj or "operations" in subj:
+            return "tpl_business_automation"
+        elif "workbench" in subj or "offshore" in subj or "extending" in subj:
+            return "tpl_dedicated_workbench"
+        elif "modernizing" in subj or "internal" in subj or "portal" in subj or "legacy" in subj:
+            return "tpl_internal_dashboards"
+        elif "founder" in subj or "strategy" in subj or "margin" in subj:
+            return "tpl_founder_strategy"
+        return "tpl_fde_velocity"
 
     df_copy["resolved_template_id"] = df_copy.apply(_infer_template, axis=1)
 

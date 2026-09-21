@@ -1,3 +1,4 @@
+import utils.dns_patch
 import uvicorn
 from dotenv import load_dotenv
 

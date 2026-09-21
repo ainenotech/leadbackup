@@ -159,6 +159,23 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
         "BOOKING_FORM_URL",
         "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
     )
+
+    # Bulletproof fallback: ensure no unresolved placeholders reach the recipient
+    c_name = str(entry.name).strip() if entry.name and str(entry.name).strip().lower() not in ("nan", "none", "") else ""
+    first_name = c_name.split()[0].title() if c_name else "there"
+    c_comp = str(entry.company).strip() if entry.company and str(entry.company).strip().lower() not in ("nan", "none", "") else ""
+    comp_name = c_comp if c_comp else "your team"
+    subj_comp = comp_name if comp_name != "your team" else "Your Business"
+
+    try:
+        from services.template_service import interpolate_lead_placeholders
+        if entry.subject:
+            entry.subject = interpolate_lead_placeholders(entry.subject, first_name=first_name, company_name=subj_comp)
+        if entry.body:
+            entry.body = interpolate_lead_placeholders(entry.body, first_name=first_name, company_name=comp_name)
+    except Exception:
+        pass
+
     if entry.body:
         entry.body = re.sub(
             r'href=["\']https?://(?:localhost|127\.0\.0\.1)(?::\d+)?(?:/[^"\']*)?["\']',
@@ -172,7 +189,15 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
         )
 
     mailer = get_mailer()
-    mailer.send_email(to_email=entry.email, subject=entry.subject, body=entry.body, token=entry.token)
+    try:
+        mailer.send_email(to_email=entry.email, subject=entry.subject, body=entry.body, token=entry.token)
+    except Exception as send_err:
+        entry.status = "failed"
+        entry.send_error = str(send_err)[:500]
+        db.commit()
+        raise RuntimeError(
+            f"Email delivery failed for {entry.email}: {send_err}"
+        ) from send_err
 
     entry.status = "sent"
     entry.email_sent_at = datetime.now(timezone.utc)
