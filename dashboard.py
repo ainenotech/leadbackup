@@ -1,3 +1,4 @@
+import utils.dns_patch  # Fast fallback DNS resolver for Microsoft Graph & login APIs
 import base64
 from datetime import datetime
 import json as _json
@@ -2400,14 +2401,14 @@ def confirm_approve_send_dialog(entry_id: str, email: str, subject: str, body: s
     with st.expander("👁️ Preview Message & Links", expanded=True):
         preview_modal = body if (body or "").strip().startswith(("<div", "<table", "<html", "<body")) else (body or "").replace(chr(10), '<br>')
         preview_modal = clean_natural_email_body(preview_modal)
-        st.markdown(
-            f"""
-            <div style="background: #ffffff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 20px; font-size: 14px; line-height: 1.6; color: #1E293B;">
-                {preview_modal}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        # Use components.html for pixel-perfect rendering of rich HTML email templates
+        # (st.markdown strips most HTML tags/styles, causing broken preview with excessive whitespace)
+        wrapped_preview = f"""
+        <div style="background: #ffffff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.6; color: #1E293B; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
+            {preview_modal}
+        </div>
+        """
+        components.html(wrapped_preview, height=480, scrolling=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
@@ -2723,12 +2724,28 @@ def render_email_review(df: pd.DataFrame) -> None:
             use_container_width=True,
             help="Send email to this recipient via Microsoft Graph",
         ):
-            confirm_approve_send_dialog(row["id"], row["email"], edit_subject, edit_body)
+            from services.template_service import interpolate_lead_placeholders
+            c_name = str(row.get("name", "")).strip() if row.get("name") and str(row.get("name")).strip().lower() not in ("nan", "none", "") else ""
+            f_name = c_name.split()[0].title() if c_name else "there"
+            c_comp = str(row.get("company", "")).strip() if row.get("company") and str(row.get("company")).strip().lower() not in ("nan", "none", "") else ""
+            comp = c_comp if c_comp else "your team"
+            subj_comp = comp if comp != "your team" else "Your Business"
+            final_subj = interpolate_lead_placeholders(edit_subject, first_name=f_name, company_name=subj_comp)
+            final_body = interpolate_lead_placeholders(edit_body, first_name=f_name, company_name=comp)
+            confirm_approve_send_dialog(row["id"], row["email"], final_subj, final_body)
 
     with btn_save:
         if st.button("💾 Save Draft", key=f"save_{row['id']}", use_container_width=True, help="Save changes to database without sending"):
+            from services.template_service import interpolate_lead_placeholders
+            c_name = str(row.get("name", "")).strip() if row.get("name") and str(row.get("name")).strip().lower() not in ("nan", "none", "") else ""
+            f_name = c_name.split()[0].title() if c_name else "there"
+            c_comp = str(row.get("company", "")).strip() if row.get("company") and str(row.get("company")).strip().lower() not in ("nan", "none", "") else ""
+            comp = c_comp if c_comp else "your team"
+            subj_comp = comp if comp != "your team" else "Your Business"
+            final_subj = interpolate_lead_placeholders(edit_subject, first_name=f_name, company_name=subj_comp)
+            final_body = interpolate_lead_placeholders(edit_body, first_name=f_name, company_name=comp)
             db = SessionLocal()
-            update_draft_content(db, row["id"], edit_subject, edit_body)
+            update_draft_content(db, row["id"], final_subj, final_body)
             db.close()
             st.success("Draft saved successfully!")
             st.cache_data.clear()

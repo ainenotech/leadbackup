@@ -13,6 +13,8 @@ from typing import Optional
 import msal
 from dotenv import load_dotenv
 
+import utils.dns_patch  # Ensures reliable DNS resolution for Microsoft Graph and login
+
 load_dotenv()
 
 MS_TENANT_ID = os.getenv("MS_TENANT_ID", "")
