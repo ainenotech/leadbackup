@@ -1,0 +1,32 @@
+langchain
+langgraph
+langchain-google-genai
+langchain-anthropic
+pydantic
+python-dotenv
+sqlalchemy
+requests
+streamlit
+pandas
+openpyxl
+fastapi
+uvicorn
+
+# zoneinfo (stdlib on Linux/macOS) needs the IANA database bundled on
+# Windows; harmless everywhere else
+tzdata
+
+# Microsoft Graph (Outlook mail, Outlook/Teams calendar, Teams meeting links)
+msal
+
+# Postgres (campaign database + RAG knowledge base)
+psycopg2-binary
+numpy
+
+# Google Sheets API (live sync of Google Form responses)
+google-api-python-client
+google-auth
+
+# Analytics & Exporting (PDF / Excel / Charts)
+matplotlib
+reportlab
