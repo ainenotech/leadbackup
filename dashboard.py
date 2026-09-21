@@ -76,6 +76,8 @@ except Exception:
     pass
 from reply_worker import ReplyDaemonManager, check_and_reply_inbox
 from analytics_view import render_analytics
+from template_hub_view import render_template_hub
+from services.template_service import load_all_templates, get_template_by_id, render_template
 
 init_db()
 
@@ -1459,6 +1461,8 @@ CAMPAIGN_LOG_COLUMNS = [
     "booking_status",
     "token",
     "tracking_link",
+    "template_id",
+    "template_name",
     "created_at",
 ]
 
@@ -1516,6 +1520,8 @@ def load_campaign_logs():
             "booking_status": r.booking_status or "",
             "token": r.token or "",
             "tracking_link": r.tracking_link or "",
+            "template_id": getattr(r, "template_id", "") or "",
+            "template_name": getattr(r, "template_name", "") or "",
             "created_at": r.created_at,
         }
         for r in rows
@@ -1528,6 +1534,7 @@ def load_campaign_logs():
 NAV_ITEMS = {
     "overview": {"icon": "📊", "label": "Pipeline Overview"},
     "analytics": {"icon": "📈", "label": "Analytics"},
+    "templates": {"icon": "📑", "label": "Template Review & Hub"},
     "upload": {"icon": "📤", "label": "Upload & Draft"},
     "leads": {"icon": "📋", "label": "Leads Directory"},
     "email": {"icon": "✉️", "label": "Email Review Studio"},
@@ -2096,16 +2103,32 @@ def render_upload() -> None:
                     st.dataframe(new_leads_df[cols_to_show], use_container_width=True, hide_index=True)
 
                     st.markdown("<br>", unsafe_allow_html=True)
+
+                    # Template Selector for this Batch / Sheet (20-25 leads per sheet)
+                    all_available_tpls = load_all_templates()
+                    tpl_map = {f"{t['name']} [{t.get('category', 'Outreach')}]": t for t in all_available_tpls}
+                    
+                    st.markdown("###### 📑 Select Email Template for this Cohort / Sheet (1 Template per 20–25 Leads):")
+                    selected_tpl_label = st.selectbox(
+                        "Choose outreach template to personalize for all leads in this sheet:",
+                        options=list(tpl_map.keys()),
+                        index=0,
+                        key="upload_sheet_template_selector",
+                        help="Assigns this specific high-converting template design to every lead in this sheet for A/B analytics tracking."
+                    )
+                    chosen_tpl_obj = tpl_map[selected_tpl_label]
+
+                    st.markdown("<br>", unsafe_allow_html=True)
                     btn_col1, btn_col2 = st.columns([1, 1])
 
                     with btn_col1:
                         if st.button(
-                            f"🚀 Generate AI Drafts for {len(new_leads_df)} New Lead(s)",
+                            f"🚀 Generate AI Drafts for {len(new_leads_df)} Lead(s) using '{chosen_tpl_obj['name']}'",
                             type="primary",
                             key="gen_drafts_new",
                         ):
                             campaign_name = os.getenv("CAMPAIGN_NAME", "default_campaign")
-                            progress_bar = st.progress(0.0, text="Generating personalized drafts with Gemini AI...")
+                            progress_bar = st.progress(0.0, text="Generating personalized drafts with chosen template...")
                             db = SessionLocal()
                             created_count = 0
                             failed_count = 0
@@ -2134,12 +2157,17 @@ def render_upload() -> None:
                                     )
                                     tracking_link = booking_url
 
-                                    # Primary Email Template: Option 1 (Forward-Deployed Engineers & Tech Solutions)
-                                    subject, body = Email.draft_options.get_draft_template_option(
-                                        1,
-                                        name=name,
-                                        company=company,
-                                        cta_url=tracking_link,
+                                    lead_data = {
+                                        "name": name,
+                                        "company": company,
+                                        "email": email,
+                                        "last_activity_date": last_activity,
+                                        "last_deal_stage": last_deal,
+                                    }
+                                    subject, body = render_template(
+                                        chosen_tpl_obj,
+                                        lead_data=lead_data,
+                                        booking_url=tracking_link,
                                     )
 
                                     create_pending_entry(
@@ -2154,6 +2182,8 @@ def render_upload() -> None:
                                         subject=subject,
                                         body=body,
                                         status="drafted",
+                                        template_id=chosen_tpl_obj["id"],
+                                        template_name=chosen_tpl_obj["name"],
                                     )
                                     created_count += 1
                                     successfully_drafted_rows.append(row)
@@ -2604,102 +2634,81 @@ def render_email_review(df: pd.DataFrame) -> None:
     if f"body_{row['id']}" in st.session_state:
         st.session_state[f"body_{row['id']}"] = clean_natural_email_body(st.session_state[f"body_{row['id']}"])
 
-    # ── Quick Set Template Option Buttons ──
+    # ── Quick Set Template Option: Primary Template Only ──
     st.markdown(
         """
-        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 16px; margin: 12px 0 10px 0;">
-            <div style="font-size: 13.5px; font-weight: 700; color: #1E293B; display: flex; align-items: center; justify-content: space-between;">
-                <span>🎯 Select Email Draft Template:</span>
-                <span class="badge badge-pending" style="font-size: 10.5px; padding: 2px 8px;">3 Natural Executive Templates</span>
-            </div>
-            <div style="font-size: 12px; color: #64748B; margin-top: 2px;">
-                Click any button below to instantly format this lead's draft with the chosen executive template:
-            </div>
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin: 12px 0 10px 0; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13px; font-weight: 600; color: #1E293B;">🎯 Email Draft Template:</span>
+            <span class="badge badge-sent" style="font-size: 10.5px; padding: 2px 8px;">Primary Executive Template</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    t_col1, t_col2, t_col3 = st.columns(3)
-    with t_col1:
-        if st.button("⭐ Primary Template", key=f"btn_opt1_{row['id']}", use_container_width=True, help="Primary template: Forward-Deployed Engineers, Vetted bench & consultation call"):
-            importlib.reload(Email.draft_options)
-            opt_subj, opt_body = Email.draft_options.get_draft_template_option(1, row["name"], row["company"], custom_form_url)
-            opt_subj = opt_subj.replace("\ufffd", "-").replace("—", "-").strip()
-            st.session_state[f"subj_{row['id']}"] = opt_subj
-            st.session_state[f"body_{row['id']}"] = opt_body
-            db = SessionLocal()
-            update_draft_content(db, row["id"], opt_subj, opt_body)
-            db.close()
-            st.cache_data.clear()
-            st.toast("✅ Applied Primary Template!", icon="⭐")
-            st.rerun()
-
-    with t_col2:
-        if st.button("🤝 Returning Client", key=f"btn_opt2_{row['id']}", use_container_width=True, help="Personal check-in with returning client and free consultation call"):
-            importlib.reload(Email.draft_options)
-            opt_subj, opt_body = Email.draft_options.get_draft_template_option(2, row["name"], row["company"], custom_form_url)
-            opt_subj = opt_subj.replace("\ufffd", "-").replace("—", "-").strip()
-            st.session_state[f"subj_{row['id']}"] = opt_subj
-            st.session_state[f"body_{row['id']}"] = opt_body
-            db = SessionLocal()
-            update_draft_content(db, row["id"], opt_subj, opt_body)
-            db.close()
-            st.cache_data.clear()
-            st.toast("✅ Applied Returning Client Template!", icon="🤝")
-            st.rerun()
-
-    with t_col3:
-        if st.button("🔍 Free AI & IT Audit", key=f"btn_opt3_{row['id']}", use_container_width=True, help="Complimentary AI & IT audit offer with practical roadmap"):
-            importlib.reload(Email.draft_options)
-            opt_subj, opt_body = Email.draft_options.get_draft_template_option(3, row["name"], row["company"], custom_form_url)
-            opt_subj = opt_subj.replace("\ufffd", "-").replace("—", "-").strip()
-            st.session_state[f"subj_{row['id']}"] = opt_subj
-            st.session_state[f"body_{row['id']}"] = opt_body
-            db = SessionLocal()
-            update_draft_content(db, row["id"], opt_subj, opt_body)
-            db.close()
-            st.cache_data.clear()
-            st.toast("✅ Applied Free AI & IT Audit Template!", icon="🔍")
-            st.rerun()
+    if st.button("⭐ Reset to Primary Template", key=f"btn_opt1_{row['id']}", help="Apply Primary template: Forward-Deployed Engineers, Vetted bench & consultation call"):
+        importlib.reload(Email.draft_options)
+        opt_subj, opt_body = Email.draft_options.get_draft_template_option(1, row["name"], row["company"], custom_form_url)
+        opt_subj = opt_subj.replace("\ufffd", "-").replace("—", "-").strip()
+        st.session_state[f"subj_{row['id']}"] = opt_subj
+        st.session_state[f"body_{row['id']}"] = opt_body
+        db = SessionLocal()
+        update_draft_content(db, row["id"], opt_subj, opt_body)
+        db.close()
+        st.cache_data.clear()
+        st.toast("✅ Applied Primary Template!", icon="⭐")
+        st.rerun()
 
     initial_subj = st.session_state.get(f"subj_{row['id']}", current_subject)
     initial_subj = initial_subj.replace("\ufffd", "-").replace("—", "-").strip()
     edit_subject = st.text_input("Subject Line", value=initial_subj, key=f"subj_{row['id']}")
     edit_body = st.text_area("Email Body (Markdown / HTML)", value=st.session_state.get(f"body_{row['id']}", current_body), height=260, key=f"body_{row['id']}")
 
-    # ── Superhuman / Apple Mail Style Live Preview ──
+    # ── Superhuman / Apple Mail Style Live Preview (Pixel-Perfect Without Extra Space) ──
     st.markdown("##### 👁️ Live Email Client Preview")
     sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
-    preview_rendered = edit_body if (edit_body or "").strip().startswith(("<div", "<table", "<html", "<body")) else (edit_body or "").replace(chr(10), '<br>')
-    preview_rendered = clean_natural_email_body(preview_rendered)
+
+    # Outlook Client Header
     st.markdown(
         f"""
-        <div class="email-preview-window">
-            <div class="email-preview-mac-header">
-                <div class="mac-dot dot-red"></div>
-                <div class="mac-dot dot-amber"></div>
-                <div class="mac-dot dot-green"></div>
-                <span style="font-size: 11.5px; color: #64748B; margin-left: 10px; font-weight: 500;">Outlook / Webmail Client View</span>
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top-left-radius: 10px; border-top-right-radius: 10px; padding: 12px 16px; border-bottom: 1px solid #CBD5E1;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+                <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; display: inline-block;"></span>
+                <span style="width: 10px; height: 10px; border-radius: 50%; background: #F59E0B; display: inline-block;"></span>
+                <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; display: inline-block;"></span>
+                <span style="font-size: 11.5px; color: #64748B; margin-left: 8px; font-weight: 500;">Outlook / Webmail Client View</span>
             </div>
-            <div class="email-preview-meta">
-                <div class="email-preview-meta-row">
-                    <span class="email-preview-meta-label">From:</span>
-                    <span>AINeotechnology Team &lt;{sender_email}&gt;</span>
-                </div>
-                <div class="email-preview-meta-row">
-                    <span class="email-preview-meta-label">To:</span>
-                    <span>{row['name'] or 'Lead'} &lt;{row['email']}&gt;</span>
-                </div>
-                <div class="email-preview-subject">{edit_subject}</div>
-            </div>
-            <div class="email-preview-body">
-                {preview_rendered}
+            <div style="font-size: 12.5px; color: #475569; display: flex; flex-direction: column; gap: 3px;">
+                <div><strong style="color: #1E293B;">From:</strong> AINeotechnology Team &lt;{sender_email}&gt;</div>
+                <div><strong style="color: #1E293B;">To:</strong> {row['name'] or 'Lead'} &lt;{row['email']}&gt;</div>
+                <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin-top: 3px;">{edit_subject}</div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # Isolated HTML rendering prevents Streamlit markdown parser from injecting paragraphs or extra vertical spacing
+    is_html_email = (edit_body or "").strip().startswith(("<!DOCTYPE", "<html", "<table", "<body", "<div"))
+    if is_html_email:
+        preview_html_payload = edit_body
+    else:
+        paras = [f"<p style='margin: 0 0 11px 0; padding: 0;'>{p.replace(chr(10), '<br>')}</p>" for p in (edit_body or "").split("\n\n") if p.strip()]
+        preview_html_payload = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ margin: 0; padding: 16px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.45; color: #1a1a1a; background: #ffffff; }}
+    p {{ margin: 0 0 11px 0; }}
+    a {{ color: #0f62fe; text-decoration: underline; }}
+  </style>
+</head>
+<body>
+{''.join(paras)}
+</body>
+</html>"""
+
+    components.html(preview_html_payload, height=650, scrolling=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2769,34 +2778,14 @@ def render_email_review(df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
-    b1, b2, b3 = st.columns(3)
-    with b1:
-        if st.button(
-            f"⭐ Approve All & Send Primary ({pending_count})",
-            key="bulk_send_opt1",
-            type="primary",
-            use_container_width=True,
-            help="Approve and send all remaining drafts formatted with Primary Template",
-        ):
-            confirm_approve_all_dialog(drafts.to_dict("records"), template_id=1)
-
-    with b2:
-        if st.button(
-            f"🤝 Approve All & Send Option 2 ({pending_count})",
-            key="bulk_send_opt2",
-            use_container_width=True,
-            help="Approve and send all remaining drafts formatted with Option 2 (Returning Client)",
-        ):
-            confirm_approve_all_dialog(drafts.to_dict("records"), template_id=2)
-
-    with b3:
-        if st.button(
-            f"🔍 Approve All & Send Option 3 ({pending_count})",
-            key="bulk_send_opt3",
-            use_container_width=True,
-            help="Approve and send all remaining drafts formatted with Option 3 (Free AI & IT Audit)",
-        ):
-            confirm_approve_all_dialog(drafts.to_dict("records"), template_id=3)
+    if st.button(
+        f"⭐ Approve All & Send Primary ({pending_count})",
+        key="bulk_send_opt1",
+        type="primary",
+        use_container_width=True,
+        help="Approve and send all remaining drafts formatted with Primary Template",
+    ):
+        confirm_approve_all_dialog(drafts.to_dict("records"), template_id=1)
 
 
 
@@ -3573,6 +3562,10 @@ def render_live_telemetry_view(page_name: str):
 
 if page in ["overview", "analytics", "replies"]:
     render_live_telemetry_view(page)
+elif page == "templates":
+    rows = load_campaign_logs()
+    df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
+    render_template_hub(df_logs)
 elif page == "upload":
     render_upload()
 elif page == "leads":

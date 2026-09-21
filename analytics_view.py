@@ -10,6 +10,7 @@ import streamlit.components.v1 as components
 
 from services.analytics_service import FEATURE_DEFINITIONS, build_comprehensive_analytics
 from services.analytics_export import generate_analytics_excel, generate_analytics_pdf
+from services.template_service import compute_template_analytics
 
 
 def clean_html(html_str: str) -> str:
@@ -97,6 +98,7 @@ FEATURE_SECTION_MAP = {
 
 TAB_CONFIG = [
     {"id": "matrix", "name": "📋 All 14 Features Matrix"},
+    {"id": "templates", "name": "📑 Template Performance & Trends"},
     {"id": "telemetry", "name": "👁️ Opens, Clicks & Deliverability"},
     {"id": "replies", "name": "💬 Replies, Latency & Sequences"},
     {"id": "intelligence", "name": "🧠 AI Intent, Sentiment & Scoring"},
@@ -463,6 +465,212 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                 </div>
                 """
                 st.markdown(clean_html(card_markup), unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────────────────────
+    # TAB: TEMPLATE PERFORMANCE & DAY-BY-DAY CONVERSION TRENDS
+    # ─────────────────────────────────────────────────────────────
+    elif current_tab == "templates":
+        _render_feature_header(
+            "template_performance",
+            "Template-Wise Performance & Day-by-Day Conversion Trends",
+            "Analyze which email templates generate higher Open Rates, Click Rates, and Booking Conversions day-by-day across 20-25 lead batches.",
+            "📑",
+            "Template A/B Analytics",
+            "Live Multi-Template Telemetry",
+        )
+
+        tpl_analytics = compute_template_analytics(df_logs)
+        t_stats = tpl_analytics["template_stats"]
+        daily_df = tpl_analytics["daily_trends"]
+        best_open = tpl_analytics["best_open_rate"]
+        best_click = tpl_analytics["best_click_rate"]
+        best_booking = tpl_analytics["best_booking_rate"]
+
+        # 3 Top Winner KPI Cards
+        top_kpi_html = f"""
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0;">
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #2563EB; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">🏆 Best Open Rate</span>
+                    <span style="font-size: 18px;">👁️</span>
+                </div>
+                <div style="font-size: 24px; font-weight: 800; color: #1E293B; margin-top: 6px;">
+                    {f"{best_open['open_rate']}%" if best_open else "—"}
+                </div>
+                <div style="font-size: 13px; color: #2563EB; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {best_open['name'] if best_open else "No outreach sent yet"}
+                </div>
+                <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
+                    {f"{best_open['opened_count']} opened of {best_open['total_sent']} sent" if best_open else "Awaiting live opens"}
+                </div>
+            </div>
+
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #0D9488; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">🏆 Best Click Rate</span>
+                    <span style="font-size: 18px;">🖱️</span>
+                </div>
+                <div style="font-size: 24px; font-weight: 800; color: #1E293B; margin-top: 6px;">
+                    {f"{best_click['click_rate']}%" if best_click else "—"}
+                </div>
+                <div style="font-size: 13px; color: #0D9488; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {best_click['name'] if best_click else "No link clicks yet"}
+                </div>
+                <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
+                    {f"{best_click['clicked_count']} clicks of {best_click['total_sent']} sent" if best_click else "Awaiting live clicks"}
+                </div>
+            </div>
+
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #7C3AED; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">🏆 Best Booking Rate</span>
+                    <span style="font-size: 18px;">📅</span>
+                </div>
+                <div style="font-size: 24px; font-weight: 800; color: #1E293B; margin-top: 6px;">
+                    {f"{best_booking['booking_rate']}%" if best_booking else "—"}
+                </div>
+                <div style="font-size: 13px; color: #7C3AED; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {best_booking['name'] if best_booking else "No bookings yet"}
+                </div>
+                <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
+                    {f"{best_booking['booked_count']} consultations of {best_booking['total_sent']} sent" if best_booking else "Awaiting booking conversions"}
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(clean_html(top_kpi_html), unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Day-by-Day Progression Plotly Chart
+        st.markdown("##### 📈 Day-by-Day Rate Progression by Template")
+
+        tpl_names_for_filter = ["All Templates (Comparative)"] + [s["name"] for s in t_stats]
+        c_av_f1, c_av_f2 = st.columns([1.6, 1.4])
+        with c_av_f1:
+            chosen_av_tpl = st.selectbox(
+                "🎯 Select Template to Analyze (One-by-One or All):",
+                options=tpl_names_for_filter,
+                index=0,
+                key="analytics_view_tpl_dropdown",
+                help="Isolate an individual template to inspect its daily conversion curve, or choose 'All Templates' to view comparative trajectories."
+            )
+        with c_av_f2:
+            metric_mode = st.radio(
+                "Select Progression Metric to Track Day-by-Day:",
+                ["Open Rate (%)", "Click Rate (%)", "Booking Rate (%)"],
+                horizontal=True,
+                key="analytics_view_trend_metric"
+            )
+
+        metric_col_map = {
+            "Open Rate (%)": "open_rate",
+            "Click Rate (%)": "click_rate",
+            "Booking Rate (%)": "booking_rate",
+        }
+        chosen_metric_col = metric_col_map[metric_mode]
+
+        if chosen_av_tpl != "All Templates (Comparative)":
+            plot_daily_df = daily_df[daily_df["template_name"] == chosen_av_tpl] if not daily_df.empty else pd.DataFrame()
+            chart_av_title = f"Daily {metric_mode} for {chosen_av_tpl}"
+            single_s = next((s for s in t_stats if s["name"] == chosen_av_tpl), None)
+            if single_s:
+                st.markdown(
+                    f"""
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 16px; margin: 8px 0 14px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <strong style="color: #0F172A; font-size: 14px;">{single_s['name']}</strong>
+                            <div style="font-size: 12px; color: #64748B;">Category: {single_s['category']}</div>
+                        </div>
+                        <div style="display: flex; gap: 16px; font-size: 13px;">
+                            <span><strong>{single_s['total_sent']}</strong> sent</span>
+                            <span style="color: #2563EB;"><strong>{single_s['open_rate']}%</strong> open rate ({single_s['opened_count']} opens)</span>
+                            <span style="color: #0D9488;"><strong>{single_s['click_rate']}%</strong> click rate ({single_s['clicked_count']} clicks)</span>
+                            <span style="color: #7C3AED;"><strong>{single_s['booking_rate']}%</strong> booking rate ({single_s['booked_count']} booked)</span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+        else:
+            plot_daily_df = daily_df
+            chart_av_title = f"Daily {metric_mode} Trajectory Across Templates"
+
+        if not plot_daily_df.empty:
+            fig_trend = px.line(
+                plot_daily_df,
+                x="date",
+                y=chosen_metric_col,
+                color="template_name",
+                markers=True,
+                title=chart_av_title,
+                labels={"date": "Date", chosen_metric_col: metric_mode, "template_name": "Template"},
+            )
+            fig_trend.update_layout(
+                height=350,
+                hovermode="x unified",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                legend=dict(orientation="h", yanchor="bottom", y=-0.3),
+                margin=dict(l=20, r=20, t=40, b=20),
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        else:
+            if chosen_av_tpl != "All Templates (Comparative)":
+                st.info(f"ℹ️ No daily telemetry recorded yet for **{chosen_av_tpl}**. Send outreach batches using this template to visualize its daily conversion curve.")
+            else:
+                st.info("ℹ️ No day-by-day progression data recorded yet. Send outreach batches using different templates to visualize their daily trajectory.")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Template Comparison Table
+        st.markdown("##### 🏆 Template Performance Leaderboard")
+        tbl_data = []
+        for s in t_stats:
+            tbl_data.append({
+                "Template": s["name"],
+                "Category": s["category"],
+                "Total Assigned": s["total_leads"],
+                "Outreach Sent": s["total_sent"],
+                "Opens": s["opened_count"],
+                "Open Rate": f"{s['open_rate']}%",
+                "Clicks": s["clicked_count"],
+                "Click Rate": f"{s['click_rate']}%",
+                "Bookings": s["booked_count"],
+                "Booking Rate": f"{s['booking_rate']}%",
+                "Badge": s.get("badge", ""),
+            })
+        st.dataframe(pd.DataFrame(tbl_data), use_container_width=True, hide_index=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Comparative Bar Chart
+        if t_stats:
+            chart_df = pd.DataFrame([{
+                "Template": s["name"],
+                "Open Rate (%)": s["open_rate"],
+                "Click Rate (%)": s["click_rate"],
+                "Booking Rate (%)": s["booking_rate"],
+            } for s in t_stats if s["total_sent"] > 0])
+            
+            if not chart_df.empty:
+                melted = chart_df.melt(id_vars=["Template"], value_vars=["Open Rate (%)", "Click Rate (%)", "Booking Rate (%)"], var_name="Metric", value_name="Rate (%)")
+                fig_bar = px.bar(
+                    melted,
+                    x="Template",
+                    y="Rate (%)",
+                    color="Metric",
+                    barmode="group",
+                    title="Side-by-Side Conversion Comparison by Template",
+                    color_discrete_sequence=["#2563EB", "#0D9488", "#7C3AED"],
+                )
+                fig_bar.update_layout(
+                    height=320,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=20, r=20, t=40, b=20),
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
 
     # ─────────────────────────────────────────────────────────────
     # TAB 2: DELIVERABILITY, OPENS & CLICKS (FEATURES 1, 2, 4, 5)
