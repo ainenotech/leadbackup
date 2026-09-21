@@ -1466,12 +1466,14 @@ CAMPAIGN_LOG_COLUMNS = [
 def load_campaign_logs():
     db = SessionLocal()
     try:
-        from Backend.crud import sync_excel_and_outlook_to_db
-        sync_excel_and_outlook_to_db(db)
-    except Exception as e:
-        print(f"Sync note: {e}")
-    rows = db.query(CampaignLog).order_by(CampaignLog.created_at.desc()).all()
-    db.close()
+        try:
+            from Backend.crud import sync_excel_and_outlook_to_db
+            sync_excel_and_outlook_to_db(db)
+        except Exception as e:
+            print(f"Sync note: {e}")
+        rows = db.query(CampaignLog).order_by(CampaignLog.created_at.desc()).all()
+    finally:
+        db.close()
     return [
         {
             "id": r.id,

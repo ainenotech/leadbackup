@@ -190,6 +190,7 @@ def is_message_already_processed(db, message_id: str, sender_email: str = "") ->
         row = db.execute(text("SELECT status FROM processed_replies WHERE message_id = :mid LIMIT 1"), {"mid": message_id}).fetchone()
         if not row:
             return False
+        st = str(row[0] or "").strip()
         if st in [
             "historical_before_send_skipped",
             "no_outreach_sent_skipped",
@@ -200,8 +201,10 @@ def is_message_already_processed(db, message_id: str, sender_email: str = "") ->
             "system_notice_skipped",
         ]:
             return True
-        # If it was previously falsely skipped as internal staff/non-campaign, only re-evaluate if lead has actually been sent an outreach email
-        if st in ["internal_staff_skipped", "non_campaign_skipped"] and sender_email:
+        # If it was previously skipped as internal staff/non-campaign, only re-evaluate if lead has actually been sent an outreach email
+        if st in ["internal_staff_skipped", "non_campaign_skipped"]:
+            if not sender_email:
+                return True
             from Backend.models import CampaignLog
             sent_lead = (
                 db.query(CampaignLog)
@@ -210,6 +213,7 @@ def is_message_already_processed(db, message_id: str, sender_email: str = "") ->
             )
             if sent_lead:
                 return False
+            return True
         return True
     except Exception:
         try:
@@ -226,23 +230,22 @@ def record_message_processed(db, message_id: str, sender_email: str = "", subjec
     try:
         import uuid
         from sqlalchemy import text
-        existing = db.execute(text("SELECT 1 FROM processed_replies WHERE message_id = :mid LIMIT 1"), {"mid": message_id}).fetchone()
-        if not existing:
-            db.execute(
-                text(
-                    "INSERT INTO processed_replies (id, message_id, sender_email, subject, status) "
-                    "VALUES (:id, :mid, :sender, :subj, :status)"
-                ),
-                {
-                    "id": f"pr_{uuid.uuid4().hex[:12]}",
-                    "mid": message_id,
-                    "sender": sender_email or "",
-                    "subj": subject or "",
-                    "status": status,
-                }
-            )
-            db.commit()
-    except Exception as e:
+        db.execute(
+            text(
+                "INSERT INTO processed_replies (id, message_id, sender_email, subject, status) "
+                "VALUES (:id, :mid, :sender, :subj, :status) "
+                "ON CONFLICT (message_id) DO UPDATE SET status = :status"
+            ),
+            {
+                "id": f"pr_{uuid.uuid4().hex[:12]}",
+                "mid": message_id,
+                "sender": sender_email or "",
+                "subj": subject or "",
+                "status": status,
+            }
+        )
+        db.commit()
+    except Exception:
         try:
             db.rollback()
         except Exception:
@@ -369,7 +372,8 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
         # Track emails processed in this pass
         processed_emails_this_run = set()
         OLD_SUPPRESSED_BOOKINGS = {
-            "dhruv mali", "mit patel", "het suthar", "patel", "mit dharmeshbhai patel"
+            "dhruv mali", "mit patel", "het suthar", "patel", "mit dharmeshbhai patel",
+            "hardini dalwadi", "hardini", "ajay", "ajay patel"
         }
 
         for msg in messages:
@@ -403,8 +407,31 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
             booking_info = parse_microsoft_booking_notification(subject, body_content)
             if booking_info:
                 client_name = booking_info["name"].strip()
-                # Permanently suppress historical old bookings & already read messages
-                if client_name.lower() in OLD_SUPPRESSED_BOOKINGS or msg.get("isRead", False):
+
+                # Look up if this booking belongs to an existing campaign lead
+                b_lead = (
+                    db.query(CampaignLog)
+                    .filter(CampaignLog.name.ilike(client_name))
+                    .first()
+                )
+                if not b_lead:
+                    for word in client_name.split():
+                        if len(word) > 2:
+                            b_lead = (
+                                db.query(CampaignLog)
+                                .filter(CampaignLog.name.ilike(f"%{word}%"))
+                                .first()
+                            )
+                            if b_lead:
+                                break
+
+                # Never invent synthetic IDs. If not an existing campaign lead, or suppressed, skip it.
+                if (
+                    client_name.lower() in OLD_SUPPRESSED_BOOKINGS
+                    or msg.get("isRead", False)
+                    or not b_lead
+                    or "client.nenotechnology.com" in getattr(b_lead, "email", "").lower()
+                ):
                     results["skipped_count"] += 1
                     _mark_message_read(msg_id, db=db, sender_email=sender_addr, subject=subject, status="old_booking_suppressed")
                     continue
@@ -412,53 +439,23 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 client_service = booking_info["service"]
                 client_slot = booking_info["slot"]
 
-                # Check if this booking is already logged
-                slug = re.sub(r"[^a-zA-Z0-9]", "", client_name.lower())
-                client_email = f"{slug}@client.nenotechnology.com"
-
                 try:
+                    b_lead.booking_status = "meeting_scheduled"
+                    b_lead.status = "meeting_scheduled"
+                    b_lead.confirmed_slot = client_slot
+                    b_lead.form_filled_at = datetime.now(timezone.utc)
+                    db.commit()
+
                     log_booking_to_excel(
-                        email=client_email,
-                        name=client_name,
-                        company="Client",
+                        email=b_lead.email,
+                        name=b_lead.name or client_name,
+                        company=b_lead.company or "Client",
                         confirmed_slot=client_slot,
                         meet_link=BOOKING_URL,
                     )
-                    # Persist into DB
-                    b_lead = (
-                        db.query(CampaignLog)
-                        .filter(CampaignLog.name.ilike(client_name))
-                        .first()
-                    )
-                    if b_lead:
-                        b_lead.booking_status = "meeting_scheduled"
-                        b_lead.status = "meeting_scheduled"
-                        b_lead.confirmed_slot = client_slot
-                        b_lead.form_filled_at = datetime.now(timezone.utc)
-                        db.commit()
-                    else:
-                        import uuid
-                        from utils.token import generate_token
-                        new_booking_entry = CampaignLog(
-                            campaign_name="microsoft_bookings",
-                            lead_id=f"bk_{uuid.uuid4().hex[:8]}",
-                            email=client_email,
-                            name=client_name,
-                            company="Client Submission",
-                            token=generate_token(),
-                            tracking_link=BOOKING_URL,
-                            subject=subject,
-                            status="meeting_scheduled",
-                            booking_status="meeting_scheduled",
-                            confirmed_slot=client_slot,
-                            form_filled_at=datetime.now(timezone.utc),
-                        )
-                        db.add(new_booking_entry)
-                        db.commit()
-
                     results["bookings_synced"] += 1
-                    _mark_message_read(msg_id, db=db, sender_email=client_email, subject=subject, status="booking_synced")
-                    print(f"[Bookings] Synced appointment for '{client_name}' ({client_slot}).")
+                    _mark_message_read(msg_id, db=db, sender_email=b_lead.email, subject=subject, status="booking_synced")
+                    print(f"[Bookings] Synced appointment for verified campaign lead '{b_lead.name}' <{b_lead.email}> ({client_slot}).")
                 except Exception as ex:
                     print(f"[Warning] Error logging booking for {client_name}: {ex}")
 

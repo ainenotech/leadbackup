@@ -19,7 +19,8 @@ def _init_engine(url: str):
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
     try:
-        eng = create_engine(url, pool_pre_ping=True)
+        from sqlalchemy.pool import NullPool
+        eng = create_engine(url, poolclass=NullPool, pool_pre_ping=True)
         with eng.connect() as conn:
             pass
         return eng
