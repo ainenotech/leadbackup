@@ -96,3 +96,18 @@ class KnowledgeDocument(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class ProcessedReply(Base):
+    """Tracks processed or suppressed Microsoft Outlook/Bookings message IDs to
+    prevent duplicate responses and avoid re-ingestion of historical notifications.
+    """
+
+    __tablename__ = "processed_replies"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    message_id = Column(String, unique=True, index=True, nullable=False)
+    sender_email = Column(String, nullable=True)
+    subject = Column(String, nullable=True)
+    status = Column(String, default="processed")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+

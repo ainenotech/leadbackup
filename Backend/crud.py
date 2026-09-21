@@ -657,7 +657,7 @@ def sync_excel_and_outlook_to_db(db: Session) -> dict:
             if not df_booked.empty and "email" in df_booked.columns:
                 for _, row in df_booked.iterrows():
                     email_raw = str(row.get("email") or "").strip()
-                    if not email_raw or "@" not in email_raw:
+                    if not email_raw or "@" not in email_raw or "client.nenotechnology.com" in email_raw.lower():
                         continue
                     email_clean = email_raw.lower()
                     entry = (
