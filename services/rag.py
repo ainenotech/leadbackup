@@ -169,6 +169,80 @@ def list_documents(db: Session) -> List[dict]:
     return list(grouped.values())
 
 
+def extract_text_from_file(file_or_path, filename: str) -> str:
+    """Extracts raw text content from a file path or file-like buffer (PDF, Markdown, TXT)."""
+    import io
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == ".pdf":
+        from pypdf import PdfReader
+        if isinstance(file_or_path, (str, os.PathLike)):
+            reader = PdfReader(file_or_path)
+        elif hasattr(file_or_path, "read"):
+            reader = PdfReader(file_or_path)
+        elif isinstance(file_or_path, bytes):
+            reader = PdfReader(io.BytesIO(file_or_path))
+        else:
+            raise ValueError(f"Unsupported file input type: {type(file_or_path)}")
+
+        pages_text = []
+        for p in reader.pages:
+            t = p.extract_text()
+            if t:
+                pages_text.append(t.strip())
+        return "\n\n".join(pages_text)
+    else:
+        if isinstance(file_or_path, (str, os.PathLike)) and os.path.exists(file_or_path):
+            with open(file_or_path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        elif hasattr(file_or_path, "read"):
+            data = file_or_path.read()
+            if isinstance(data, bytes):
+                return data.decode("utf-8", errors="replace")
+            return str(data)
+        elif isinstance(file_or_path, bytes):
+            return file_or_path.decode("utf-8", errors="replace")
+        elif isinstance(file_or_path, str):
+            return file_or_path
+        return ""
+
+
+def ingest_file_content(
+    db: Session,
+    filename: str,
+    file_bytes_or_content: Any,
+    title: Optional[str] = None,
+    category: Optional[str] = None,
+) -> int:
+    """Extracts text from a file (PDF/MD/TXT), chunks, embeds and saves to KnowledgeDocument.
+    Replaces any existing document with the same title to avoid duplicate chunks.
+    """
+    text = extract_text_from_file(file_bytes_or_content, filename)
+    if not text or not text.strip():
+        return 0
+
+    doc_title = title or os.path.splitext(filename)[0].replace("_", " ").replace("-", " ").title()
+    if filename.lower().endswith(".pdf") and not doc_title.endswith("(PDF)"):
+        doc_title = f"{doc_title} (PDF)"
+
+    # Remove existing chunks for this title to avoid duplicate accumulation
+    delete_document(db, doc_title)
+
+    cat = category or ("PDF Knowledge Base" if filename.lower().endswith(".pdf") else "Documentation")
+    return add_document(db, title=doc_title, content=text, category=cat)
+
+
+def get_knowledge_base_summary(db: Session) -> dict:
+    """Returns total chunk count, list of documents, and embedding configuration."""
+    docs = list_documents(db)
+    total_chunks = db.query(KnowledgeDocument).count()
+    return {
+        "total_chunks": total_chunks,
+        "total_documents": len(docs),
+        "documents": docs,
+        "embedding_model": EMBEDDING_MODEL,
+    }
+
+
 def delete_document(db: Session, title: str) -> int:
     """Deletes every chunk stored under `title`. Returns the number of
     chunks removed."""
