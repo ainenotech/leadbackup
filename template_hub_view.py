@@ -1,5 +1,6 @@
 import html
 import os
+import textwrap
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -13,6 +14,9 @@ from services.template_service import (
     load_all_templates,
     get_template_by_id,
     save_custom_template,
+    delete_custom_template,
+    is_template_customized,
+    interpolate_lead_placeholders,
     render_template,
     compute_template_analytics,
 )
@@ -22,22 +26,202 @@ from utils.token import generate_token
 
 
 def render_template_hub(df_logs: pd.DataFrame) -> None:
-    """Renders the comprehensive Template Review & Hub page."""
+    """Renders the executive Email Template Studio & Performance Hub."""
     templates = load_all_templates()
     stats = compute_template_analytics(df_logs)
 
-    # Top Executive Banner
+    # Scoped Premium CSS for Template Studio
     st.markdown(
         """
-        <div class="top-header-banner" style="margin-bottom: 20px;">
+        <style>
+        .top-tpl-banner {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 22px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .top-tpl-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #0F172A;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: -0.02em;
+        }
+        .top-tpl-desc {
+            font-size: 13.5px;
+            color: #64748B;
+            margin: 4px 0 0 0;
+            line-height: 1.45;
+        }
+        .tpl-badge-pill {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            letter-spacing: 0.02em;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .tpl-card-box {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .tpl-card-box:hover {
+            border-color: #CBD5E1;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        }
+        .tpl-card-box.is-active {
+            background: #F8FAFC;
+            border: 1.5px solid #2563EB;
+            border-left: 4px solid #2563EB;
+            box-shadow: 0 4px 14px -2px rgba(37, 99, 235, 0.12);
+        }
+        .tpl-meta-tag {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: #475569;
+            background: #F1F5F9;
+            padding: 2px 7px;
+            border-radius: 6px;
+        }
+        .email-window-header {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-bottom: 1px solid #E2E8F0;
+            border-radius: 10px 10px 0 0;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .email-dot-group {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        .email-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .email-subject-box {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-top: none;
+            padding: 14px 18px;
+            margin-bottom: 14px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+        }
+        .email-preview-frame {
+            background: #F1F5F9;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            padding: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+        /* Step Cards for Batch Outreach */
+        .batch-step-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 20px 22px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            transition: all 0.2s ease;
+        }
+        .batch-step-card:hover {
+            border-color: #CBD5E1;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .batch-step-num {
+            font-size: 10px;
+            font-weight: 700;
+            background: #EFF6FF;
+            color: #1D4ED8;
+            padding: 3px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            border: 1px solid #DBEAFE;
+            display: inline-block;
+        }
+        .batch-step-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #0F172A;
+            margin-top: 6px;
+            margin-bottom: 3px;
+        }
+        .batch-step-desc {
+            font-size: 12.5px;
+            color: #64748B;
+            line-height: 1.4;
+            margin-bottom: 12px;
+        }
+        .batch-stat-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+        }
+        .analytics-subbanner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Top Executive Banner with clean metrics
+    st.markdown(
+        f"""
+        <div class="top-tpl-banner">
             <div>
-                <h1 class="top-header-title">
-                    📑 Email Template Review &amp; A/B Performance Hub
-                    <span class="badge badge-pending" style="font-size: 11px; font-weight: 600;">10–15 Template Ready</span>
+                <h1 class="top-tpl-title">
+                    ✉️ Email Template Studio
                 </h1>
-                <p class="top-header-desc">
-                    Review and preview your responsive HTML email templates, pair 20–25 lead sheets with designated templates, and analyze daily open, click, and booking rates.
+                <p class="top-tpl-desc">
+                    Review and customize responsive executive HTML templates with real-time lead simulation, copy outreach copy, and pair batch outreach cohorts.
                 </p>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <span class="tpl-badge-pill" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">
+                    ⚡ {len(templates)} Templates Ready
+                </span>
+                <span class="tpl-badge-pill" style="background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0;">
+                    ✓ Responsive HTML
+                </span>
             </div>
         </div>
         """,
@@ -45,16 +229,13 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
     )
 
     tab_gallery, tab_analytics, tab_batch = st.tabs([
-        f"👁️ Template Gallery & Live Inspector ({len(templates)})",
-        "📈 Template-Wise Analytics & Daily Trends",
+        f"🎨 Template Studio & Live Preview ({len(templates)})",
+        "📈 Performance Analytics & Daily Trends",
         "📤 Sheet-to-Template Batch Outreach (20–25 Leads)",
     ])
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 1: TEMPLATE GALLERY & LIVE INSPECTOR
-    # ═══════════════════════════════════════════════════════════════
-    # ═══════════════════════════════════════════════════════════════
-    # TAB 1: TEMPLATE GALLERY & LIVE INSPECTOR
+    # TAB 1: TEMPLATE STUDIO & LIVE PREVIEW
     # ═══════════════════════════════════════════════════════════════
     with tab_gallery:
         if "gallery_tpl_select" not in st.session_state:
@@ -63,99 +244,131 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
         selected_id = st.session_state["gallery_tpl_select"]
         current_tpl = get_template_by_id(selected_id) or templates[0]
 
-        col_left, col_right = st.columns([1.15, 1.85], gap="large")
+        # Master-Detail Layout: Left Directory (38%), Right Studio (62%)
+        col_left, col_right = st.columns([1.1, 1.9], gap="large")
 
+        # ── LEFT COLUMN: Clean Template Directory ──
         with col_left:
-            st.markdown("### 📦 Choose Template (All Templates Box Sections)")
             st.markdown(
-                "<p style='font-size: 13px; color: #64748B; margin-top: -8px;'>Click any template box below to load and inspect its full content in the live preview.</p>",
+                """
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 15px; font-weight: 700; color: #0F172A;">📑 Template Directory</div>
+                    <span style="font-size: 11.5px; color: #64748B; font-weight: 500;">Click to preview</span>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
 
-            # Quick jump selector (in sync with box clicks)
-            tpl_id_list = [t["id"] for t in templates]
-            current_index = tpl_id_list.index(selected_id) if selected_id in tpl_id_list else 0
-            
-            chosen_dropdown = st.selectbox(
-                "Quick Selector",
-                options=tpl_id_list,
-                index=current_index,
-                format_func=lambda tid: next((f"{t['name']}" for t in templates if t["id"] == tid), tid),
-                key="gallery_quick_dropdown",
-                label_visibility="collapsed",
-            )
-            if chosen_dropdown != selected_id:
-                st.session_state["gallery_tpl_select"] = chosen_dropdown
-                st.rerun()
-
-            # Render ALL 7 Templates as distinct interactive Box Sections
-            for idx, t in enumerate(templates, start=1):
-                is_active = (t["id"] == selected_id)
-                accent = t.get("accent_color", "#1A5CFF")
-                badge_text = t.get("badge", "Active")
-
-                # Active vs inactive styling
-                if is_active:
-                    box_border = f"2px solid {accent}"
-                    box_bg = "#F0F7FF"
-                    box_shadow = f"0 4px 14px -2px rgba(26, 92, 255, 0.2)"
-                    active_badge = f"""<span style="background: {accent}; color: #FFFFFF; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 12px; letter-spacing: 0.04em;">ACTIVE PREVIEW</span>"""
-                else:
-                    box_border = "1px solid #E2E8F0"
-                    box_bg = "#FFFFFF"
-                    box_shadow = "0 1px 3px rgba(0,0,0,0.04)"
-                    active_badge = f"""<span style="background: #F1F5F9; color: #475569; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 10px;">{badge_text}</span>"""
-
-                # Entire card is rendered inside a button-like container
-                # so clicking loads the preview immediately
-                card_label = f"👁️ {t['name']}" if not is_active else f"✓ {t['name']}"
-                if st.button(
-                    card_label,
-                    key=f"btn_card_{t['id']}",
-                    use_container_width=True,
-                    type="primary" if is_active else "secondary",
-                    disabled=is_active,
-                ):
-                    st.session_state["gallery_tpl_select"] = t["id"]
-                    st.rerun()
-
-                st.markdown(
-                    f"""
-                    <div style="background: {box_bg}; border: {box_border}; border-left: 5px solid {accent}; border-radius: 10px; padding: 14px 16px; margin-bottom: 4px; margin-top: -10px; box-shadow: {box_shadow}; transition: all 0.2s ease;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
-                            <div style="font-weight: 700; font-size: 14.5px; color: #0F172A; line-height: 1.3;">
-                                {t['name']}
-                            </div>
-                            <div>{active_badge}</div>
-                        </div>
-                        <div style="font-size: 11.5px; color: #64748B; margin-bottom: 6px;">
-                            <strong style="color: #475569;">Category:</strong> {t.get('category', 'Outreach')}
-                        </div>
-                        <div style="font-size: 12.5px; color: #334155; line-height: 1.45; margin-bottom: 8px;">
-                            {t.get('description', '')}
-                        </div>
-                        <div style="font-size: 11.5px; background: rgba(255,255,255,0.8); border: 1px dashed #CBD5E1; padding: 6px 8px; border-radius: 6px; color: #334155; word-break: break-all;">
-                            <strong>Subject:</strong> <code>{html.escape(t.get('subject', ''))}</code>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+            # Quick search & category filter in one sleek row
+            f_col1, f_col2 = st.columns([1.3, 1.1])
+            with f_col1:
+                search_kw = st.text_input(
+                    "Search",
+                    placeholder="🔍 Filter templates...",
+                    key="tpl_search_box",
+                    label_visibility="collapsed",
+                ).strip().lower()
+            with f_col2:
+                all_cats = ["All Categories"] + sorted(list(set(t.get("category", "General") for t in templates)))
+                cat_filter = st.selectbox(
+                    "Filter Category",
+                    options=all_cats,
+                    key="tpl_cat_filter_box",
+                    label_visibility="collapsed",
                 )
 
-                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+            # Filter templates list
+            filtered_templates = []
+            for t in templates:
+                matches_cat = (cat_filter == "All Categories") or (t.get("category") == cat_filter)
+                matches_kw = (
+                    not search_kw
+                    or search_kw in t.get("name", "").lower()
+                    or search_kw in t.get("description", "").lower()
+                    or search_kw in t.get("subject", "").lower()
+                    or search_kw in t.get("category", "").lower()
+                )
+                if matches_cat and matches_kw:
+                    filtered_templates.append(t)
+
+            if not filtered_templates:
+                st.info("No templates match your filter criteria.")
+            else:
+                for idx, t in enumerate(filtered_templates, start=1):
+                    is_active = (t["id"] == selected_id)
+                    accent = t.get("accent_color", "#2563EB")
+                    cat_name = t.get("category", "General")
+                    subj_snippet = t.get("subject", "")
+
+                    is_custom = is_template_customized(t["id"])
+                    custom_tag = '<span style="background: #FEF3C7; color: #92400E; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; border: 1px solid #FDE68A;">Customized</span>' if is_custom else ''
+
+                    esc_name = html.escape(t["name"])
+                    esc_cat = html.escape(cat_name)
+                    esc_desc = html.escape(t.get("description", ""))
+
+                    if is_active:
+                        # Active Card: Prominent, highlighted, clean, no redundant button needed
+                        active_html = (
+                            f'<div class="tpl-card-box is-active" style="border-left-color: {accent};">'
+                            f'<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">'
+                            f'<div style="font-weight: 700; font-size: 14px; color: #0F172A; line-height: 1.3;">{esc_name}</div>'
+                            f'<div style="display: flex; gap: 4px; align-items: center;">'
+                            f'{custom_tag}'
+                            f'<span style="background: {accent}; color: #FFFFFF; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 9999px; letter-spacing: 0.04em; white-space: nowrap;">● ACTIVE</span>'
+                            f'</div>'
+                            f'</div>'
+                            f'<div style="margin-bottom: 6px;"><span class="tpl-meta-tag">{esc_cat}</span></div>'
+                            f'<div style="font-size: 12px; color: #475569; line-height: 1.45; margin-bottom: 8px;">{esc_desc}</div>'
+                            f'<div style="font-size: 11px; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 5px 8px; border-radius: 6px; color: #334155; word-break: break-all;">'
+                            f'<strong style="color: #64748B;">Subject:</strong> <code>{html.escape(subj_snippet)}</code>'
+                            f'</div>'
+                            f'</div>'
+                        )
+                        st.markdown(active_html, unsafe_allow_html=True)
+                    else:
+                        # Inactive Card: Clean card with a single integrated action button
+                        inactive_html = (
+                            f'<div class="tpl-card-box">'
+                            f'<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">'
+                            f'<div style="font-weight: 600; font-size: 13.5px; color: #1E293B; line-height: 1.3;">{esc_name}</div>'
+                            f'{custom_tag}'
+                            f'</div>'
+                            f'<div style="margin-bottom: 6px;"><span class="tpl-meta-tag">{esc_cat}</span></div>'
+                            f'<div style="font-size: 12px; color: #64748B; line-height: 1.4; margin-bottom: 8px;">{esc_desc}</div>'
+                            f'<div style="font-size: 11px; background: #F8FAFC; border: 1px solid #E2E8F0; padding: 4px 7px; border-radius: 6px; color: #475569; word-break: break-all; margin-bottom: 8px;">'
+                            f'<strong style="color: #64748B;">Subject:</strong> <code>{html.escape(subj_snippet)}</code>'
+                            f'</div>'
+                            f'</div>'
+                        )
+                        st.markdown(inactive_html, unsafe_allow_html=True)
+                        # Single clean action button below card
+                        if st.button(
+                            f"Preview {t['name'].split(':')[0]} →",
+                            key=f"select_tpl_{t['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["gallery_tpl_select"] = t["id"]
+                            st.rerun()
+
+                    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
 
             # Add Custom Template Expander
-            with st.expander("➕ Add New Custom Template (Expand to 10-15+)", expanded=False):
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+            with st.expander("➕ Create New Custom Template", expanded=False):
                 with st.form("form_add_custom_template"):
-                    st.markdown("##### Create a Custom Outreach Template")
-                    new_id = st.text_input("Template Unique ID", value=f"tpl_custom_{uuid.uuid4().hex[:6]}")
-                    new_name = st.text_input("Template Name", placeholder="e.g. Template 8: Short Founder Video Intro")
-                    new_cat = st.selectbox("Category", ["Executive & Velocity", "Voice & Inbound AI", "Technical Capabilities", "Operational Automation", "Team Augmentation", "Software Modernization", "Founder & Advisory", "Custom"])
+                    st.markdown("##### New Outreach Template")
+                    new_id = st.text_input("Unique ID", value=f"tpl_custom_{uuid.uuid4().hex[:6]}")
+                    new_name = st.text_input("Template Name", placeholder="e.g. Template 8: Executive Video Audit")
+                    new_cat = st.selectbox(
+                        "Category",
+                        ["Executive & Velocity", "Voice & Inbound AI", "Technical Capabilities", "Operational Automation", "Team Augmentation", "Software Modernization", "Founder & Advisory", "Custom"],
+                    )
                     new_subj = st.text_input("Subject Line Pattern", value="Quick question for {{Company}}")
-                    new_desc = st.text_area("Description / Use Case", value="Custom tailored outreach template for specialized lead batches.")
-                    new_html = st.text_area("HTML Email Template Code", height=250, placeholder="Paste inline-styled HTML code here...")
+                    new_desc = st.text_area("Description / Value Proposition", value="Custom tailored outreach template for specialized lead batches.", height=80)
+                    new_html = st.text_area("HTML Email Code", height=200, placeholder="Paste inline-styled HTML code here...")
                     
-                    submitted = st.form_submit_button("💾 Save Template to Library", type="primary")
+                    submitted = st.form_submit_button("💾 Save Template to Library", type="primary", use_container_width=True)
                     if submitted:
                         if new_id and new_name and new_html:
                             saved = save_custom_template({
@@ -170,15 +383,18 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                             })
                             if saved:
                                 st.session_state["gallery_tpl_select"] = new_id.strip()
-                                st.success(f"Template '{new_name}' successfully added to your library!")
+                                st.toast(f"✅ Template '{new_name}' saved to library!", icon="💾")
                                 st.rerun()
                             else:
                                 st.error("Could not save template to disk.")
                         else:
-                            st.warning("Please fill in Template ID, Name, and HTML content.")
+                            st.warning("Please fill in ID, Name, and HTML content.")
 
+        # ── RIGHT COLUMN: Live Inspector & Email Preview ──
         with col_right:
-            st.markdown(f"### 🖥️ Live Preview: {current_tpl['name']}")
+            sim_name = "Alex"
+            sim_company = "Acme Health"
+            sim_pain = "manual operational overhead"
 
             # Render Interpolated HTML
             booking_url = os.getenv(
@@ -187,62 +403,212 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
             )
             interp_subject, interp_html = render_template(
                 selected_id,
-                lead_name="there",
-                company="Your Company",
-                pain_point="manual operational overhead",
+                lead_name=sim_name,
+                company=sim_company,
+                pain_point=sim_pain,
                 booking_url=booking_url,
             )
 
-            # Subject Line Banner
+            is_cur_custom = is_template_customized(current_tpl["id"])
+            custom_pill = '<span style="background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; border: 1px solid #FDE68A;">Customized</span>' if is_cur_custom else ''
+
+            # Simulated Email Client Window Chrome with Proper Subject Line Card
             st.markdown(
-                f"""
-                <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; letter-spacing: 0.05em;">Subject Preview</div>
-                        <div style="font-size: 15.5px; font-weight: 600; color: #0F172A; margin-top: 2px;">{html.escape(interp_subject)}</div>
+                textwrap.dedent(f"""
+                <div class="email-window-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="email-dot-group">
+                            <span class="email-dot" style="background: #FF5F56;"></span>
+                            <span class="email-dot" style="background: #FFBD2E;"></span>
+                            <span class="email-dot" style="background: #27C93F;"></span>
+                        </div>
+                        <span style="font-size: 13px; font-weight: 600; color: #1E293B;">
+                            Live Preview: {current_tpl['name']}
+                        </span>
                     </div>
-                    <span style="background: #F1F5F9; color: #475569; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px;">{current_tpl.get('category', 'General')}</span>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        {custom_pill}
+                        <span class="tpl-meta-tag">{current_tpl.get('category', 'General')}</span>
+                    </div>
                 </div>
-                """,
+                <div class="email-subject-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; letter-spacing: 0.05em;">
+                            Subject Line
+                        </div>
+                        <div style="font-size: 11px; color: #64748B;">
+                            Pattern: <code style="color: #0284C7; background: #F0F9FF; padding: 2px 6px; border-radius: 4px; font-size: 11px; border: 1px solid #BAE6FD;">{html.escape(current_tpl.get('subject', ''))}</code>
+                        </div>
+                    </div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 10px;">
+                        {html.escape(interp_subject)}
+                    </div>
+                    <div style="display: flex; gap: 20px; font-size: 12.5px; color: #475569; border-top: 1px solid #F1F5F9; padding-top: 8px; flex-wrap: wrap;">
+                        <div><strong style="color: #334155;">From:</strong> Tirth Patel &lt;support@nenotechnology.com&gt;</div>
+                        <div><strong style="color: #334155;">To:</strong> Alex &lt;contact@acmehealth.com.au&gt;</div>
+                    </div>
+                </div>
+                """).strip(),
                 unsafe_allow_html=True,
             )
 
-            # Clean preview container (no device frame toggles)
-            st.markdown(
-                """
-                <div style="background: #F8FAFC; border-radius: 12px; padding: 12px; border: 1px solid #CBD5E1;">
-                """,
-                unsafe_allow_html=True,
-            )
-            components.html(interp_html, height=760, scrolling=True)
+            # ── SUBJECT LINE & TITLE CRUD CONTROLS ──
+            with st.expander("✏️ Edit Subject Line & Template Title (Dynamic Placeholder CRUD)", expanded=False):
+                st.markdown(
+                    """
+                    <div style="font-size: 13px; color: #475569; margin-bottom: 10px; line-height: 1.45;">
+                        Customize this template's <strong>Title</strong> and <strong>Subject Line</strong>. Change the words or phrasing as you wish, while keeping dynamic tags like <code>{{Company}}</code> so lead and business names carry over automatically into every personalized email.
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                crud_col_title, crud_col_subj = st.columns([1, 1.2])
+                with crud_col_title:
+                    edit_name_val = st.text_input(
+                        "Template Title / Name",
+                        value=current_tpl.get("name", ""),
+                        key=f"crud_name_input_{current_tpl['id']}",
+                        help="Display name in the sidebar, logs, and batch dispatch.",
+                    )
+                with crud_col_subj:
+                    edit_subj_val = st.text_input(
+                        "Subject Line Pattern",
+                        value=current_tpl.get("subject", "Quick idea for {{Company}}"),
+                        key=f"crud_subj_input_{current_tpl['id']}",
+                        help="Dynamic pattern using {{Company}} or {{FirstName}}.",
+                    )
+
+                # Visual guide for automatic names
+                st.markdown(
+                    """
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 13px; margin: 4px 0 10px 0; font-size: 12px; color: #334155; line-height: 1.5;">
+                        <strong style="color: #0F172A;">💡 How Automatic Names Carry Over:</strong><br>
+                        • <code>{{Company}}</code> &rarr; Automatically inserts each prospect's company name (e.g., <em>Acme Health</em>)<br>
+                        • <code>{{FirstName}}</code> &rarr; Automatically inserts each prospect's first name (e.g., <em>Alex</em>)<br>
+                        • <code>{{Pain}}</code> &rarr; Automatically inserts the prospect's operational pain point
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # Real-time preview of the updated subject line
+                live_rendered_subject = interpolate_lead_placeholders(
+                    edit_subj_val,
+                    first_name=sim_name,
+                    company_name=sim_company,
+                    pain_text=sim_pain,
+                )
+                st.markdown(
+                    f"""
+                    <div style="background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;">
+                        <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #1D4ED8; letter-spacing: 0.04em; margin-bottom: 2px;">
+                            Live Render Preview for {sim_company}:
+                        </div>
+                        <div style="font-size: 14.5px; font-weight: 700; color: #1E3A8A;">
+                            "{html.escape(live_rendered_subject)}"
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # CRUD Action Buttons
+                c_btn1, c_btn2, c_btn3 = st.columns([1.8, 1.6, 1.6])
+                with c_btn1:
+                    if st.button("💾 Save Subject & Title", type="primary", key=f"btn_save_crud_{current_tpl['id']}", use_container_width=True):
+                        if not edit_name_val.strip():
+                            st.warning("Please provide a Template Title.")
+                        elif not edit_subj_val.strip():
+                            st.warning("Please provide a Subject Line pattern.")
+                        else:
+                            updated_tpl = dict(current_tpl)
+                            updated_tpl["name"] = edit_name_val.strip()
+                            updated_tpl["subject"] = edit_subj_val.strip()
+                            save_custom_template(updated_tpl)
+                            st.toast(f"✅ Saved! Subject updated to: '{edit_subj_val.strip()}'", icon="💾")
+                            st.rerun()
+
+                with c_btn2:
+                    if is_cur_custom:
+                        if st.button("↺ Reset to Built-in", key=f"btn_reset_crud_{current_tpl['id']}", use_container_width=True):
+                            delete_custom_template(current_tpl["id"])
+                            st.toast("↺ Template reset to built-in default.", icon="↺")
+                            st.rerun()
+
+                with c_btn3:
+                    if current_tpl.get("badge") == "Custom Added":
+                        if st.button("🗑️ Delete Template", key=f"btn_del_crud_{current_tpl['id']}", use_container_width=True):
+                            delete_custom_template(current_tpl["id"])
+                            st.session_state["gallery_tpl_select"] = templates[0]["id"]
+                            st.toast("🗑️ Template permanently deleted.", icon="🗑️")
+                            st.rerun()
+
+            # Quick Copy Subject Line bar
+            with st.expander("📋 Copy Subject Line or HTML Source", expanded=False):
+                st.caption("Copy this ready-to-send personalized subject line:")
+                st.code(interp_subject, language="")
+
+            # Responsive Email Preview Frame
+            st.markdown('<div class="email-preview-frame">', unsafe_allow_html=True)
+            components.html(interp_html, height=740, scrolling=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            with st.expander("📄 Inspect & Edit Raw Template HTML Code", expanded=False):
-                st.markdown("<p style='font-size: 13px; color: #64748B; margin-bottom: 8px;'>Review and edit the HTML source code for this template below. Click <strong>Save Template Changes</strong> to apply and persist your edits.</p>", unsafe_allow_html=True)
+            # Inspect & Edit HTML Code Drawer
+            with st.expander("🛠️ Inspect & Customize Template HTML Code", expanded=False):
+                st.markdown(
+                    "<p style='font-size: 13px; color: #64748B; margin-bottom: 8px;'>Modify the template layout, copy, or placeholders (<code>{{FirstName}}</code>, <code>{{Company}}</code>, <code>{{Pain}}</code>, <code>LOGO_URL</code>, <code>BOOKING_LINK</code>). Changes are saved to disk.</p>",
+                    unsafe_allow_html=True,
+                )
                 raw_code = current_tpl.get("html_content", interp_html)
                 edited_html = st.text_area(
                     "HTML Template Source Code",
                     value=raw_code,
-                    height=360,
+                    height=320,
                     key=f"edit_raw_html_{current_tpl['id']}",
-                    help="Modify HTML structure, styling, or placeholders ({{FirstName}}, {{Company}}, {{Pain}}, LOGO_URL, BOOKING_LINK).",
+                    label_visibility="collapsed",
                 )
-                btn_save_col1, btn_save_col2 = st.columns([1.5, 4])
+                btn_save_col1, btn_save_col2 = st.columns([1.8, 1.8])
                 with btn_save_col1:
-                    if st.button("💾 Save Template Changes", type="primary", key=f"btn_save_raw_{current_tpl['id']}"):
+                    if st.button("💾 Save HTML Changes", type="primary", key=f"btn_save_raw_{current_tpl['id']}", use_container_width=True):
                         updated_tpl = dict(current_tpl)
                         updated_tpl["html_content"] = edited_html
                         save_custom_template(updated_tpl)
                         st.toast(f"✅ Template '{current_tpl['name']}' saved successfully!", icon="💾")
                         st.rerun()
+                with btn_save_col2:
+                    if is_cur_custom:
+                        if st.button("↺ Reset HTML to Default", key=f"btn_reset_raw_{current_tpl['id']}", use_container_width=True):
+                            delete_custom_template(current_tpl["id"])
+                            st.toast("↺ Template HTML reset to default.", icon="↺")
+                            st.rerun()
 
     # ═══════════════════════════════════════════════════════════════
     # TAB 2: TEMPLATE-WISE ANALYTICS & DAILY TRENDS
     # ═══════════════════════════════════════════════════════════════
     with tab_analytics:
-        st.markdown("### 📊 Performance Analytics by Email Template")
         st.markdown(
-            "Track and analyze open rates, click rates, reply rates, and consultation booking rates across your different templates."
+            """
+            <div class="analytics-subbanner">
+                <div>
+                    <div style="font-size: 17px; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 8px;">
+                        📊 Template Conversion & Telemetry Intelligence
+                    </div>
+                    <p style="font-size: 13px; color: #64748B; margin: 3px 0 0 0;">
+                        Track open rates, click-through rates, reply frequency, and consultation bookings across email variants.
+                    </p>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <span class="tpl-badge-pill" style="background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">
+                        ● Real-Time Telemetry
+                    </span>
+                    <span class="tpl-badge-pill" style="background: #F0FDF4; color: #166534; border: 1px solid #BBF7D0;">
+                        4 Funnel Metrics
+                    </span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
         # 4 Trophy KPI Cards
@@ -253,7 +619,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
         kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
         with kpi_col1:
             val_open = f"{best_open['open_rate']}%" if best_open else "—"
-            tpl_open = best_open['template_name'].split(':')[0] if best_open else "No sent emails yet"
+            tpl_open = best_open['template_name'].split(':')[0] if best_open else "No sends yet"
             st.markdown(
                 f"""
                 <div class="kpi-card">
@@ -297,36 +663,47 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
             )
 
         with kpi_col4:
+            active_count = stats.get('total_templates_active', 0)
             st.markdown(
                 f"""
                 <div class="kpi-card">
                     <div class="kpi-top-bar" style="background: #8B5CF6;"></div>
-                    <div class="kpi-header"><span class="kpi-label">Active Templates</span><span style="font-size: 18px;">📑</span></div>
+                    <div class="kpi-header"><span class="kpi-label">Active Variants</span><span style="font-size: 18px;">📑</span></div>
                     <div class="kpi-value">{len(templates)}</div>
-                    <div class="kpi-micro"><span class="kpi-pill" style="background: #F3E8FF; color: #7C3AED;">Ready</span><span>{stats.get('total_templates_active', 0)} in active use</span></div>
+                    <div class="kpi-micro"><span class="kpi-pill" style="background: #F3E8FF; color: #7C3AED;">Ready</span><span>{active_count} cohorts active</span></div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
 
         # ── Day-by-Day Trend Analysis Chart with Template Selector Dropdown ──
-        st.markdown("#### 📈 Day-by-Day Metric Progression (Increasing vs Decreasing)")
+        st.markdown(
+            """
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+                <div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0F172A;">📈 Multi-Variant Daily Progression Curves</div>
+                    <p style="font-size: 12.5px; color: #64748B; margin: 2px 0 0 0;">Track daily conversion trajectories over time for all cohorts or isolate a single template variant.</p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         
         tpl_filter_options = ["All Templates (Comparative)"] + [t["name"] for t in templates]
-        c_filter1, c_filter2 = st.columns([1.6, 1.4])
+        c_filter1, c_filter2 = st.columns([1.5, 1.5], gap="medium")
         with c_filter1:
             chosen_tpl_filter = st.selectbox(
-                "🎯 Select Template to Analyze (One-by-One or All):",
+                "Focus Variant",
                 options=tpl_filter_options,
                 index=0,
                 key="tab2_tpl_filter_select",
-                help="Choose a specific template to inspect its daily conversion curve one by one, or select 'All Templates' to compare side-by-side.",
+                help="Inspect daily conversion curve for one template or compare all side-by-side.",
             )
         with c_filter2:
             metric_choice = st.radio(
-                "Select Trend Metric to Plot",
+                "Metric Trajectory to Plot",
                 ["Open Rate (%)", "Click Rate (%)", "Booking Rate (%)"],
                 horizontal=True,
                 key="chart_metric_choice",
@@ -342,41 +719,41 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
 
         if chosen_tpl_filter != "All Templates (Comparative)":
             plot_df = daily_df[daily_df["template_name"] == chosen_tpl_filter] if not daily_df.empty else pd.DataFrame()
-            chart_title = f"Day-by-Day {metric_choice} for {chosen_tpl_filter}"
+            chart_title = f"Daily {metric_choice} Progression: {chosen_tpl_filter}"
             
             # Focused single template KPI metrics ribbon
             single_stat = next((s for s in stats.get("template_stats", []) if s["template_name"] == chosen_tpl_filter), None)
             if single_stat:
                 st.markdown(
                     f"""
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; margin: 10px 0 16px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 20px; margin: 10px 0 16px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
                         <div>
-                            <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B;">Focused Template</span>
-                            <div style="font-size: 16px; font-weight: 700; color: #0F172A;">{single_stat['template_name']}</div>
-                            <span style="font-size: 12px; color: #475569;">Category: {single_stat['category']}</span>
+                            <span style="font-size: 10.5px; text-transform: uppercase; font-weight: 700; color: #64748B; letter-spacing: 0.05em;">Variant Focus</span>
+                            <div style="font-size: 15.5px; font-weight: 700; color: #0F172A;">{single_stat['template_name']}</div>
+                            <span class="tpl-meta-tag">{single_stat['category']}</span>
                         </div>
-                        <div style="display: flex; gap: 24px; align-items: center;">
+                        <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
                             <div style="text-align: center;">
-                                <div style="font-size: 11px; color: #64748B; font-weight: 600;">ASSIGNED</div>
-                                <div style="font-size: 18px; font-weight: 700; color: #0F172A;">{single_stat['total_leads']}</div>
+                                <div style="font-size: 10.5px; color: #64748B; font-weight: 600;">ASSIGNED</div>
+                                <div style="font-size: 17px; font-weight: 700; color: #0F172A;">{single_stat['total_leads']}</div>
                             </div>
                             <div style="text-align: center;">
-                                <div style="font-size: 11px; color: #64748B; font-weight: 600;">SENT</div>
-                                <div style="font-size: 18px; font-weight: 700; color: #0F172A;">{single_stat['total_sent']}</div>
+                                <div style="font-size: 10.5px; color: #64748B; font-weight: 600;">SENT</div>
+                                <div style="font-size: 17px; font-weight: 700; color: #0F172A;">{single_stat['total_sent']}</div>
                             </div>
                             <div style="text-align: center;">
-                                <div style="font-size: 11px; color: #2563EB; font-weight: 600;">OPEN RATE</div>
-                                <div style="font-size: 18px; font-weight: 700; color: #2563EB;">{single_stat['open_rate']}%</div>
+                                <div style="font-size: 10.5px; color: #2563EB; font-weight: 600;">OPEN RATE</div>
+                                <div style="font-size: 17px; font-weight: 700; color: #2563EB;">{single_stat['open_rate']}%</div>
                                 <span style="font-size: 11px; color: #64748B;">({single_stat['opened_count']} opens)</span>
                             </div>
                             <div style="text-align: center;">
-                                <div style="font-size: 11px; color: #0D9488; font-weight: 600;">CLICK RATE</div>
-                                <div style="font-size: 18px; font-weight: 700; color: #0D9488;">{single_stat['click_rate']}%</div>
+                                <div style="font-size: 10.5px; color: #0D9488; font-weight: 600;">CLICK RATE</div>
+                                <div style="font-size: 17px; font-weight: 700; color: #0D9488;">{single_stat['click_rate']}%</div>
                                 <span style="font-size: 11px; color: #64748B;">({single_stat['clicked_count']} clicks)</span>
                             </div>
                             <div style="text-align: center;">
-                                <div style="font-size: 11px; color: #7C3AED; font-weight: 600;">BOOKING RATE</div>
-                                <div style="font-size: 18px; font-weight: 700; color: #7C3AED;">{single_stat['booking_rate']}%</div>
+                                <div style="font-size: 10.5px; color: #7C3AED; font-weight: 600;">BOOKING RATE</div>
+                                <div style="font-size: 17px; font-weight: 700; color: #7C3AED;">{single_stat['booking_rate']}%</div>
                                 <span style="font-size: 11px; color: #64748B;">({single_stat['booked_count']} booked)</span>
                             </div>
                         </div>
@@ -386,7 +763,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                 )
         else:
             plot_df = daily_df
-            chart_title = f"Day-by-Day {metric_choice} Across All Templates"
+            chart_title = f"Day-by-Day {metric_choice} Across All Cohorts"
 
         if not plot_df.empty:
             fig = px.line(
@@ -403,8 +780,11 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                 plot_bgcolor="#FFFFFF",
                 paper_bgcolor="#FFFFFF",
                 font_family="Inter, -apple-system, sans-serif",
+                font_color="#334155",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                yaxis=dict(ticksuffix="%", range=[0, 105]),
+                yaxis=dict(ticksuffix="%", range=[0, 105], gridcolor="#F1F5F9"),
+                xaxis=dict(gridcolor="#F1F5F9"),
+                margin=dict(l=20, r=20, t=40, b=20),
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -415,10 +795,20 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                     "💡 **Day-by-day trend chart will populate automatically** as outreach emails are sent to your leads and telemetry (opens, clicks, bookings) is recorded."
                 )
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
         # ── Template Comparison Leaderboard ──
-        st.markdown("#### 📋 Template Comparison Leaderboard")
+        st.markdown(
+            """
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0F172A;">🏆 Multi-Variant Performance Leaderboard</div>
+                    <p style="font-size: 12.5px; color: #64748B; margin: 2px 0 0 0;">Comprehensive conversion funnel breakdown by template variant.</p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         stats_list = stats.get("template_stats", [])
         if stats_list:
             leaderboard_rows = []
@@ -426,28 +816,49 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                 leaderboard_rows.append({
                     "Template": s["template_name"],
                     "Category": s["category"],
-                    "Total Leads": s["total_leads"],
+                    "Assigned": s["total_leads"],
                     "Sent": s["total_sent"],
                     "Opens": s["opened_count"],
-                    "Open Rate": f"{s['open_rate']}%",
+                    "Open Rate": s["open_rate"],
                     "Clicks": s["clicked_count"],
-                    "Click Rate": f"{s['click_rate']}%",
+                    "Click Rate": s["click_rate"],
                     "Replies": s["replied_count"],
-                    "Reply Rate": f"{s['reply_rate']}%",
+                    "Reply Rate": s["reply_rate"],
                     "Bookings": s["booked_count"],
-                    "Booking Rate": f"{s['booking_rate']}%",
+                    "Booking Rate": s["booking_rate"],
                 })
             df_board = pd.DataFrame(leaderboard_rows)
-            st.dataframe(df_board, use_container_width=True, hide_index=True)
+            
+            st.dataframe(
+                df_board,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Template": st.column_config.TextColumn("Template Variant", width="large"),
+                    "Category": st.column_config.TextColumn("Category", width="medium"),
+                    "Assigned": st.column_config.NumberColumn("Assigned", format="%d"),
+                    "Sent": st.column_config.NumberColumn("Sent", format="%d"),
+                    "Opens": st.column_config.NumberColumn("Opens", format="%d"),
+                    "Open Rate": st.column_config.ProgressColumn("Open Rate", min_value=0, max_value=100, format="%.1f%%"),
+                    "Clicks": st.column_config.NumberColumn("Clicks", format="%d"),
+                    "Click Rate": st.column_config.ProgressColumn("Click Rate", min_value=0, max_value=100, format="%.1f%%"),
+                    "Replies": st.column_config.NumberColumn("Replies", format="%d"),
+                    "Reply Rate": st.column_config.ProgressColumn("Reply Rate", min_value=0, max_value=100, format="%.1f%%"),
+                    "Bookings": st.column_config.NumberColumn("Bookings", format="%d"),
+                    "Booking Rate": st.column_config.ProgressColumn("Booking Rate", min_value=0, max_value=100, format="%.1f%%"),
+                },
+            )
 
             # Visual Bar Comparison
-            st.markdown("##### Visual Metric Comparison Across Templates")
+            st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+            st.markdown("##### 📊 Visual Conversion Funnel by Template")
             chart_data = []
             for s in stats_list:
                 if s["total_sent"] > 0:
-                    chart_data.append({"Template": s["template_name"].split(":")[0], "Metric": "Open Rate %", "Value": s["open_rate"]})
-                    chart_data.append({"Template": s["template_name"].split(":")[0], "Metric": "Click Rate %", "Value": s["click_rate"]})
-                    chart_data.append({"Template": s["template_name"].split(":")[0], "Metric": "Booking Rate %", "Value": s["booking_rate"]})
+                    t_short = s["template_name"].split(":")[0]
+                    chart_data.append({"Template": t_short, "Metric": "Open Rate %", "Value": s["open_rate"]})
+                    chart_data.append({"Template": t_short, "Metric": "Click Rate %", "Value": s["click_rate"]})
+                    chart_data.append({"Template": t_short, "Metric": "Booking Rate %", "Value": s["booking_rate"]})
             if chart_data:
                 df_bar = pd.DataFrame(chart_data)
                 fig_bar = px.bar(
@@ -456,7 +867,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                     y="Value",
                     color="Metric",
                     barmode="group",
-                    text_auto=True,
+                    text_auto=".1f",
                     labels={"Value": "Percentage (%)"},
                     color_discrete_map={
                         "Open Rate %": "#2563EB",
@@ -464,30 +875,55 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                         "Booking Rate %": "#D97706",
                     },
                 )
-                fig_bar.update_layout(yaxis=dict(ticksuffix="%"))
+                fig_bar.update_layout(
+                    yaxis=dict(ticksuffix="%", gridcolor="#F1F5F9"),
+                    xaxis=dict(gridcolor="#F1F5F9"),
+                    plot_bgcolor="#FFFFFF",
+                    paper_bgcolor="#FFFFFF",
+                    font_family="Inter, -apple-system, sans-serif",
+                    font_color="#334155",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    margin=dict(l=20, r=20, t=30, b=20),
+                )
                 st.plotly_chart(fig_bar, use_container_width=True)
 
     # ═══════════════════════════════════════════════════════════════
     # TAB 3: SHEET-TO-TEMPLATE BATCH OUTREACH (20–25 LEADS)
     # ═══════════════════════════════════════════════════════════════
     with tab_batch:
-        st.markdown("### 📤 Sheet-to-Template Batch Outreach (20–25 Leads per Sheet)")
         st.markdown(
             """
-            Upload a spreadsheet containing **20 to 25 leads** and pair it directly with your chosen template.
-            Each sheet will execute with its designated template so you can cleanly analyze A/B performance across batches.
-            """
+            <div class="analytics-subbanner">
+                <div>
+                    <div style="font-size: 17px; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 8px;">
+                        📤 Batch Outreach (Sheet-to-Template)
+                    </div>
+                    <p style="font-size: 13px; color: #64748B; margin: 3px 0 0 0;">
+                        Upload a lead spreadsheet (20–25 leads), select your template variant, and generate personalized drafts.
+                    </p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        b_col1, b_col2 = st.columns([1.2, 1], gap="large")
+        b_col1, b_col2 = st.columns([1.2, 1.1], gap="large")
 
         with b_col1:
-            st.markdown("#### 1. Upload Lead Sheet (20–25 Records)")
+            st.markdown(
+                """
+                <div class="batch-step-card">
+                    <div class="batch-step-title">1. Upload Lead Spreadsheet</div>
+                    <div class="batch-step-desc">Upload your CSV or Excel file containing columns: <code>email</code>, <code>name</code>, <code>company</code>.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             batch_file = st.file_uploader(
-                "Upload Excel or CSV Sheet",
+                "Upload Spreadsheet",
                 type=["xlsx", "xls", "csv"],
                 key="batch_sheet_uploader",
-                help="Recommended: 20 to 25 rows with columns: email, name, company",
+                label_visibility="collapsed",
             )
 
             batch_df = pd.DataFrame()
@@ -497,35 +933,63 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                         batch_df = pd.read_csv(batch_file)
                     else:
                         batch_df = pd.read_excel(batch_file)
-                    st.success(f"Loaded **{batch_file.name}** with **{len(batch_df)}** leads!")
-                    if len(batch_df) < 15 or len(batch_df) > 35:
-                        st.caption(f"ℹ️ Note: Sheet contains {len(batch_df)} leads (your target batch size is 20–25 leads).")
+                    
+                    lead_count = len(batch_df)
+                    st.success(f"✓ **{batch_file.name}** loaded with **{lead_count} leads**")
                 except Exception as e:
-                    st.error(f"Error reading sheet: {e}")
+                    st.error(f"Error reading file: {e}")
 
         with b_col2:
-            st.markdown("#### 2. Select Assigned Template")
-            tpl_choices = {t["id"]: f"{t['name']} ({t.get('category', 'General')})" for t in templates}
-            batch_tpl_id = st.selectbox(
-                "Template for this Sheet Batch",
-                options=list(tpl_choices.keys()),
-                format_func=lambda tid: tpl_choices[tid],
-                key="batch_template_picker",
-            )
-            batch_tpl = get_template_by_id(batch_tpl_id) or templates[0]
-
             st.markdown(
-                f"""
-                <div style="background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 12px; font-size: 13px; color: #1E40AF;">
-                    <strong>Assigned:</strong> {batch_tpl['name']}<br>
-                    <strong>Subject Pattern:</strong> {batch_tpl.get('subject', '')}
+                """
+                <div class="batch-step-card">
+                    <div class="batch-step-title">2. Select Template</div>
+                    <div class="batch-step-desc">Choose the email template variant to pair with this batch of leads.</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
+            tpl_choices = {t["id"]: f"{t['name']}" for t in templates}
+            batch_tpl_id = st.selectbox(
+                "Select Template",
+                options=list(tpl_choices.keys()),
+                format_func=lambda tid: tpl_choices[tid],
+                key="batch_template_picker",
+                label_visibility="collapsed",
+            )
+            batch_tpl = get_template_by_id(batch_tpl_id) or templates[0]
+
+            accent = batch_tpl.get("accent_color", "#2563EB")
+            cat_label = batch_tpl.get("category", "General")
+            st.markdown(
+                f"""
+                <div style="background: #F8FAFC; border: 1.5px solid #CBD5E1; border-left: 4px solid {accent}; border-radius: 10px; padding: 14px 16px; margin-top: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 13.5px; font-weight: 700; color: #0F172A;">{batch_tpl['name']}</span>
+                        <span class="tpl-meta-tag">{cat_label}</span>
+                    </div>
+                    <div style="font-size: 11.5px; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 5px 8px; border-radius: 6px; color: #334155;">
+                        <strong style="color: #64748B;">Subject Pattern:</strong> <code>{html.escape(batch_tpl.get('subject', ''))}</code>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ── Review Leads & Generate Button ──
+        st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+
         if not batch_df.empty:
-            st.markdown("#### 3. Review Leads in this Sheet")
+            st.markdown(
+                f"""
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 15px; font-weight: 700; color: #0F172A;">Review Leads ({len(batch_df)} records)</div>
+                    <span style="font-size: 12px; color: #059669; font-weight: 600;">● Ready to Generate</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             cols_preview = [c for c in ["lead_id", "email", "name", "company"] if c in batch_df.columns]
             if not cols_preview:
                 cols_preview = batch_df.columns[:4]
@@ -600,3 +1064,5 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                     f"✅ Successfully created **{created} drafts** linked to **{batch_tpl['name']}**! "
                     "You can now review and approve them in the **Email Review Studio**."
                 )
+
+
