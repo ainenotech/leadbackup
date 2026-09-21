@@ -81,6 +81,8 @@ def create_pending_entry(
     body: str,
     status: str = "pending",
     tracking_link: Optional[str] = None,
+    template_id: Optional[str] = None,
+    template_name: Optional[str] = None,
 ) -> CampaignLog:
     booking_url = os.getenv(
         "BOOKING_FORM_URL",
@@ -100,6 +102,8 @@ def create_pending_entry(
         subject=subject,
         body=body,
         status=status,
+        template_id=template_id,
+        template_name=template_name,
     )
     db.add(entry)
     db.commit()

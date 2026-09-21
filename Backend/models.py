@@ -71,6 +71,10 @@ class CampaignLog(Base):
     booking_status = Column(String, nullable=True)
     scheduling_error = Column(Text, nullable=True)
 
+    # Template Tracking
+    template_id = Column(String, nullable=True)
+    template_name = Column(String, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

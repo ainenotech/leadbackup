@@ -96,20 +96,37 @@ class ReplyDaemonManager:
             from Backend.crud import sync_excel_and_outlook_to_db
 
             print(f"[Daemon] Continuous real-time background sync started (every {interval_seconds}s).")
+            _network_offline_logged = False
             while not cls._stop_event.is_set():
                 try:
                     summary = check_and_reply_inbox()
                     cls._last_run = datetime.now()
                     cls._last_summary = summary
+                    if summary and summary.get("error") == "network_unavailable":
+                        if not _network_offline_logged:
+                            print("[Daemon Outlook] ⚠️ Internet/DNS connection to Microsoft Graph is temporarily offline. Waiting for network reconnection...")
+                            _network_offline_logged = True
+                    else:
+                        if _network_offline_logged:
+                            print("[Daemon Outlook] ✅ Microsoft Graph internet connection restored.")
+                            _network_offline_logged = False
                 except Exception as e:
-                    print(f"[Daemon Outlook Error]: {e}")
+                    err_text = str(e)
+                    if any(k in err_text for k in ("getaddrinfo failed", "NameResolutionError", "Max retries exceeded", "ConnectionError")):
+                        if not _network_offline_logged:
+                            print("[Daemon Outlook] ⚠️ Temporary network/DNS connection hiccup to Microsoft Graph. Retrying automatically...")
+                            _network_offline_logged = True
+                    else:
+                        print(f"[Daemon Outlook Error]: {e}")
 
                 try:
                     _db = SessionLocal()
                     sync_excel_and_outlook_to_db(_db)
                     _db.close()
                 except Exception as e:
-                    print(f"[Daemon Sync Error]: {e}")
+                    err_text = str(e)
+                    if not any(k in err_text for k in ("getaddrinfo failed", "NameResolutionError", "Max retries exceeded")):
+                        print(f"[Daemon Sync Error]: {e}")
 
                 for _ in range(interval_seconds):
                     if cls._stop_event.is_set():
@@ -348,8 +365,6 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
             results["message"] = "Zero campaign leads in system. Auto-reply paused."
             return results
 
-        headers = get_graph_headers()
-
         # Fetch recent inbox messages sorted by newest first (read and unread).
         # We rely on is_message_already_processed() and DB reply state to skip old emails,
         # ensuring customer replies are never missed even if viewed in Outlook!
@@ -359,8 +374,23 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
             f"?$orderby=receivedDateTime desc&$top={top_limit}"
         )
 
+        try:
+            headers = get_graph_headers()
+            resp = requests.get(inbox_url, headers=headers, timeout=15)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as net_err:
+            results["error"] = "network_unavailable"
+            results["message"] = f"Network or DNS connection offline ({net_err.__class__.__name__})."
+            return results
+        except Exception as ex:
+            err_str = str(ex)
+            if any(k in err_str for k in ("getaddrinfo failed", "NameResolutionError", "Max retries exceeded")):
+                results["error"] = "network_unavailable"
+                results["message"] = "DNS resolution for graph.microsoft.com failed."
+                return results
+            results["error"] = "graph_error"
+            results["message"] = err_str
+            return results
 
-        resp = requests.get(inbox_url, headers=headers, timeout=20)
         if resp.status_code != 200:
             print(f"[Error] Failed to read inbox from Microsoft Graph ({resp.status_code}): {resp.text}")
             return results

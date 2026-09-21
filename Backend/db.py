@@ -74,6 +74,8 @@ def init_db():
         ("meet_link", "VARCHAR"),
         ("booking_status", "VARCHAR"),
         ("scheduling_error", "TEXT"),
+        ("template_id", "VARCHAR"),
+        ("template_name", "VARCHAR"),
     ]
     inspector = inspect(engine)
     if "campaign_log" in inspector.get_table_names():
