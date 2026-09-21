@@ -124,7 +124,7 @@ def _build_responsive_template_html(
             <div style="font-size:12px;color:#64748b;margin-top:3px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
             <div style="font-size:12px;color:#64748b;margin-top:2px;">Ahmedabad, Gujarat, India</div>
             <div style="font-size:12px;color:#2563eb;margin-top:6px;">
-              <a href="mailto:sales@nenotechnology.com" style="color:#2563eb;text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="mailto:support@nenotechnology.com" style="color:#2563eb;text-decoration:none;">support@nenotechnology.com</a> &nbsp;|&nbsp;
               <a href="tel:+917863852024" style="color:#2563eb;text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
               <a href="https://www.nenotechnology.com" target="_blank" style="color:#2563eb;text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
               <a href="LINKEDIN_URL" target="_blank" style="color:#2563eb;text-decoration:none;">LinkedIn</a>
@@ -397,6 +397,40 @@ def save_custom_template(template_dict: Dict[str, Any]) -> bool:
         return False
 
 
+def delete_custom_template(template_id: str) -> bool:
+    """Removes a template from data/templates.json.
+    If it's an edited built-in template, removing it restores the original built-in code.
+    If it's a user-created template, it deletes it entirely.
+    """
+    if not os.path.exists(TEMPLATES_JSON_PATH):
+        return True
+    try:
+        with open(TEMPLATES_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            new_data = [t for t in data if t.get("id") != template_id]
+            with open(TEMPLATES_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump(new_data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+
+def is_template_customized(template_id: str) -> bool:
+    """Returns True if this template has custom overrides in data/templates.json."""
+    if not os.path.exists(TEMPLATES_JSON_PATH):
+        return False
+    try:
+        with open(TEMPLATES_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return any(t.get("id") == template_id for t in data)
+    except Exception:
+        pass
+    return False
+
+
+
 def interpolate_lead_placeholders(
     text: str,
     first_name: str,
@@ -484,7 +518,7 @@ def render_template(
     b_link = (booking_url or tracking_link or DEFAULT_BOOKING_URL).strip()
     l_url = (logo_url or DEFAULT_LOGO_URL).strip()
     li_url = (linkedin_url or DEFAULT_LINKEDIN_URL).strip()
-    unsub_link = f"mailto:sales@nenotechnology.com?subject=Unsubscribe%20{company_name}"
+    unsub_link = f"mailto:support@nenotechnology.com?subject=Unsubscribe%20{company_name}"
 
     # Subject Interpolation
     raw_subj = tpl.get("subject", "Quick idea for {{Company}}")

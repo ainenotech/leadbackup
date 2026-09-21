@@ -68,6 +68,11 @@ import analytics_view
 
 import reply_worker
 from reply_worker import ReplyDaemonManager, check_and_reply_inbox
+import importlib
+import services.template_service
+importlib.reload(services.template_service)
+import template_hub_view
+importlib.reload(template_hub_view)
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from services.template_service import load_all_templates, get_template_by_id, render_template
