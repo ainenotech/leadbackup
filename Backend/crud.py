@@ -234,14 +234,26 @@ def reject_entry(db: Session, entry_id: str) -> CampaignLog:
     return entry
 
 
-def update_draft_content(db: Session, entry_id: str, subject: str, body: str) -> CampaignLog:
+def update_draft_content(
+    db: Session,
+    entry_id: str,
+    subject: str,
+    body: str,
+    template_id: Optional[str] = None,
+    template_name: Optional[str] = None,
+) -> CampaignLog:
     entry = db.query(CampaignLog).filter(CampaignLog.id == entry_id).first()
     if entry:
         entry.subject = subject
         entry.body = body
+        if template_id:
+            entry.template_id = template_id
+        if template_name:
+            entry.template_name = template_name
         db.commit()
         db.refresh(entry)
     return entry
+
 
 
 def get_by_token(db: Session, token: str) -> Optional[CampaignLog]:
@@ -680,10 +692,15 @@ def reset_all_system_data(db: Optional[Session] = None) -> dict:
     }
 
 
-def sync_excel_and_outlook_to_db(db: Session) -> dict:
+_LAST_SYNC_BOOKED_MTIME = 0.0
+_LAST_SYNC_REPLIES_MTIME = 0.0
+
+
+def sync_excel_and_outlook_to_db(db: Session, force: bool = False) -> dict:
     """Synchronizes external Excel records (such as Bookings Page -> Excel -> Odoo CRM flows)
-    and customer replies into PostgreSQL campaign_log in real-time.
+    and customer replies into PostgreSQL campaign_log in real-time with high-performance batching.
     """
+    global _LAST_SYNC_BOOKED_MTIME, _LAST_SYNC_REPLIES_MTIME
     import uuid
     from utils.token import generate_token
 
@@ -691,21 +708,41 @@ def sync_excel_and_outlook_to_db(db: Session) -> dict:
     synced_replies = 0
     now_utc = datetime.now(timezone.utc)
 
+    booked_path = "booked_leads.xlsx"
+    replies_path = "customer_replies.xlsx"
+
+    booked_mtime = os.path.getmtime(booked_path) if os.path.exists(booked_path) else 0.0
+    replies_mtime = os.path.getmtime(replies_path) if os.path.exists(replies_path) else 0.0
+
+    # Short-circuit if files have not changed on disk and not forced
+    if not force and booked_mtime == _LAST_SYNC_BOOKED_MTIME and replies_mtime == _LAST_SYNC_REPLIES_MTIME:
+        return {"synced_bookings": 0, "synced_replies": 0}
+
     # 1. Sync from booked_leads.xlsx (Power Automate Bookings -> Excel flow)
-    if os.path.exists("booked_leads.xlsx"):
+    if os.path.exists(booked_path) and (force or booked_mtime != _LAST_SYNC_BOOKED_MTIME):
         try:
-            df_booked = pd.read_excel("booked_leads.xlsx")
+            df_booked = pd.read_excel(booked_path)
             if not df_booked.empty and "email" in df_booked.columns:
+                valid_rows = []
+                valid_emails = set()
                 for _, row in df_booked.iterrows():
                     email_raw = str(row.get("email") or "").strip()
                     if not email_raw or "@" not in email_raw or "client.nenotechnology.com" in email_raw.lower():
                         continue
-                    email_clean = email_raw.lower()
-                    entry = (
-                        db.query(CampaignLog)
-                        .filter(func.lower(CampaignLog.email) == email_clean)
-                        .first()
-                    )
+                    clean_em = email_raw.lower()
+                    valid_rows.append((clean_em, email_raw, row))
+                    valid_emails.add(clean_em)
+
+                # Batch query existing entries in 1 network call
+                existing_map = {}
+                if valid_emails:
+                    found = db.query(CampaignLog).filter(func.lower(CampaignLog.email).in_(list(valid_emails))).all()
+                    for f in found:
+                        if f.email:
+                            existing_map[f.email.strip().lower()] = f
+
+                for email_clean, email_raw, row in valid_rows:
+                    entry = existing_map.get(email_clean)
                     confirmed_slot = str(row.get("confirmed_slot") or "").strip() if pd.notna(row.get("confirmed_slot")) else ""
                     meet_link = str(row.get("teams_meeting_link") or "").strip() if pd.notna(row.get("teams_meeting_link")) else ""
                     note = str(row.get("note") or "").strip() if pd.notna(row.get("note")) else ""
@@ -741,7 +778,6 @@ def sync_excel_and_outlook_to_db(db: Session) -> dict:
                             entry.engagement_score = _calculate_engagement(entry)
                             synced_bookings += 1
                     else:
-                        # Create record for external booking
                         new_entry = CampaignLog(
                             id=str(uuid.uuid4()),
                             campaign_name=os.getenv("CAMPAIGN_NAME", "q3_stale_lead_reengagement"),
@@ -765,25 +801,37 @@ def sync_excel_and_outlook_to_db(db: Session) -> dict:
                             engagement_score=_calculate_engagement(CampaignLog(booking_status="scheduled")),
                         )
                         db.add(new_entry)
+                        existing_map[email_clean] = new_entry
                         synced_bookings += 1
+            _LAST_SYNC_BOOKED_MTIME = booked_mtime
         except Exception as e:
             print(f"Error syncing booked_leads.xlsx to DB: {e}")
 
     # 2. Sync from customer_replies.xlsx
-    if os.path.exists("customer_replies.xlsx"):
+    if os.path.exists(replies_path) and (force or replies_mtime != _LAST_SYNC_REPLIES_MTIME):
         try:
-            df_replies = pd.read_excel("customer_replies.xlsx")
+            df_replies = pd.read_excel(replies_path)
             if not df_replies.empty and "email" in df_replies.columns:
+                valid_reply_rows = []
+                valid_reply_emails = set()
                 for _, row in df_replies.iterrows():
                     email_raw = str(row.get("email") or "").strip()
                     if not email_raw or "@" not in email_raw:
                         continue
-                    email_clean = email_raw.lower()
-                    entry = (
-                        db.query(CampaignLog)
-                        .filter(func.lower(CampaignLog.email) == email_clean)
-                        .first()
-                    )
+                    clean_em = email_raw.lower()
+                    valid_reply_rows.append((clean_em, email_raw, row))
+                    valid_reply_emails.add(clean_em)
+
+                # Batch query existing entries in 1 network call
+                existing_reply_map = {}
+                if valid_reply_emails:
+                    found = db.query(CampaignLog).filter(func.lower(CampaignLog.email).in_(list(valid_reply_emails))).all()
+                    for f in found:
+                        if f.email:
+                            existing_reply_map[f.email.strip().lower()] = f
+
+                for email_clean, email_raw, row in valid_reply_rows:
+                    entry = existing_reply_map.get(email_clean)
                     reply_text = str(row.get("customer_reply") or "").strip() if pd.notna(row.get("customer_reply")) else ""
                     reply_intent = str(row.get("reply_intent") or "interested").strip() if pd.notna(row.get("reply_intent")) else "interested"
                     ai_reply = str(row.get("ai_response_sent") or "").strip() if pd.notna(row.get("ai_response_sent")) else ""
@@ -809,6 +857,7 @@ def sync_excel_and_outlook_to_db(db: Session) -> dict:
                         if needs_update:
                             entry.engagement_score = _calculate_engagement(entry)
                             synced_replies += 1
+            _LAST_SYNC_REPLIES_MTIME = replies_mtime
         except Exception as e:
             print(f"Error syncing customer_replies.xlsx to DB: {e}")
 

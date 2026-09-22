@@ -3,6 +3,7 @@ Provides comprehensive Light & Dark mode design systems, CSS variables,
 Google Fonts typography (Outfit, Inter, JetBrains Mono), and Plotly figure theme wrappers.
 """
 
+from functools import lru_cache
 from typing import Optional
 import streamlit as st
 import plotly.graph_objects as go
@@ -63,6 +64,7 @@ def apply_chart_theme(fig: go.Figure, is_dark: Optional[bool] = None) -> go.Figu
     return fig
 
 
+@lru_cache(maxsize=4)
 def get_complete_theme_css(is_dark: bool) -> str:
     """Generates the master CSS for the entire dashboard with complete
     Light and Dark mode tokens, modern typography, and all 124 component classes.
@@ -210,16 +212,102 @@ p, [data-testid="stMarkdownContainer"] p {{
 
 /* Allow button child text to inherit button font and color instead of default paragraph styling */
 .stButton button p,
-.stButton button span,
+.stButton button span:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded),
 .stButton button div,
 button[data-testid="stBaseButton-primary"] p,
-button[data-testid="stBaseButton-primary"] span,
+button[data-testid="stBaseButton-primary"] span:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded),
 button[data-testid="stBaseButton-secondary"] p,
-button[data-testid="stBaseButton-secondary"] span {{
+button[data-testid="stBaseButton-secondary"] span:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded) {{
     font-family: inherit !important;
     color: inherit;
     line-height: inherit !important;
     margin: 0 !important;
+}}
+
+/* Material Icons / Symbols protection */
+[data-testid="stIconMaterial"],
+.material-symbols-rounded,
+.material-icons {{
+    font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+    font-feature-settings: normal !important;
+    text-transform: none !important;
+}}
+
+/* ── Modern File Uploader Dropzone Styling ── */
+[data-testid="stFileUploader"] {{
+    width: 100% !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] {{
+    border: 2px dashed {'#3B82F6' if is_dark else '#2563EB'} !important;
+    background: {'rgba(30, 41, 59, 0.7)' if is_dark else '#F8FAFC'} !important;
+    border-radius: 12px !important;
+    padding: 20px 24px !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: {'0 2px 8px rgba(0,0,0,0.2)' if is_dark else '0 1px 4px rgba(37, 99, 235, 0.04)'} !important;
+}}
+
+[data-testid="stFileUploaderDropzone"]:hover {{
+    border-color: {'#60A5FA' if is_dark else '#1D4ED8'} !important;
+    background: {'rgba(59, 130, 246, 0.12)' if is_dark else '#EFF6FF'} !important;
+    box-shadow: {'0 6px 18px rgba(0,0,0,0.3)' if is_dark else '0 4px 14px rgba(37, 99, 235, 0.1)'} !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] button {{
+    background: {'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)' if is_dark else 'linear-gradient(135deg, #2563EB 0%, #1E40AF 100%)'} !important;
+    border: 1px solid {'#3B82F6' if is_dark else '#1D4ED8'} !important;
+    color: #FFFFFF !important;
+    border-radius: 8px !important;
+    padding: 8px 18px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
+    transition: all 0.2s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] button:hover {{
+    background: {'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%)' if is_dark else 'linear-gradient(135deg, #1D4ED8 0%, #172554 100%)'} !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35) !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] button [data-testid="stIconMaterial"],
+[data-testid="stFileUploaderDropzone"] button .material-symbols-rounded {{
+    font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+    font-size: 18px !important;
+    display: inline-block !important;
+    line-height: 1 !important;
+}}
+
+/* In case Streamlit renders the icon as a plain span with text 'upload' without icon font, suppress duplicate text */
+[data-testid="stFileUploaderDropzone"] button > span:first-child:not([data-testid="stIconMaterial"]) {{
+    display: none !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] button p,
+[data-testid="stFileUploaderDropzone"] button div {{
+    color: #FFFFFF !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] small,
+[data-testid="stFileUploaderDropzone"] [data-testid="stFileUploaderDropzoneInstructions"] {{
+    color: var(--text-muted) !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+}}
+
+[data-testid="stFileUploaderFileData"] {{
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 8px !important;
+    padding: 8px 12px !important;
+    margin-top: 8px !important;
 }}
 
 
@@ -1450,3 +1538,4 @@ div[data-testid="stModal"] [data-testid="stModalContent"] {{
 }}
 </style>
 """
+

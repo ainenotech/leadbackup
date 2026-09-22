@@ -2,6 +2,7 @@ from utils.theme import apply_chart_theme, is_dark_mode
 import html
 import os
 import textwrap
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -22,8 +23,75 @@ from services.template_service import (
     compute_template_analytics,
 )
 from Backend.db import SessionLocal
-from Backend.crud import create_pending_entry
+from Backend.models import CampaignLog
+from Backend.crud import create_pending_entry, update_draft_content
+from leads import append_or_update_leads_dataset
+from sqlalchemy import func
 from utils.token import generate_token
+
+
+def find_best_matching_column(columns: List[str], target: str) -> Optional[str]:
+    """Finds the best matching column name for email, name, company, or lead_id
+    using a strict ranked priority to completely prevent false positives like
+    mapping 'lead_id' to name.
+    """
+    cleaned_cols = [str(c) for c in columns]
+    lower_map = {c.strip().lower(): c for c in cleaned_cols}
+
+    if target == "email":
+        for cand in ["email", "email_address", "email address", "e-mail", "mail", "contact_email", "work_email", "to"]:
+            if cand in lower_map:
+                return lower_map[cand]
+        for c in cleaned_cols:
+            c_low = c.strip().lower()
+            if any(k in c_low for k in ["email", "e-mail", "mail"]):
+                if not any(bad in c_low for bad in ["domain", "status", "type", "verified", "bounce"]):
+                    return c
+        return None
+
+    elif target == "name":
+        # Priority 1: exact matches (strictly exclude 'lead' alone or anything containing 'id')
+        for cand in [
+            "full_name", "fullname", "full name", "contact_name", "contact name",
+            "name", "lead_name", "lead name", "first_name", "firstname", "first name",
+            "person", "contact", "recipient_name", "recipient"
+        ]:
+            if cand in lower_map:
+                return lower_map[cand]
+        # Priority 2: contains 'name', 'person', 'contact' - strictly excluding id, num, code, status, etc.
+        for c in cleaned_cols:
+            c_low = c.strip().lower()
+            if any(k in c_low for k in ["name", "person", "contact"]):
+                if not any(bad in c_low for bad in ["id", "num", "code", "status", "score", "type", "owner", "company", "org", "account"]):
+                    return c
+        return None
+
+    elif target == "company":
+        for cand in [
+            "company", "company_name", "company name", "organization", "org_name", "org name",
+            "account_name", "account name", "account", "business_name", "business name",
+            "business", "firm", "client", "client_name", "corp", "corporation"
+        ]:
+            if cand in lower_map:
+                return lower_map[cand]
+        for c in cleaned_cols:
+            c_low = c.strip().lower()
+            if any(k in c_low for k in ["company", "organization", "account", "business", "firm", "client"]):
+                if not any(bad in c_low for bad in ["id", "email", "mail", "status", "type", "domain", "url", "site"]):
+                    return c
+        return None
+
+    elif target == "lead_id":
+        for cand in ["lead_id", "lead id", "id", "contact_id", "leadid", "record_id"]:
+            if cand in lower_map:
+                return lower_map[cand]
+        for c in cleaned_cols:
+            c_low = c.strip().lower()
+            if "id" in c_low and not any(bad in c_low for bad in ["email", "name", "company"]):
+                return c
+        return None
+
+    return None
 
 
 def render_template_hub(df_logs: pd.DataFrame) -> None:
@@ -896,58 +964,167 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
     with tab_batch:
         st.markdown(
             """
-            <div class="analytics-subbanner">
-                <div>
-                    <div style="font-size: 17px; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 8px;">
-                        📤 Batch Outreach (Sheet-to-Template)
+            <div class="analytics-subbanner" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px 22px; margin-bottom: 20px; box-shadow: var(--shadow-sm);">
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 14px;">
+                    <div>
+                        <div style="font-size: 18px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 9px; letter-spacing: -0.01em;">
+                            <span>📥</span> <span>Sheet-to-Template Batch Outreach Engine</span>
+                        </div>
+                        <p style="font-size: 13px; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.45;">
+                            Upload any lead spreadsheet (CSV or Excel), auto-map contact columns, pair with a high-performing template, and generate personalized drafts ready for Email Review.
+                        </p>
                     </div>
-                    <p style="font-size: 13px; color: #64748B; margin: 3px 0 0 0;">
-                        Upload a lead spreadsheet (20–25 leads), select your template variant, and generate personalized drafts.
-                    </p>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 9999px; background: rgba(37, 99, 235, 0.1); color: #2563EB; border: 1px solid rgba(37, 99, 235, 0.25);">
+                            ⚡ Smart Column Mapping
+                        </span>
+                        <span style="font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 9999px; background: rgba(16, 185, 129, 0.1); color: #059669; border: 1px solid rgba(16, 185, 129, 0.25);">
+                            ✓ Live Review Sync
+                        </span>
+                    </div>
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        b_col1, b_col2 = st.columns([1.2, 1.1], gap="large")
+        b_col1, b_col2 = st.columns([1.15, 1.1], gap="large")
 
         with b_col1:
             st.markdown(
                 """
-                <div class="batch-step-card">
-                    <div class="batch-step-title">1. Upload Lead Spreadsheet</div>
-                    <div class="batch-step-desc">Upload your CSV or Excel file containing columns: <code>email</code>, <code>name</code>, <code>company</code>.</div>
+                <div class="batch-step-card" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow-sm);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <div class="batch-step-title" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">
+                            1. Upload Lead Spreadsheet
+                        </div>
+                        <span style="font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: #EFF6FF; color: #1D4ED8; border: 1px solid #DBEAFE;">
+                            Step 1 of 2
+                        </span>
+                    </div>
+                    <div class="batch-step-desc" style="font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin-bottom: 12px;">
+                        Upload your CSV or Excel lead sheet. Required: <code>Email</code> (case-insensitive). Auto-detects <code>Name</code> and <code>Company</code> columns.
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
             batch_file = st.file_uploader(
-                "Upload Spreadsheet",
+                "Upload Lead Spreadsheet",
                 type=["xlsx", "xls", "csv"],
                 key="batch_sheet_uploader",
                 label_visibility="collapsed",
+                help="Accepts .xlsx, .xls, and .csv files. Headers can be uppercase or lowercase.",
             )
 
             batch_df = pd.DataFrame()
+            parsed_leads = []
+            detected_cols = {}
+
             if batch_file:
                 try:
-                    if batch_file.name.endswith(".csv"):
+                    if batch_file.name.lower().endswith(".csv"):
                         batch_df = pd.read_csv(batch_file)
                     else:
                         batch_df = pd.read_excel(batch_file)
-                    
-                    lead_count = len(batch_df)
-                    st.success(f"✓ **{batch_file.name}** loaded with **{lead_count} leads**")
+
+                    all_cols = batch_df.columns.tolist()
+                    detected_email = find_best_matching_column(all_cols, "email")
+                    detected_name = find_best_matching_column(all_cols, "name")
+                    detected_comp = find_best_matching_column(all_cols, "company")
+                    detected_lead_id = find_best_matching_column(all_cols, "lead_id")
+
+                    # If no email column matched by name, check cell values for @
+                    if not detected_email:
+                        for c in all_cols:
+                            non_null = batch_df[c].dropna()
+                            if not non_null.empty and "@" in str(non_null.iloc[0]):
+                                detected_email = c
+                                break
+
+                    st.markdown("<div style='font-size: 12.5px; font-weight: 700; color: var(--text-primary); margin: 12px 0 6px 0;'>🔗 Confirm Column Mapping:</div>", unsafe_allow_html=True)
+                    m_col1, m_col2, m_col3 = st.columns(3)
+                    with m_col1:
+                        em_idx = all_cols.index(detected_email) if detected_email in all_cols else 0
+                        chosen_email = st.selectbox("📧 Email Column", options=all_cols, index=em_idx, key="batch_col_email")
+                    with m_col2:
+                        name_opts = ["(None / Use 'there')"] + all_cols
+                        nm_idx = name_opts.index(detected_name) if detected_name in name_opts else (name_opts.index(detected_name) if detected_name else 0)
+                        chosen_name = st.selectbox("👤 Contact Name", options=name_opts, index=nm_idx, key="batch_col_name")
+                    with m_col3:
+                        comp_opts = ["(None / Use 'your team')"] + all_cols
+                        cp_idx = comp_opts.index(detected_comp) if detected_comp in comp_opts else (comp_opts.index(detected_comp) if detected_comp else 0)
+                        chosen_comp = st.selectbox("🏢 Company Name", options=comp_opts, index=cp_idx, key="batch_col_comp")
+
+                    # Extract parsed leads using the confirmed columns
+                    for idx, row in batch_df.iterrows():
+                        raw_email = row.get(chosen_email)
+                        if pd.isna(raw_email) or "@" not in str(raw_email):
+                            continue
+                        email_val = str(raw_email).strip().lower()
+
+                        name_val = None
+                        if chosen_name and chosen_name != "(None / Use 'there')":
+                            val = row.get(chosen_name)
+                            if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
+                                name_val = str(val).strip()
+
+                        comp_val = None
+                        if chosen_comp and chosen_comp != "(None / Use 'your team')":
+                            val = row.get(chosen_comp)
+                            if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
+                                comp_val = str(val).strip()
+
+                        lead_id_val = str(row.get(detected_lead_id)) if detected_lead_id and detected_lead_id in row and pd.notna(row.get(detected_lead_id)) else f"lead_{idx}_{uuid.uuid4().hex[:4]}"
+
+                        parsed_leads.append({
+                            "lead_id": lead_id_val,
+                            "email": email_val,
+                            "name": name_val,
+                            "company": comp_val,
+                        })
+
+                    valid_email_count = len(parsed_leads)
+                    if valid_email_count > 0:
+                        first_lead = parsed_leads[0]
+                        v_name = first_lead['name'] or 'there'
+                        v_comp = first_lead['company'] or 'your team'
+                        st.markdown(
+                            f"""
+                            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; padding: 10px 14px; margin-top: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <span style="font-size: 12.5px; font-weight: 700; color: #047857;">✓ {batch_file.name} — {valid_email_count} Valid Leads Ready</span>
+                                </div>
+                                <div style="font-size: 11.5px; color: #065F46;">
+                                    <strong>✨ Live Sample (Row 1):</strong> Name: <strong>{v_name}</strong> | Company: <strong>{v_comp}</strong> | Email: <code>{first_lead['email']}</code>
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.error(
+                            f"⚠️ Found {len(batch_df)} row(s) in **{batch_file.name}**, but could not detect any valid email addresses with an '@' symbol in column '{chosen_email}'. "
+                            "Please check your column selection above."
+                        )
                 except Exception as e:
                     st.error(f"Error reading file: {e}")
 
         with b_col2:
             st.markdown(
                 """
-                <div class="batch-step-card">
-                    <div class="batch-step-title">2. Select Template</div>
-                    <div class="batch-step-desc">Choose the email template variant to pair with this batch of leads.</div>
+                <div class="batch-step-card" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow-sm);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <div class="batch-step-title" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">
+                            2. Select Template Variant
+                        </div>
+                        <span style="font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: #EFF6FF; color: #1D4ED8; border: 1px solid #DBEAFE;">
+                            Step 2 of 2
+                        </span>
+                    </div>
+                    <div class="batch-step-desc" style="font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin-bottom: 12px;">
+                        Pair this spreadsheet cohort with an executive template to automatically personalize subject lines and pitch angles.
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -967,39 +1144,58 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
             cat_label = batch_tpl.get("category", "General")
             st.markdown(
                 f"""
-                <div style="background: #F8FAFC; border: 1.5px solid #CBD5E1; border-left: 4px solid {accent}; border-radius: 10px; padding: 14px 16px; margin-top: 4px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="font-size: 13.5px; font-weight: 700; color: #0F172A;">{batch_tpl['name']}</span>
+                <div style="background: var(--bg-surface); border: 1.5px solid var(--border-subtle); border-left: 4px solid {accent}; border-radius: 10px; padding: 14px 16px; margin-top: 4px; box-shadow: var(--shadow-sm);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 14px; font-weight: 700; color: var(--text-primary);">{batch_tpl['name']}</span>
                         <span class="tpl-meta-tag">{cat_label}</span>
                     </div>
-                    <div style="font-size: 11.5px; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 5px 8px; border-radius: 6px; color: #334155;">
-                        <strong style="color: #64748B;">Subject Pattern:</strong> <code>{html.escape(batch_tpl.get('subject', ''))}</code>
+                    <div style="font-size: 12px; background: var(--bg-nested); border: 1px solid var(--border-subtle); padding: 7px 10px; border-radius: 6px; color: var(--text-secondary); margin-bottom: 4px;">
+                        <strong style="color: var(--text-muted);">Subject Pattern:</strong> <code>{html.escape(batch_tpl.get('subject', ''))}</code>
+                    </div>
+                    <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 6px;">
+                        💡 <em>Placeholders like <code>{{{{Company}}}}</code>, <code>{{{{Name}}}}</code> and Microsoft Booking links are automatically tailored per lead.</em>
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        # ── Review Leads & Generate Button ──
-        st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+        # ── Pre-flight Inspection & Action Station ──
+        if parsed_leads:
+            st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+            df_parsed = pd.DataFrame(parsed_leads)
 
-        if not batch_df.empty:
             st.markdown(
                 f"""
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <div style="font-size: 15px; font-weight: 700; color: #0F172A;">Review Leads ({len(batch_df)} records)</div>
-                    <span style="font-size: 12px; color: #059669; font-weight: 600;">● Ready to Generate</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div style="font-size: 15px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                        <span>📋</span> <span>Pre-Flight Lead Review ({len(df_parsed)} Contact Records)</span>
+                    </div>
+                    <span style="font-size: 12px; color: #059669; font-weight: 600; display: flex; align-items: center; gap: 5px;">
+                        <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; display: inline-block;"></span>
+                        Ready to Personalize &amp; Draft
+                    </span>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            cols_preview = [c for c in ["lead_id", "email", "name", "company"] if c in batch_df.columns]
-            if not cols_preview:
-                cols_preview = batch_df.columns[:4]
-            st.dataframe(batch_df[cols_preview], use_container_width=True, hide_index=True)
 
+            st.dataframe(
+                df_parsed[["email", "name", "company", "lead_id"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "email": st.column_config.TextColumn("Recipient Email", width="medium"),
+                    "name": st.column_config.TextColumn("Contact Name", width="small"),
+                    "company": st.column_config.TextColumn("Company / Org", width="medium"),
+                    "lead_id": st.column_config.TextColumn("Lead ID", width="small"),
+                },
+            )
+
+            # Primary Action Button
+            btn_draft_label = f"🚀 Generate {len(df_parsed)} Personalized AI Drafts with '{batch_tpl['name']}'"
             if st.button(
-                f"🚀 Generate {len(batch_df)} Personalized Drafts with '{batch_tpl['name']}'",
+                btn_draft_label,
                 type="primary",
                 key="btn_generate_batch_drafts",
                 use_container_width=True,
@@ -1009,23 +1205,22 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                     "BOOKING_FORM_URL",
                     "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
                 )
-                progress = st.progress(0.0, text="Generating template-linked outreach drafts...")
+                progress = st.progress(0.0, text=f"Personalizing drafts using '{batch_tpl['name']}'...")
                 db = SessionLocal()
                 created = 0
+                updated = 0
                 failed = 0
-                total_rows = len(batch_df)
+                total_rows = len(df_parsed)
+                successfully_drafted_rows = []
 
-                for idx, row in batch_df.iterrows():
-                    email = str(row.get("email", "")).strip()
-                    if not email or "@" not in email:
-                        failed += 1
-                        continue
-                    name = None if pd.isna(row.get("name")) else str(row.get("name"))
-                    company = None if pd.isna(row.get("company")) else str(row.get("company"))
+                for idx, row in df_parsed.iterrows():
+                    email = str(row.get("email", "")).strip().lower()
+                    name = row.get("name")
+                    company = row.get("company")
                     lead_id = str(row.get("lead_id", f"lead_{idx}_{uuid.uuid4().hex[:4]}"))
 
                     progress.progress(
-                        (created + failed) / total_rows,
+                        (created + updated + failed) / total_rows,
                         text=f"Drafting for {email} ({name or 'Lead'})...",
                     )
 
@@ -1041,31 +1236,80 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                             booking_url=booking_url,
                         )
 
-                        create_pending_entry(
-                            db,
-                            campaign_name=campaign_name,
-                            lead_id=lead_id,
-                            email=email,
-                            name=name,
-                            company=company,
-                            token=token,
-                            tracking_link=tracking_link,
-                            subject=subj,
-                            body=body_html,
-                            status="drafted",
-                            template_id=batch_tpl_id,
-                            template_name=batch_tpl["name"],
+                        # Check if active draft exists for this email
+                        existing_draft = (
+                            db.query(CampaignLog)
+                            .filter(
+                                func.lower(CampaignLog.email) == email,
+                                CampaignLog.status.in_(["drafted", "pending", "draft"]),
+                            )
+                            .first()
                         )
-                        created += 1
+
+                        if existing_draft:
+                            update_draft_content(
+                                db,
+                                existing_draft.id,
+                                subject=subj,
+                                body=body_html,
+                                template_id=batch_tpl_id,
+                                template_name=batch_tpl["name"],
+                            )
+                            updated += 1
+                        else:
+                            create_pending_entry(
+                                db,
+                                campaign_name=campaign_name,
+                                lead_id=lead_id,
+                                email=email,
+                                name=name,
+                                company=company,
+                                token=token,
+                                tracking_link=tracking_link,
+                                subject=subj,
+                                body=body_html,
+                                status="drafted",
+                                template_id=batch_tpl_id,
+                                template_name=batch_tpl["name"],
+                            )
+                            created += 1
+
+                        successfully_drafted_rows.append({
+                            "lead_id": lead_id,
+                            "email": email,
+                            "name": name,
+                            "company": company,
+                            "status": "drafted",
+                        })
                     except Exception as err:
+                        db.rollback()
                         failed += 1
 
                 db.close()
-                progress.progress(1.0, text="Completed!")
+                progress.progress(1.0, text="Draft generation completed!")
+
+                # Sync to leads dataset
+                if successfully_drafted_rows:
+                    try:
+                        append_or_update_leads_dataset(pd.DataFrame(successfully_drafted_rows), default_status="drafted")
+                    except Exception:
+                        pass
+
+                # Clear all caches so Email Review Studio sees data instantly
+                st.cache_data.clear()
+
+                total_drafts_ready = created + updated
+                success_msg = f"🎉 Successfully generated {total_drafts_ready} personalized draft(s) with '{batch_tpl['name']}' ({created} new, {updated} updated)!"
+                st.session_state["send_success_banner"] = success_msg
+
+                # Trigger full balloon celebration
                 st.balloons()
-                st.success(
-                    f"✅ Successfully created **{created} drafts** linked to **{batch_tpl['name']}**! "
-                    "You can now review and approve them in the **Email Review Studio**."
-                )
+                st.success(f"{success_msg} Opening Email Review Studio...")
+
+                # Allow the balloons animation to play, then smoothly transition to Email Review Studio
+                time.sleep(2.5)
+                st.session_state.active_page = "email"
+                st.query_params["page"] = "email"
+                st.rerun()
 
 

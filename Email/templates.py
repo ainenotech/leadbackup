@@ -11,8 +11,8 @@ from zoneinfo import ZoneInfo
 
 
 FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
-LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1789542387/logo-dark.png"
-LOGO_HEADER_HTML = f'<div style="margin:0 0 14px 0;padding:0 0 12px 0;border-bottom:1px solid #eef0f4;"><img src="{LOGO_URL}" alt="Nenotechnology" width="140" height="36" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:140px;height:36px;max-height:40px;pointer-events:none;"></div>'
+LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
+LOGO_HEADER_HTML = f'<div align="center" style="background-color:#071a2d;padding:18px 20px 16px 20px;text-align:center;border-top-left-radius:10px;border-top-right-radius:10px;border-bottom:3px solid #2563eb;"><a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;"><img src="{LOGO_URL}" alt="Neno Technology" width="160" height="41" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:160px;height:auto;max-height:42px;pointer-events:none;"></a></div>'
 
 
 def _clean_name(name: Optional[str]) -> str:
@@ -23,18 +23,22 @@ def _clean_name(name: Optional[str]) -> str:
 
 
 def _wrap_transactional_card(inner_html: str, accent_color: str = "#2563eb") -> str:
-    """Wraps transactional email body in a professional bordered card container."""
+    """Wraps transactional email body in a professional bordered card container with dark navy header and light logo."""
     return f"""<div style="background-color:#f0f4f8;padding:20px 8px;margin:0;font-family:{FONT_STACK};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0f4f8;">
 <tr><td align="center">
 
-  <!-- Accent Top Bar -->
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;">
-    <tr><td style="height:4px;background:linear-gradient(90deg,{accent_color},#6366f1);border-radius:10px 10px 0 0;font-size:0;line-height:0;" height="4">&nbsp;</td></tr>
-  </table>
-
-  <!-- Card Body -->
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;border-radius:0 0 10px 10px;box-shadow:0 2px 8px -2px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);">
+  <!-- Main Card Container with Dark Navy Top Header -->
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px -2px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);">
+    <!-- Top Header Banner (Dark Navy #071a2d with Centered Light Logo) -->
+    <tr>
+      <td align="center" style="background-color:#071a2d;padding:18px 20px 16px 20px;text-align:center;border-top-left-radius:10px;border-top-right-radius:10px;border-bottom:3px solid {accent_color};">
+        <a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;">
+          <img src="{LOGO_URL}" alt="Neno Technology" width="160" height="41" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:160px;height:auto;max-height:42px;pointer-events:none;" />
+        </a>
+      </td>
+    </tr>
+    <!-- Card Body -->
     <tr>
       <td style="padding:26px 30px 22px 30px;font-family:{FONT_STACK};font-size:15px;line-height:1.5;color:#1e293b;text-align:left;">
 {inner_html}
@@ -83,8 +87,7 @@ def build_confirmation_email(
     accent = "#2563eb"
     subject = f"Confirmed: Consultation Call with Nenotechnology{company_line} — {local.strftime('%b %d, %I:%M %p')}"
 
-    inner = f"""{LOGO_HEADER_HTML}
-  <p style="margin:0 0 8px 0;padding:0;line-height:1.5;">Hi <strong>{cust_name}</strong>,</p>
+    inner = f"""  <p style="margin:0 0 8px 0;padding:0;line-height:1.5;">Hi <strong>{cust_name}</strong>,</p>
   <p style="margin:0 0 10px 0;padding:0;line-height:1.5;">Thank you for reaching out to Nenotechnology. Your consultation call has been confirmed and added to our calendar.</p>
   <div style="background:#f8fafc;border-left:4px solid {accent};border-radius:6px;padding:10px 14px;margin:10px 0;">
     <p style="margin:0 0 5px 0;padding:0;line-height:1.4;">📅 <strong>Date &amp; Time:</strong> {date_time_str}</p>
@@ -93,6 +96,9 @@ def build_confirmation_email(
   </div>
   <div style="margin:12px 0 14px 0;padding:0;">
     <a href="{meet_link}" style="display:inline-block;background:{accent};color:#ffffff;text-decoration:none;padding:11px 24px;border-radius:6px;font-weight:600;font-size:14px;text-align:center;line-height:1;box-shadow:0 2px 4px rgba(0,0,0,0.12);">Join Microsoft Teams Meeting &rarr;</a>
+  </div>
+  <div style="margin:16px 0;padding:12px 16px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:13px;line-height:1.5;color:#334155;">
+    🌐 <strong>Explore our work:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent};font-weight:600;text-decoration:underline;">Nenotechnology</a> to learn more about our AI solutions and recent case studies.
   </div>
   <p style="margin:0 0 0 0;padding:0;line-height:1.5;">We look forward to speaking with you.</p>
   <div style="margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b;line-height:1.45;">
@@ -134,8 +140,7 @@ def build_rescheduled_email(
     accent = "#f59e0b"
     subject = f"Rescheduled: Consultation Call with Nenotechnology{company_line} — {local.strftime('%b %d, %I:%M %p')}"
 
-    inner = f"""{LOGO_HEADER_HTML}
-  <p style="margin:0 0 8px 0;padding:0;line-height:1.5;">Hi <strong>{cust_name}</strong>,</p>
+    inner = f"""  <p style="margin:0 0 8px 0;padding:0;line-height:1.5;">Hi <strong>{cust_name}</strong>,</p>
   <p style="margin:0 0 10px 0;padding:0;line-height:1.5;">Thank you for reaching out to Nenotechnology. Your requested time slot was not available on our calendar, so we have automatically reserved the <strong>earliest available slot</strong> for you.</p>
   <div style="background:#fffbeb;border-left:4px solid {accent};border-radius:6px;padding:10px 14px;margin:10px 0;">
     <p style="margin:0 0 5px 0;padding:0;line-height:1.4;">📅 <strong>Rescheduled Date &amp; Time:</strong> {date_time_str}</p>
@@ -144,6 +149,9 @@ def build_rescheduled_email(
   </div>
   <div style="margin:12px 0 14px 0;padding:0;">
     <a href="{meet_link}" style="display:inline-block;background:#0f62fe;color:#ffffff;text-decoration:none;padding:11px 24px;border-radius:6px;font-weight:600;font-size:14px;text-align:center;line-height:1;box-shadow:0 2px 4px rgba(0,0,0,0.12);">Join Microsoft Teams Meeting &rarr;</a>
+  </div>
+  <div style="margin:16px 0;padding:12px 16px;background-color:#fffbeb;border:1px solid #fef3c7;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:13px;line-height:1.5;color:#334155;">
+    🌐 <strong>Explore our work:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#0f62fe;font-weight:600;text-decoration:underline;">Nenotechnology</a> to learn more about our AI solutions and recent case studies.
   </div>
   <p style="margin:0 0 0 0;font-size:13.5px;color:#475569;padding:0;line-height:1.5;">A calendar invite has also been sent to your email. If this time doesn't work for you, simply reply to this email and we'll gladly arrange another slot.</p>
   <div style="margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b;line-height:1.45;">

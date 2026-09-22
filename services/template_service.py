@@ -8,7 +8,7 @@ import pandas as pd
 TEMPLATES_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 TEMPLATES_JSON_PATH = os.path.join(TEMPLATES_DATA_DIR, "templates.json")
 
-DEFAULT_LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1789542387/logo-dark.png"
+DEFAULT_LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
 DEFAULT_LINKEDIN_URL = "https://www.linkedin.com/in/tirthpatel-ai/"
 DEFAULT_BOOKING_URL = os.getenv(
     "BOOKING_FORM_URL",
@@ -16,7 +16,7 @@ DEFAULT_BOOKING_URL = os.getenv(
 )
 
 # ─────────────────────────────────────────────────────────────
-# 4 USER-PROVIDED HIGH-CONVERTING HTML TEMPLATES
+# 7 USER-PROVIDED HIGH-CONVERTING HTML TEMPLATES
 # ─────────────────────────────────────────────────────────────
 
 def _build_responsive_template_html(
@@ -29,11 +29,17 @@ def _build_responsive_template_html(
     bullets_html: str,
     closing_html: str,
     accent_color: str = "#1A5CFF",
+    website_callout_html: str = "",
 ) -> str:
     """Generates a pixel-perfect, fully responsive HTML email template
-    matching the user's executive design with Cloudinary CDN logo,
-    callout question box, bullets, and complete Tirth Patel signature.
+    featuring an executive dark navy top header banner with centered light logo,
+    callout question box, bullets, dedicated website visit section, and complete Tirth Patel signature.
     """
+    if not website_callout_html:
+        website_callout_html = f"""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid {accent_color};border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Explore our work:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent_color};font-weight:600;text-decoration:underline;">Nenotechnology</a> to explore our complete suite of AI solutions, client case studies, and live production demos.
+          </div>"""
+
     return f"""<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
@@ -90,22 +96,21 @@ def _build_responsive_template_html(
 <tr>
   <td align="center">
 
-    <!-- Accent Top Bar -->
-    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:620px;max-width:100%;">
+    <!-- Main Card Container with Dark Navy Top Header -->
+    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:620px;max-width:100%;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px -2px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);">
+      
+      <!-- Top Header Banner (Dark Navy #071a2d with Centered Light Logo) -->
       <tr>
-        <td style="height:4px;background:linear-gradient(90deg,{accent_color},#6366f1);border-radius:12px 12px 0 0;font-size:0;line-height:0;" height="4">&nbsp;</td>
+        <td align="center" style="background-color:#071a2d;padding:20px 24px 18px 24px;text-align:center;border-top-left-radius:12px;border-top-right-radius:12px;border-bottom:3px solid {accent_color};">
+          <a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;">
+            <img src="LOGO_URL" alt="Neno Technology" width="168" height="43" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:168px;height:auto;max-height:45px;" />
+          </a>
+        </td>
       </tr>
-    </table>
 
-    <!-- Main Card Container -->
-    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:620px;max-width:100%;background-color:#ffffff;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;border-radius:0 0 12px 12px;overflow:hidden;box-shadow:0 2px 8px -2px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);">
+      <!-- Card Body -->
       <tr>
         <td class="content-cell" style="padding:28px 32px 24px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1e293b;text-align:left;">
-
-          <!-- Logo -->
-          <div style="margin:0 0 16px 0;padding:0 0 14px 0;border-bottom:1px solid #eef0f4;">
-            <img src="LOGO_URL" alt="Nenotechnology" width="140" height="36" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:140px;height:36px;max-height:40px;" />
-          </div>
 
           <!-- Greeting & Intro -->
           <p style="margin:0 0 8px 0;font-size:15px;line-height:1.55;color:#1e293b;">Dear {{FirstName}},</p>
@@ -135,6 +140,9 @@ def _build_responsive_template_html(
           <div style="font-size:14px;line-height:1.55;color:#334155;">
             {bullets_html}
           </div>
+
+          <!-- Website Content Section -->
+          {website_callout_html}
 
           <!-- Closing pitch -->
           <p style="margin:14px 0 8px 0;font-size:14px;line-height:1.55;color:#1e293b;">
@@ -196,6 +204,9 @@ RAW_TEMPLATE_1 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">AI and full-stack developers.</strong> AI agent developers, backend, full-stack and deployment engineers &mdash; already on our bench, not being recruited after you sign.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Vetted before you meet them.</strong> Every engineer clears our five-stage screening. You interview the shortlist and pick who joins you.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">A fraction of local contract rates.</strong> Fixed monthly cost per developer. No payroll, no super, no desk, no notice period risk.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #1A5CFF;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Explore our engineering capabilities:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#1A5CFF;font-weight:600;text-decoration:underline;">Nenotechnology</a> to see our full tech stack, developer screening benchmarks, and client case studies.
+          </div>""",
     closing_html="Our goal is simple: help businesses like yours reduce operational overhead while improving efficiency and customer experience &mdash; at a fraction of local agency costs.",
     accent_color="#1A5CFF",
 )
@@ -211,6 +222,9 @@ RAW_TEMPLATE_2 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">24/7 Lead Capture.</strong> Never lose after-hours, holiday, or weekend leads again. Every call is answered, qualified, and scheduled on your calendar instantly.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Instant CRM &amp; Calendar Sync.</strong> Real-time call transcription, structured notes, and confirmed bookings pushed automatically to HubSpot, Salesforce, or Google Calendar.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Unlimited Concurrent Capacity.</strong> Handle 100 simultaneous calls during marketing spikes without hiring extra call center staff or paying per-minute agency fees.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #7C3AED;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Listen to live voice demos:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#7C3AED;font-weight:600;text-decoration:underline;">Nenotechnology</a> to hear sample voice AI recordings, explore inbound call flows, and view client ROI metrics.
+          </div>""",
     closing_html="Our voice agents eliminate missed opportunities, slash response latency from hours to seconds, and book meetings directly into your team's calendar.",
     accent_color="#7C3AED",
 )
@@ -226,6 +240,9 @@ RAW_TEMPLATE_3 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Enterprise RAG &amp; Hybrid Search.</strong> Highly accurate knowledge retrieval pipelines with semantic re-ranking, token-cost optimization, and strict anti-hallucination guardrails.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Bench Ready Next Week.</strong> Senior Python, TypeScript, FastAPI, and Next.js engineers who connect to your GitHub repo and Jira on day one &mdash; no recruiting lag.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Predictable Monthly Sprints.</strong> Fixed monthly pricing per engineer with transparent weekly deliverables and zero long-term vendor lock-in.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #0284C7;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Explore our AI architectures:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#0284C7;font-weight:600;text-decoration:underline;">Nenotechnology</a> to see our LangGraph multi-agent builds, enterprise RAG pipelines, and technical blueprints.
+          </div>""",
     closing_html="Whether you need an end-to-end AI product built from scratch or an extra engineer to clear your backlog, our squad delivers fast, production-grade code.",
     accent_color="#0284C7",
 )
@@ -241,6 +258,9 @@ RAW_TEMPLATE_4 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Automated Document &amp; Invoice Parsing.</strong> Extract structured data from supplier invoices, client contracts, and receipts automatically with 99.8% precision.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Zero Manual Entry Errors.</strong> Replace fragile human data copying with automated schema validation, webhook alerts, and error failover logging.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Fast 7-14 Day Turnaround.</strong> Most operational bottlenecks can be fully automated within 1 to 2 weeks without disrupting your day-to-day business.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #059669;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Explore our automation workflows:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#059669;font-weight:600;text-decoration:underline;">Nenotechnology</a> to review how we automate ERP, CRM, invoice parsing, and cross-platform business operations.
+          </div>""",
     closing_html="We free your top talent from low-value repetitive tasks so they can spend their energy speaking to clients and driving revenue.",
     accent_color="#059669",
 )
@@ -256,6 +276,9 @@ RAW_TEMPLATE_5 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Top 1% Indian Tech Talent.</strong> Every engineer clears our rigorous 5-stage technical screening, live system architecture rounds, and fluent English communication tests.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Guaranteed Time-Zone Alignment.</strong> Daily working hours synchronized with Australian Eastern Standard Time (AEST) and Western time zones for real-time collaboration.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Zero Office or HR Overhead.</strong> We take care of state-of-the-art office facilities, high-speed fiber, compliance, laptops, and payroll &mdash; you simply assign tasks.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #D97706;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Discover our offshore workbench model:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#D97706;font-weight:600;text-decoration:underline;">Nenotechnology</a> to see how our dedicated Indian engineering squads deliver seamless Australian time-zone alignment.
+          </div>""",
     closing_html="Get the engineering velocity and senior talent of a dedicated development team without the local hiring costs, recruiting agency fees, or long-term liability.",
     accent_color="#D97706",
 )
@@ -271,6 +294,9 @@ RAW_TEMPLATE_6 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">AI-Assisted Dashboards.</strong> Real-time operational dashboards with natural-language AI query assistants so any team member can ask questions about company data.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Fast Prototype to Production.</strong> Interactive clickable prototypes delivered within 5 days, production deployment within 3-4 weeks.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Transparent Fixed Milestones.</strong> Clear milestone deliverables with no surprise hourly charges or scope creep.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #4F46E5;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>View modernized portal prototypes:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#4F46E5;font-weight:600;text-decoration:underline;">Nenotechnology</a> to see interactive prototypes, legacy migration case studies, and modern web application builds.
+          </div>""",
     closing_html="Give your staff and clients a fast, modern digital interface that eliminates friction and unlocks real-time operational visibility.",
     accent_color="#4F46E5",
 )
@@ -286,6 +312,9 @@ RAW_TEMPLATE_7 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Tailored ROI Roadmap.</strong> Identify the specific 20% of repetitive workflows that will generate 80% of your operational savings.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Hands-On Implementation Squad.</strong> If there's a mutual fit, we provide the exact engineering team to execute the roadmap end-to-end.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Strict Confidentiality &amp; Full IP Ownership.</strong> 100% of all intellectual property, custom models, code, and automations belong entirely to {{Company}}.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #DC2626;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Learn more about Nenotechnology:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#DC2626;font-weight:600;text-decoration:underline;">Nenotechnology</a> to review our founder story, AI advisory frameworks, and real-world client deployments.
+          </div>""",
     closing_html="I only take 3 advisory calls a week to ensure high impact. If you want a straight, honest perspective on AI for {{Company}}, let's connect.",
     accent_color="#DC2626",
 )

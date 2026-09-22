@@ -62,6 +62,53 @@ class Lead:
     last_deal_stage: Optional[str] = None
 
 
+def find_best_matching_column(columns, target: str):
+    cleaned_cols = [str(c) for c in columns]
+    lower_map = {c.strip().lower(): c for c in cleaned_cols}
+
+    if target == "email":
+        for cand in ["email", "email_address", "email address", "e-mail", "mail", "contact_email", "work_email", "to"]:
+            if cand in lower_map:
+                return lower_map[cand]
+        for c in cleaned_cols:
+            c_low = c.strip().lower()
+            if any(k in c_low for k in ["email", "e-mail", "mail"]) and not any(b in c_low for b in ["domain", "status", "type"]):
+                return c
+        return None
+
+    elif target == "name":
+        for cand in [
+            "full_name", "fullname", "full name", "contact_name", "contact name",
+            "name", "lead_name", "lead name", "first_name", "firstname", "first name",
+            "person", "contact", "recipient_name", "recipient"
+        ]:
+            if cand in lower_map:
+                return lower_map[cand]
+        for c in cleaned_cols:
+            c_low = c.strip().lower()
+            if any(k in c_low for k in ["name", "person", "contact"]):
+                if not any(b in c_low for b in ["id", "num", "code", "status", "score", "type", "owner", "company", "org", "account"]):
+                    return c
+        return None
+
+    elif target == "company":
+        for cand in [
+            "company", "company_name", "company name", "organization", "org_name", "org name",
+            "account_name", "account name", "account", "business_name", "business name",
+            "business", "firm", "client", "client_name", "corp", "corporation"
+        ]:
+            if cand in lower_map:
+                return lower_map[cand]
+        for c in cleaned_cols:
+            c_low = c.strip().lower()
+            if any(k in c_low for k in ["company", "organization", "account", "business", "firm", "client"]):
+                if not any(bad in c_low for bad in ["id", "email", "mail", "status", "type", "domain", "url", "site"]):
+                    return c
+        return None
+
+    return None
+
+
 def detect_lead_status_in_dataframe(
     df: pd.DataFrame,
     sent_emails: Optional[Set[str]] = None,
@@ -79,11 +126,7 @@ def detect_lead_status_in_dataframe(
     clean_df = df.copy()
 
     # Find the email column
-    email_col = None
-    for col in clean_df.columns:
-        if str(col).strip().lower() in ["email", "email_address", "email address"]:
-            email_col = col
-            break
+    email_col = find_best_matching_column(clean_df.columns, "email")
     if not email_col:
         for col in clean_df.columns:
             non_null = clean_df[col].dropna()
@@ -93,6 +136,9 @@ def detect_lead_status_in_dataframe(
 
     if not email_col:
         raise ValueError("Could not find an 'email' column in the uploaded sheet.")
+
+    name_col = find_best_matching_column(clean_df.columns, "name")
+    company_col = find_best_matching_column(clean_df.columns, "company")
 
     # Find status or sent date columns if present in the sheet
     status_col = None
@@ -128,6 +174,16 @@ def detect_lead_status_in_dataframe(
         seen_in_this_file.add(email)
         row_dict = row.to_dict()
         row_dict["email"] = email
+
+        if name_col and name_col in row and pd.notna(row.get(name_col)):
+            val = str(row.get(name_col)).strip()
+            if val.lower() not in ("nan", "none", ""):
+                row_dict["name"] = val
+
+        if company_col and company_col in row and pd.notna(row.get(company_col)):
+            val = str(row.get(company_col)).strip()
+            if val.lower() not in ("nan", "none", ""):
+                row_dict["company"] = val
 
         # 1. Check if marked as sent in the sheet's status column
         sheet_sent_reason = None

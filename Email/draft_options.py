@@ -17,23 +17,27 @@ def _format_company_name(company: Optional[str], fallback: str = "your team") ->
 
 
 FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
-LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1789542387/logo-dark.png"
-LOGO_HEADER_HTML = f'<div style="margin:0 0 14px 0;padding:0 0 12px 0;border-bottom:1px solid #eef0f4;"><img src="{LOGO_URL}" alt="Nenotechnology" width="140" height="36" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:140px;height:36px;max-height:40px;pointer-events:none;"></div>'
+LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
+LOGO_HEADER_HTML = f'<div align="center" style="background-color:#071a2d;padding:18px 20px 16px 20px;text-align:center;border-top-left-radius:10px;border-top-right-radius:10px;border-bottom:3px solid #0f62fe;"><a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;"><img src="{LOGO_URL}" alt="Neno Technology" width="160" height="41" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:160px;height:auto;max-height:42px;pointer-events:none;"></a></div>'
 
 
 def _wrap_card(inner_html: str, accent_color: str = "#0f62fe") -> str:
-    """Wraps email body content in a professional bordered card container with accent top bar."""
+    """Wraps email body content in a professional bordered card container with dark navy header and light logo."""
     return f"""<div style="background-color:#f0f4f8;padding:20px 8px;margin:0;font-family:{FONT_STACK};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0f4f8;">
 <tr><td align="center">
 
-  <!-- Accent Top Bar -->
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;">
-    <tr><td style="height:4px;background:linear-gradient(90deg,{accent_color},#6366f1);border-radius:10px 10px 0 0;font-size:0;line-height:0;" height="4">&nbsp;</td></tr>
-  </table>
-
-  <!-- Card Body -->
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;border-radius:0 0 10px 10px;box-shadow:0 2px 8px -2px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);">
+  <!-- Main Card Container with Dark Navy Top Header -->
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px -2px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);">
+    <!-- Top Header Banner (Dark Navy #071a2d with Centered Light Logo) -->
+    <tr>
+      <td align="center" style="background-color:#071a2d;padding:18px 20px 16px 20px;text-align:center;border-top-left-radius:10px;border-top-right-radius:10px;border-bottom:3px solid {accent_color};">
+        <a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;">
+          <img src="{LOGO_URL}" alt="Neno Technology" width="160" height="41" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:160px;height:auto;max-height:42px;pointer-events:none;" />
+        </a>
+      </td>
+    </tr>
+    <!-- Card Body -->
     <tr>
       <td style="padding:26px 30px 22px 30px;font-family:{FONT_STACK};font-size:15px;line-height:1.55;color:#1E293B;text-align:left;">
 {inner_html}
@@ -99,8 +103,7 @@ def get_draft_template_option(
         else:
             subject = "Smarter Systems, Less Overhead - AI Solutions by Nenotechnology"
 
-        inner = f"""{LOGO_HEADER_HTML}
-  <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">{greeting}</p>
+        inner = f"""  <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">{greeting}</p>
   <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">I hope you and the team at {comp_name_for_body} are doing well.</p>
   <p style="margin:0 0 12px 0;padding:0;line-height:1.55;">I'm Tirth Patel, Founder &amp; CEO of <strong style="color:#0F172A;">Nenotechnology</strong> (Aineno Innovation Pvt. Ltd.), based in Ahmedabad, India. We help Australian agencies and businesses cut operational overhead and unlock new efficiency through purpose-built AI solutions - without the enterprise price tag.</p>
   <div style="margin:10px 0 12px 0;padding:12px 16px;background-color:#F8FAFC;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:14.5px;line-height:1.5;color:#1E293B;">
@@ -114,6 +117,9 @@ def get_draft_template_option(
   <p style="margin:0 0 8px 0;padding:0;font-size:14px;line-height:1.55;color:#1E293B;"><strong style="color:#0F172A;">AI and full-stack developers.</strong> AI agent developers, backend, full-stack and deployment engineers - already on our bench, not being recruited after you sign.</p>
   <p style="margin:0 0 8px 0;padding:0;font-size:14px;line-height:1.55;color:#1E293B;"><strong style="color:#0F172A;">Vetted before you meet them.</strong> Every engineer clears our five-stage screening. You interview the shortlist and pick who joins you.</p>
   <p style="margin:0 0 10px 0;padding:0;font-size:14px;line-height:1.55;color:#1E293B;"><strong style="color:#0F172A;">A fraction of local contract rates.</strong> Fixed monthly cost per developer. No payroll, no super, no desk, no notice period risk.</p>
+  <div style="margin:16px 0;padding:12px 16px;background-color:#F8FAFC;border:1px solid #E2E8F0;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+    🌐 <strong>Explore our work:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent};font-weight:600;text-decoration:underline;">Nenotechnology</a> to see our full client portfolio and live AI deployments.
+  </div>
   <p style="margin:0 0 10px 0;padding:0;line-height:1.55;">Our goal is simple: help businesses like yours reduce operational overhead while improving efficiency and customer experience - at a fraction of local agency costs.</p>
   <p style="margin:0 0 0 0;padding:0;font-size:12.5px;line-height:1.45;color:#94a3b8;">Or simply reply to this email &mdash; it comes straight to me.</p>
   <div style="margin-top:16px;padding-top:12px;border-top:1px solid #eef0f4;font-size:13px;color:#475569;line-height:1.45;">
@@ -135,8 +141,7 @@ def get_draft_template_option(
         else:
             subject = "Checking In - Complimentary Consultation from Nenotechnology"
 
-        inner = f"""{LOGO_HEADER_HTML}
-  <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">{greeting}</p>
+        inner = f"""  <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">{greeting}</p>
   <p style="margin:0 0 10px 0;padding:0;line-height:1.55;">I hope this message finds you well. As a returning client, the first consultation is on us.</p>
   <div style="margin:10px 0 12px 0;padding:12px 16px;background-color:#F8FAFC;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:14.5px;line-height:1.5;color:#1E293B;">
     <strong style="color:#0F172A;">Would you be open to a 20-minute call</strong> to explore what would be most useful for {comp_name_for_body} right now? No pitch deck, no obligation - just a focused conversation.
@@ -146,6 +151,9 @@ def get_draft_template_option(
   </div>
   <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">It has been some time since our last interaction, and I wanted to check in personally rather than let the connection go quiet. Working with {comp_name_for_body} was a great experience for our team, and we would welcome the chance to support you again.</p>
   <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">If you have any IT challenges on your plate at the moment - systems that need modernising, processes taking up too much manual time, or a new project in planning - I would be glad to talk it through, with no obligation on your side.</p>
+  <div style="margin:16px 0;padding:12px 16px;background-color:#F8FAFC;border:1px solid #E2E8F0;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+    🌐 <strong>Explore our work:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent};font-weight:600;text-decoration:underline;">Nenotechnology</a> to see our latest AI solutions and project case studies.
+  </div>
   <p style="margin:0 0 10px 0;padding:0;line-height:1.55;">Simply click above or reply with a day and time that suits you, and I will arrange the rest.</p>
   <p style="margin:0 0 0 0;padding:0;font-size:12.5px;line-height:1.45;color:#94a3b8;">Or simply reply to this email &mdash; it comes straight to me.</p>
   <div style="margin-top:16px;padding-top:12px;border-top:1px solid #eef0f4;font-size:13px;color:#475569;line-height:1.45;">
@@ -167,8 +175,7 @@ def get_draft_template_option(
         else:
             subject = "Complimentary AI & IT Systems Audit - Nenotechnology"
 
-        inner = f"""{LOGO_HEADER_HTML}
-  <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">{greeting}</p>
+        inner = f"""  <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">{greeting}</p>
   <p style="margin:0 0 10px 0;padding:0;line-height:1.55;">I hope you and the team at {comp_name_for_body} are doing well. Because you have worked with us before, I would like to offer {comp_name_for_body} a complimentary AI &amp; IT systems audit.</p>
   <div style="margin:10px 0 12px 0;padding:12px 16px;background-color:#F8FAFC;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:14.5px;line-height:1.5;color:#1E293B;">
     <strong style="color:#0F172A;">Would you be open to a 20-minute call</strong> to explore what would be most useful for {comp_name_for_body} right now? No pitch deck, no obligation - just a focused session to identify your biggest automation wins.
@@ -182,6 +189,9 @@ def get_draft_template_option(
     <tr><td style="border-top:1px solid #E2E8F0;padding:8px 0;font-size:14px;line-height:1.55;color:#1E293B;"><strong style="color:#0F172A;">Top 3 Automation Wins.</strong> Highlight the three processes with the highest return on automation investment.</td></tr>
     <tr><td style="border-top:1px solid #E2E8F0;border-bottom:1px solid #E2E8F0;padding:8px 0;font-size:14px;line-height:1.55;color:#1E293B;"><strong style="color:#0F172A;">Practical Roadmap.</strong> A clear, actionable plan with realistic timelines and costs - no vague promises.</td></tr>
   </table>
+  <div style="margin:16px 0;padding:12px 16px;background-color:#F8FAFC;border:1px solid #E2E8F0;border-left:3px solid {accent};border-radius:0 6px 6px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+    🌐 <strong>Explore our work:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent};font-weight:600;text-decoration:underline;">Nenotechnology</a> to see our technical capabilities, frameworks, and client success stories.
+  </div>
   <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">There is zero cost and no commitment - if nothing makes sense for you right now, we will tell you that honestly.</p>
   <p style="margin:0 0 8px 0;padding:0;line-height:1.55;">Looking forward to speaking with you.</p>
   <p style="margin:0 0 0 0;padding:0;font-size:12.5px;line-height:1.45;color:#94a3b8;">Or simply reply to this email &mdash; it comes straight to me.</p>

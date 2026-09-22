@@ -13,7 +13,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
-@st.cache_data
+from functools import lru_cache
+
+@lru_cache(maxsize=16)
 def get_image_base64(image_path: str) -> str:
     if os.path.exists(image_path):
         with open(image_path, "rb") as f:
@@ -48,6 +50,7 @@ from Backend.crud import (
 )
 from Backend.db import Base, SessionLocal, engine, init_db
 from Backend.models import CampaignLog
+from sqlalchemy import func
 from Email import get_mailer
 from Email.draft_options import get_draft_template_option, OPTIONS_METADATA
 
@@ -84,9 +87,6 @@ import template_hub_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 import utils.theme
-import importlib
-importlib.reload(utils.theme)
-importlib.reload(analytics_view)
 from utils.theme import (
     get_current_theme,
     is_dark_mode,
@@ -214,24 +214,27 @@ CAMPAIGN_LOG_COLUMNS = [
 def fetch_cached_kb_summary() -> dict:
     db = SessionLocal()
     try:
-        summary = get_knowledge_base_summary(db)
-        if summary.get("total_chunks", 0) == 0:
-            kb_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
-            if os.path.isdir(kb_dir):
-                for fname in os.listdir(kb_dir):
-                    if fname.endswith((".md", ".pdf", ".txt")) and not fname.startswith("."):
-                        fpath = os.path.join(kb_dir, fname)
-                        try:
-                            with open(fpath, "r", encoding="utf-8", errors="replace") as kf:
-                                ingest_file_content(db, fname, kf.read(), title=f"Neno Technology Knowledge Base ({fname.split('.')[-1].upper()})")
-                        except Exception:
-                            pass
-                summary = get_knowledge_base_summary(db)
-        return summary
+        return get_knowledge_base_summary(db)
     except Exception:
         return {"total_chunks": 0, "total_documents": 0, "documents": []}
     finally:
         db.close()
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def _load_cached_excel_file(file_path: str, mtime: float) -> pd.DataFrame:
+    if os.path.exists(file_path):
+        try:
+            return pd.read_excel(file_path)
+        except Exception:
+            pass
+    return pd.DataFrame()
+
+
+def get_cached_excel_df(file_path: str) -> pd.DataFrame:
+    """Fast in-memory cached Excel reader. Automatically invalidates when file mtime changes."""
+    mtime = os.path.getmtime(file_path) if os.path.exists(file_path) else 0.0
+    return _load_cached_excel_file(file_path, mtime)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -1081,6 +1084,209 @@ def render_upload() -> None:
 
             st.markdown("<br>", unsafe_allow_html=True)
 
+            # ── Prominent Template Selector & Batch Drafting Station ──
+            all_available_tpls = load_all_templates()
+            tpl_map = {f"{t['name']} [{t.get('category', 'Outreach')}]": t for t in all_available_tpls}
+
+            st.markdown("##### 📑 Step 2: Choose Template & Generate Drafts for Email Review")
+            col_tpl_sel, col_tpl_meta = st.columns([3, 2])
+            with col_tpl_sel:
+                selected_tpl_label = st.selectbox(
+                    "Choose outreach template to personalize for this sheet:",
+                    options=list(tpl_map.keys()),
+                    index=0,
+                    key="upload_sheet_template_selector",
+                    help="Assigns this specific high-converting template design to every lead in this sheet for A/B analytics tracking."
+                )
+                chosen_tpl_obj = tpl_map[selected_tpl_label]
+
+            with col_tpl_meta:
+                st.caption(f"**Selected Design:** {chosen_tpl_obj['name']}")
+                st.caption(f"**Subject:** `{chosen_tpl_obj.get('subject_pattern', 'Customized per lead')}`")
+
+            # Smart lead targeting: handle fresh leads, pending leads re-draft, or testing override
+            col_opt1, col_opt2 = st.columns(2)
+            with col_opt1:
+                include_drafted = st.checkbox(
+                    f"🔄 Re-apply '{chosen_tpl_obj['name']}' to {len(skipped_drafted_df)} pending lead(s) awaiting review",
+                    value=True if new_leads_df.empty and not skipped_drafted_df.empty else False,
+                    key="chk_include_drafted",
+                    help="Updates existing drafts in the review queue with this newly selected template."
+                )
+            with col_opt2:
+                force_override = st.checkbox(
+                    f"🧪 Testing Override: Force draft all {len(raw_df)} row(s) in sheet (bypass duplicate filter)",
+                    value=True if new_leads_df.empty and skipped_drafted_df.empty and not raw_df.empty else False,
+                    key="chk_force_test_override",
+                    help="Allows generating drafts even if this email was already contacted during earlier tests."
+                )
+
+            if force_override:
+                target_df = raw_df.copy()
+            elif include_drafted and not skipped_drafted_df.empty:
+                if not new_leads_df.empty:
+                    target_df = pd.concat([new_leads_df, skipped_drafted_df], ignore_index=True).drop_duplicates(subset=["email"])
+                else:
+                    target_df = skipped_drafted_df.copy()
+            else:
+                target_df = new_leads_df.copy()
+
+            target_count = len(target_df)
+
+            # Action Buttons
+            btn_col1, btn_col2 = st.columns([1.6, 1.4])
+            with btn_col1:
+                can_generate = target_count > 0
+                btn_label = f"🚀 Generate AI Drafts & Open Email Review ({target_count} Leads)" if can_generate else "⚠️ No leads ready to draft (use checkboxes above)"
+                if st.button(
+                    btn_label,
+                    type="primary",
+                    disabled=not can_generate,
+                    key="gen_drafts_new",
+                    help="Generate personalized outreach emails using the chosen template and transition immediately to Email Review Studio."
+                ):
+                    campaign_name = os.getenv("CAMPAIGN_NAME", "default_campaign")
+                    progress_bar = st.progress(0.0, text=f"Generating personalized drafts with '{chosen_tpl_obj['name']}'...")
+                    db = SessionLocal()
+                    created_count = 0
+                    failed_count = 0
+                    failed_errors = []
+                    successfully_drafted_rows = []
+
+                    for idx, row in target_df.iterrows():
+                        row_dict = {str(k).strip().lower(): v for k, v in row.items()}
+                        email = str(row_dict.get("email", "")).strip().lower()
+                        if not email or "@" not in email:
+                            for candidate in ["email_address", "email address", "e-mail", "mail", "contact_email", "to"]:
+                                val = row_dict.get(candidate)
+                                if pd.notna(val) and "@" in str(val):
+                                    email = str(val).strip().lower()
+                                    break
+
+                        name = None
+                        for candidate in ["name", "full name", "contact name", "lead name", "first name", "firstname", "first_name", "full_name"]:
+                            val = row_dict.get(candidate)
+                            if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
+                                name = str(val).strip()
+                                break
+
+                        company = None
+                        for candidate in ["company", "company name", "organization", "account", "business", "company_name", "org"]:
+                            val = row_dict.get(candidate)
+                            if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
+                                company = str(val).strip()
+                                break
+
+                        lead_id = str(row_dict.get("lead_id", f"lead_{idx}"))
+                        last_activity = None if pd.isna(row_dict.get("last_activity_date")) else str(row_dict.get("last_activity_date"))
+                        last_deal = None if pd.isna(row_dict.get("last_deal_stage")) else str(row_dict.get("last_deal_stage"))
+
+                        progress_bar.progress(
+                            (created_count + failed_count) / target_count,
+                            text=f"Drafting email for {email} ({name or 'Lead'})...",
+                        )
+
+                        try:
+                            token = generate_token()
+                            booking_url = os.getenv(
+                                "BOOKING_FORM_URL",
+                                "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
+                            )
+                            tracking_link = booking_url
+
+                            lead_data = {
+                                "name": name,
+                                "company": company,
+                                "email": email,
+                                "last_activity_date": last_activity,
+                                "last_deal_stage": last_deal,
+                            }
+                            subject, body = render_template(
+                                chosen_tpl_obj,
+                                lead_data=lead_data,
+                                booking_url=tracking_link,
+                            )
+
+                            # Check if active draft already exists in DB for this email
+                            existing_draft = (
+                                db.query(CampaignLog)
+                                .filter(
+                                    func.lower(CampaignLog.email) == email.lower(),
+                                    CampaignLog.status.in_(["drafted", "pending", "draft"]),
+                                )
+                                .first()
+                            )
+
+                            if existing_draft:
+                                update_draft_content(
+                                    db,
+                                    existing_draft.id,
+                                    subject=subject,
+                                    body=body,
+                                    template_id=chosen_tpl_obj["id"],
+                                    template_name=chosen_tpl_obj["name"],
+                                )
+                            else:
+                                create_pending_entry(
+                                    db,
+                                    campaign_name=campaign_name,
+                                    lead_id=lead_id,
+                                    email=email,
+                                    name=name,
+                                    company=company,
+                                    token=token,
+                                    tracking_link=tracking_link,
+                                    subject=subject,
+                                    body=body,
+                                    status="drafted",
+                                    template_id=chosen_tpl_obj["id"],
+                                    template_name=chosen_tpl_obj["name"],
+                                )
+                            created_count += 1
+                            successfully_drafted_rows.append(row)
+                        except Exception as err:
+                            db.rollback()
+                            failed_errors.append(f"{email}: {err}")
+                            failed_count += 1
+
+                    db.close()
+                    progress_bar.progress(1.0, text="Draft generation completed!")
+
+                    if successfully_drafted_rows:
+                        try:
+                            append_or_update_leads_dataset(pd.DataFrame(successfully_drafted_rows), default_status="drafted")
+                        except Exception:
+                            pass
+                    st.cache_data.clear()
+                    try:
+                        load_campaign_logs.clear()
+                    except Exception:
+                        pass
+
+                    if created_count > 0:
+                        st.session_state["send_success_banner"] = f"🎉 Successfully generated {created_count} personalized outreach draft(s) with '{chosen_tpl_obj['name']}'! Ready for review below."
+                        st.session_state["trigger_review_balloons"] = True
+                        st.balloons()
+                        st.session_state.active_page = "email"
+                        st.query_params["page"] = "email"
+                        time.sleep(0.3)
+                        st.rerun()
+
+                    if failed_errors:
+                        for err_msg in failed_errors:
+                            st.error(f"❌ Failed: {err_msg}")
+
+            with btn_col2:
+                active_drafts_count = len(drafted_emails) if 'drafted_emails' in locals() else 0
+                btn_rev_label = f"👉 Open Email Review Studio ({active_drafts_count} Drafts)" if active_drafts_count > 0 else "👉 Open Email Review Studio"
+                if st.button(btn_rev_label, key="goto_email_review", type="secondary"):
+                    st.session_state.active_page = "email"
+                    st.query_params["page"] = "email"
+                    st.rerun()
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── Detailed Data Inspection Tabs ──
             tab_new, tab_skipped, tab_drafted = st.tabs([
                 f"✨ New Leads Ready ({len(new_leads_df)})",
                 f"🛡️ Skipped / Already Emailed ({len(skipped_sent_df)})",
@@ -1094,116 +1300,12 @@ def render_upload() -> None:
                     if not cols_to_show:
                         cols_to_show = new_leads_df.columns.tolist()[:5]
                     st.dataframe(new_leads_df[cols_to_show], use_container_width=True, hide_index=True)
-
-                    st.markdown("<br>", unsafe_allow_html=True)
-
-                    # Template Selector for this Batch / Sheet (20-25 leads per sheet)
-                    all_available_tpls = load_all_templates()
-                    tpl_map = {f"{t['name']} [{t.get('category', 'Outreach')}]": t for t in all_available_tpls}
-                    
-                    st.markdown("###### 📑 Select Email Template for this Cohort / Sheet (1 Template per 20–25 Leads):")
-                    selected_tpl_label = st.selectbox(
-                        "Choose outreach template to personalize for all leads in this sheet:",
-                        options=list(tpl_map.keys()),
-                        index=0,
-                        key="upload_sheet_template_selector",
-                        help="Assigns this specific high-converting template design to every lead in this sheet for A/B analytics tracking."
-                    )
-                    chosen_tpl_obj = tpl_map[selected_tpl_label]
-
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    btn_col1, btn_col2 = st.columns([1, 1])
-
-                    with btn_col1:
-                        if st.button(
-                            f"🚀 Generate AI Drafts for {len(new_leads_df)} Lead(s) using '{chosen_tpl_obj['name']}'",
-                            type="primary",
-                            key="gen_drafts_new",
-                        ):
-                            campaign_name = os.getenv("CAMPAIGN_NAME", "default_campaign")
-                            progress_bar = st.progress(0.0, text="Generating personalized drafts with chosen template...")
-                            db = SessionLocal()
-                            created_count = 0
-                            failed_count = 0
-                            failed_errors = []
-                            successfully_drafted_rows = []
-                            total_new = len(new_leads_df)
-
-                            for idx, row in new_leads_df.iterrows():
-                                email = str(row.get("email", "")).strip()
-                                name = None if pd.isna(row.get("name")) else str(row.get("name"))
-                                company = None if pd.isna(row.get("company")) else str(row.get("company"))
-                                lead_id = str(row.get("lead_id", f"lead_{idx}"))
-                                last_activity = None if pd.isna(row.get("last_activity_date")) else str(row.get("last_activity_date"))
-                                last_deal = None if pd.isna(row.get("last_deal_stage")) else str(row.get("last_deal_stage"))
-
-                                progress_bar.progress(
-                                    (created_count + failed_count) / total_new,
-                                    text=f"Drafting email for {email} ({name or 'Lead'})...",
-                                )
-
-                                try:
-                                    token = generate_token()
-                                    booking_url = os.getenv(
-                                        "BOOKING_FORM_URL",
-                                        "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
-                                    )
-                                    tracking_link = booking_url
-
-                                    lead_data = {
-                                        "name": name,
-                                        "company": company,
-                                        "email": email,
-                                        "last_activity_date": last_activity,
-                                        "last_deal_stage": last_deal,
-                                    }
-                                    subject, body = render_template(
-                                        chosen_tpl_obj,
-                                        lead_data=lead_data,
-                                        booking_url=tracking_link,
-                                    )
-
-                                    create_pending_entry(
-                                        db,
-                                        campaign_name=campaign_name,
-                                        lead_id=lead_id,
-                                        email=email,
-                                        name=name,
-                                        company=company,
-                                        token=token,
-                                        tracking_link=tracking_link,
-                                        subject=subject,
-                                        body=body,
-                                        status="drafted",
-                                        template_id=chosen_tpl_obj["id"],
-                                        template_name=chosen_tpl_obj["name"],
-                                    )
-                                    created_count += 1
-                                    successfully_drafted_rows.append(row)
-                                except Exception as err:
-                                    failed_errors.append(f"{email}: {err}")
-                                    failed_count += 1
-
-                            db.close()
-                            progress_bar.progress(1.0, text="Draft generation completed!")
-
-                            if successfully_drafted_rows:
-                                append_or_update_leads_dataset(pd.DataFrame(successfully_drafted_rows), default_status="drafted")
-                            st.cache_data.clear()
-
-                            if created_count > 0:
-                                st.success(f"🎉 Generated {created_count} personalized outreach drafts! Ready for review.")
-                            if failed_errors:
-                                for err_msg in failed_errors:
-                                    st.error(f"❌ Failed: {err_msg}")
-
-                    with btn_col2:
-                        if st.button("👉 Open Email Review Studio", key="goto_email_review", type="secondary"):
-                            st.session_state.active_page = "email"
-                            st.rerun()
-
                 else:
-                    st.info("✅ All leads in this sheet have already received emails or currently have active drafts. No duplicates generated!")
+                    if not skipped_drafted_df.empty:
+                        st.info(f"⏳ **{len(skipped_drafted_df)} lead(s)** from this sheet currently have active drafts awaiting your review in the Email Review Studio.")
+                    else:
+                        st.info("✅ All leads in this sheet have already received emails. Check 'Testing Override' above if you wish to draft test messages anyway.")
+
 
             with tab_skipped:
                 if not skipped_sent_df.empty:
@@ -1311,8 +1413,8 @@ def render_leads(df: pd.DataFrame) -> None:
     )
 
 
-LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1789542387/logo-dark.png"
-LOGO_HEADER_HTML = f'<div style="margin:0 0 16px 0;padding:0 0 12px 0;border-bottom:1px solid #eef0f4;"><img src="{LOGO_URL}" alt="Nenotechnology" width="132" height="34" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:132px;height:34px;max-height:36px;pointer-events:none;"></div>'
+LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
+LOGO_HEADER_HTML = f'<div align="center" style="background-color:#071a2d;padding:18px 20px 16px 20px;text-align:center;border-top-left-radius:10px;border-top-right-radius:10px;border-bottom:3px solid #0f62fe;"><a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;"><img src="{LOGO_URL}" alt="Neno Technology" width="160" height="41" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:160px;height:auto;max-height:42px;pointer-events:none;"></a></div>'
 
 
 def clean_natural_email_body(html_text: str) -> str:
@@ -1320,16 +1422,14 @@ def clean_natural_email_body(html_text: str) -> str:
         return html_text
     cleaned = html_text
     # Replace old broken ngrok logos with the new reliable Cloudinary logo
-    cleaned = re.sub(r'https?://[^\s"\'<>]*ngrok[^\s"\'<>]*/logo(?:-dark)?\.png', LOGO_URL, cleaned, flags=re.IGNORECASE)
-    # Remove any <a> link wrappers around the logo so it is purely an unclickable image
-    cleaned = re.sub(r'<a\s+[^>]*href=["\'][^"\']*nenotechnology\.com[^"\']*["\'][^>]*>\s*(<img[^>]*logo(?:-dark)?\.png[^>]*>)\s*</a>', r'\1', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'https?://[^\s"\'<>]*ngrok[^\s"\'<>]*/logo(?:-dark|-light)?\.png', LOGO_URL, cleaned, flags=re.IGNORECASE)
     # Remove artificial outer card boxes
     cleaned = re.sub(r'<div style="max-width:600px;margin:0 auto;background:#ffffff;color:#1a1a1a;border:1px solid #e3e6eb;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;">\s*', '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.45;color:#1a1a1a;">', cleaned)
     cleaned = re.sub(r'<div style="max-width:600px;margin:0 auto;background:#ffffff;color:#1e293b;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;">\s*', '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.45;color:#1e293b;">', cleaned)
     cleaned = re.sub(r'<div style="padding:(?:24px|26px 24px);">\s*', '', cleaned)
     cleaned = re.sub(r'<div style="background:#f7f8fa;padding:14px 24px;font-size:11.5px;color:#(?:8b93a1|94a3b8);text-align:center;[^"]*">.*?</div>\s*</div>\s*$', '</div>', cleaned, flags=re.DOTALL)
     # Ensure Cloudinary logo header is present if missing
-    if "logo-dark.png" not in cleaned and "cloudinary" not in cleaned:
+    if "logo-dark.png" not in cleaned and "logo-light.png" not in cleaned and "cloudinary" not in cleaned:
         if cleaned.startswith("<div"):
             cleaned = re.sub(r'(<div[^>]*>)', r'\1\n  ' + LOGO_HEADER_HTML, cleaned, count=1)
         else:
@@ -1561,14 +1661,39 @@ def render_email_review(df: pd.DataFrame) -> None:
     if "send_success_banner" in st.session_state:
         st.success(st.session_state.pop("send_success_banner"))
 
-    if df.empty or "status" not in df.columns:
-        st.info("No pending drafts awaiting review. Upload a lead sheet in 'Upload & Draft' to generate new drafts.")
-        return
+    if st.session_state.pop("trigger_review_balloons", False):
+        st.balloons()
 
-    drafts = df[df["status"] == "drafted"].copy()
+    # Ensure status matching covers all pending/drafted variations
+    drafts = pd.DataFrame()
+    if not df.empty and "status" in df.columns:
+        drafts = df[df["status"].astype(str).str.lower().isin(["drafted", "pending", "draft"])].copy()
+
+    # Fallback to direct DB query in case of cache lag or instant transition
+    if drafts.empty:
+        db_fb = SessionLocal()
+        try:
+            db_pending = (
+                db_fb.query(CampaignLog)
+                .filter(CampaignLog.status.in_(["drafted", "pending", "draft"]))
+                .order_by(CampaignLog.created_at.desc())
+                .all()
+            )
+            if db_pending:
+                load_campaign_logs.clear()
+                st.cache_data.clear()
+                fresh_rows = load_campaign_logs()
+                df = pd.DataFrame(fresh_rows, columns=CAMPAIGN_LOG_COLUMNS)
+                drafts = df[df["status"].astype(str).str.lower().isin(["drafted", "pending", "draft"])].copy()
+        finally:
+            db_fb.close()
 
     if drafts.empty:
-        st.info("No pending drafts awaiting review. Upload a lead sheet in 'Upload & Draft' to generate new drafts.")
+        st.info("No pending drafts awaiting review. Upload a lead sheet in 'Upload & Draft' or 'Template Review & Hub (Tab 3)' to generate new drafts.")
+        if st.button("🔄 Check for New Drafts Now", key="btn_check_drafts_empty"):
+            load_campaign_logs.clear()
+            st.cache_data.clear()
+            st.rerun()
         return
 
     st.markdown(
@@ -1577,7 +1702,9 @@ def render_email_review(df: pd.DataFrame) -> None:
             <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: #92400E; font-size: 14px;">
                 <span>📬</span> <strong>{len(drafts)}</strong> draft email(s) awaiting your approval
             </div>
-            <span class="badge badge-drafted">Human-in-the-Loop</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="badge badge-drafted">Human-in-the-Loop</span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1590,16 +1717,42 @@ def render_email_review(df: pd.DataFrame) -> None:
         "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
     )
 
-    selected_email = st.selectbox(
-        "Select Draft to Review",
-        drafts["email"].tolist(),
-        key="approval_select",
-    )
-    row = drafts[drafts["email"] == selected_email].iloc[0]
+    # Build unique option keys to avoid selectbox collision
+    id_to_label = {}
+    for _, d_row in drafts.iterrows():
+        n = d_row['name'] or 'Lead'
+        c = f" · {d_row['company']}" if d_row['company'] else ""
+        id_to_label[d_row["id"]] = f"{d_row['email']} ({n}{c})"
 
-    db_check = SessionLocal()
-    is_already_sent = is_email_already_sent(db_check, row["email"])
-    db_check.close()
+    col_sel_draft, col_ref_draft = st.columns([4, 1])
+    with col_sel_draft:
+        selected_draft_id = st.selectbox(
+            "Select Draft to Review",
+            options=list(id_to_label.keys()),
+            format_func=lambda did: id_to_label.get(did, did),
+            key="approval_select_id",
+        )
+    with col_ref_draft:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Refresh", key="btn_refresh_draft_list", help="Reload latest drafts from database"):
+            load_campaign_logs.clear()
+            st.cache_data.clear()
+            st.rerun()
+
+    matched = drafts[drafts["id"] == selected_draft_id]
+    if matched.empty:
+        matched = drafts.iloc[:1]
+    row = matched.iloc[0]
+
+    # Instant in-memory duplicate check to eliminate 1.5s network roundtrip latency
+    is_already_sent = False
+    if not df.empty and "email" in df.columns and "status" in df.columns:
+        target_em = str(row["email"]).strip().lower()
+        matched_sent = df[
+            (df["email"].astype(str).str.strip().str.lower() == target_em)
+            & (df["status"].astype(str).str.lower() == "sent")
+        ]
+        is_already_sent = not matched_sent.empty
 
     if is_already_sent:
         st.error(
@@ -1685,7 +1838,6 @@ def render_email_review(df: pd.DataFrame) -> None:
     )
 
     if st.button("⭐ Reset to Primary Template", key=f"btn_opt1_{row['id']}", help="Apply Primary template: Forward-Deployed Engineers, Vetted bench & consultation call"):
-        importlib.reload(Email.draft_options)
         opt_subj, opt_body = Email.draft_options.get_draft_template_option(1, row["name"], row["company"], custom_form_url)
         opt_subj = opt_subj.replace("\ufffd", "-").replace("—", "-").strip()
         st.session_state[f"subj_{row['id']}"] = opt_subj
@@ -2036,7 +2188,7 @@ def render_replies(df: pd.DataFrame) -> None:
 
     if os.path.exists(DEFAULT_REPLIES_EXCEL):
         try:
-            excel_r_df = pd.read_excel(DEFAULT_REPLIES_EXCEL)
+            excel_r_df = get_cached_excel_df(DEFAULT_REPLIES_EXCEL)
             for _, r in excel_r_df.iterrows():
                 em = str(r.get("email") or "").strip().lower()
                 cust_reply = str(r.get("customer_reply") or "").strip()
@@ -2093,7 +2245,7 @@ def render_replies(df: pd.DataFrame) -> None:
     booked_leads_count = 0
     if os.path.exists(DEFAULT_BOOKED_EXCEL):
         try:
-            excel_df = pd.read_excel(DEFAULT_BOOKED_EXCEL)
+            excel_df = get_cached_excel_df(DEFAULT_BOOKED_EXCEL)
             booked_leads_count = len(excel_df)
         except Exception:
             booked_leads_count = 0
@@ -2601,7 +2753,7 @@ def render_replies(df: pd.DataFrame) -> None:
         booked_df = df[df["form_filled_at"].notna()].copy() if not df.empty else pd.DataFrame()
         if os.path.exists(DEFAULT_BOOKED_EXCEL):
             try:
-                excel_b_df = pd.read_excel(DEFAULT_BOOKED_EXCEL)
+                excel_b_df = get_cached_excel_df(DEFAULT_BOOKED_EXCEL)
                 if not excel_b_df.empty:
                     if booked_df.empty:
                         booked_df = excel_b_df
@@ -2820,7 +2972,7 @@ def render_replies(df: pd.DataFrame) -> None:
         with st.expander(f"📗 Permanent Customer Replies Archive (`customer_replies.xlsx` · {replies_count} Records)", expanded=True):
             if os.path.exists(DEFAULT_REPLIES_EXCEL):
                 try:
-                    cr_export_df = pd.read_excel(DEFAULT_REPLIES_EXCEL)
+                    cr_export_df = get_cached_excel_df(DEFAULT_REPLIES_EXCEL)
                     d_col1, d_col2 = st.columns([3, 1])
                     with d_col1:
                         st.success(f"Verified `customer_replies.xlsx` on disk — contains **{len(cr_export_df)}** permanent customer reply records.")
@@ -2846,7 +2998,7 @@ def render_replies(df: pd.DataFrame) -> None:
         with st.expander(f"📗 Permanent Consultation Bookings Archive (`booked_leads.xlsx` · {booked_leads_count} Records)", expanded=False):
             if os.path.exists(DEFAULT_BOOKED_EXCEL):
                 try:
-                    excel_df = pd.read_excel(DEFAULT_BOOKED_EXCEL)
+                    excel_df = get_cached_excel_df(DEFAULT_BOOKED_EXCEL)
                     meet_cols = [c for c in excel_df.columns if "google" in c.lower() and "meet" in c.lower()]
                     if meet_cols:
                         excel_df = excel_df.drop(columns=meet_cols)
