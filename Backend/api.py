@@ -12,6 +12,8 @@ from .models import CampaignLog
 
 load_dotenv()
 
+SERVER_START_TIME = datetime.now(timezone.utc)
+
 # Initialize DB schema & migrations
 init_db()
 
@@ -19,13 +21,22 @@ app = FastAPI(title="AINeotechnology — Lead Outreach & Analytics API")
 
 
 @app.on_event("startup")
-def start_background_daemon():
+def start_background_services():
+    # 1. Start continuous inbound reply monitoring daemon
     try:
         from reply_worker import ReplyDaemonManager
         if not ReplyDaemonManager.is_running():
             ReplyDaemonManager.start(interval_seconds=15)
     except Exception as e:
         print(f"[API Startup Warning] Could not start ReplyDaemonManager: {e}")
+
+    # 2. Start Render Keep-Alive Daemon to prevent 15-minute idle spin-down
+    try:
+        from .keepalive import RenderKeepAliveDaemon
+        if not RenderKeepAliveDaemon.is_running():
+            RenderKeepAliveDaemon.start(interval_minutes=9)
+    except Exception as e:
+        print(f"[API Startup Warning] Could not start RenderKeepAliveDaemon: {e}")
 
 
 @app.get("/logo-dark.png")
@@ -45,7 +56,241 @@ def home():
     return {
         "status": "online",
         "service": "Lead Outreach & Analytics API",
+        "health_check": "/api/health",
+        "realtime_summary": "/api/realtime/summary",
+        "realtime_feed": "/api/realtime/feed",
     }
+
+
+@app.get("/health")
+@app.get("/api/health")
+@app.head("/health")
+@app.head("/api/health")
+def health_check():
+    """Comprehensive health probe for uptime monitors, Render keep-alive, and system telemetry."""
+    import time
+    from sqlalchemy import text
+
+    now_utc = datetime.now(timezone.utc)
+    uptime_seconds = round((now_utc - SERVER_START_TIME).total_seconds(), 1)
+
+    # 1. Database Connectivity & Latency Probe
+    db_status = {"connected": False, "latency_ms": 0.0, "dialect": str(engine.dialect.name)}
+    try:
+        t0 = time.time()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_status["connected"] = True
+        db_status["latency_ms"] = round((time.time() - t0) * 1000, 2)
+    except Exception as e:
+        db_status["error"] = str(e)
+
+    # 2. Reply Daemon status
+    reply_daemon_status = {"running": False, "last_run": None}
+    try:
+        from reply_worker import ReplyDaemonManager
+        reply_daemon_status["running"] = ReplyDaemonManager.is_running()
+        if ReplyDaemonManager._last_run:
+            reply_daemon_status["last_run"] = ReplyDaemonManager._last_run.isoformat()
+    except Exception:
+        pass
+
+    # 3. Render Keep-Alive Daemon metrics
+    keepalive_stats = {}
+    try:
+        from .keepalive import RenderKeepAliveDaemon
+        keepalive_stats = RenderKeepAliveDaemon.get_stats()
+    except Exception:
+        pass
+
+    return {
+        "status": "healthy" if db_status["connected"] else "degraded",
+        "service": "Lead Outreach & Analytics API",
+        "uptime_seconds": uptime_seconds,
+        "server_time_utc": now_utc.isoformat(),
+        "database": db_status,
+        "reply_daemon": reply_daemon_status,
+        "keepalive": keepalive_stats,
+        "render_environment": {
+            "is_render": bool(os.getenv("RENDER")),
+            "service_id": os.getenv("RENDER_SERVICE_ID", ""),
+            "instance_id": os.getenv("RENDER_INSTANCE_ID", ""),
+            "external_url": os.getenv("RENDER_EXTERNAL_URL", ""),
+        },
+    }
+
+
+@app.get("/api/keepalive/ping")
+@app.post("/api/keepalive/ping")
+def trigger_keepalive_ping():
+    """Manual trigger to immediately test or execute a Render keep-alive ping."""
+    from .keepalive import RenderKeepAliveDaemon
+    result = RenderKeepAliveDaemon.ping_now()
+    return result
+
+
+@app.get("/api/realtime/summary")
+def get_realtime_summary():
+    """Returns aggregated real-time outreach, engagement, and reply metrics."""
+    db = SessionLocal()
+    try:
+        rows = db.query(CampaignLog).all()
+        total_leads = len(rows)
+        sent_rows = [r for r in rows if r.status in ("sent", "delivered", "replied", "meeting_booked", "booked")]
+        sent_count = len(sent_rows)
+        opened_rows = [r for r in rows if getattr(r, "opened", False)]
+        opened_count = len(opened_rows)
+        total_opens = sum(getattr(r, "open_count", 0) or 0 for r in opened_rows)
+        clicked_rows = [r for r in rows if getattr(r, "clicked_link", False)]
+        clicked_count = len(clicked_rows)
+        total_clicks = sum(getattr(r, "click_count", 0) or 0 for r in clicked_rows)
+        replied_rows = [r for r in rows if getattr(r, "reply_received_at", None) or (r.reply_body and r.reply_body.strip())]
+        replied_count = len(replied_rows)
+        booked_rows = [r for r in rows if getattr(r, "booking_status", "") in ("confirmed", "scheduled", "booked") or getattr(r, "form_filled_at", None)]
+        booked_count = len(booked_rows)
+        unsubscribed_count = len([r for r in rows if getattr(r, "unsubscribed", False)])
+        bounced_count = len([r for r in rows if getattr(r, "bounced", False)])
+
+        def _max_ts(attr):
+            valid = [getattr(r, attr) for r in rows if getattr(r, attr, None)]
+            return max(valid).isoformat() if valid else None
+
+        latest_open = _max_ts("last_open_at") or _max_ts("first_open_at")
+        latest_click = _max_ts("last_click_at") or _max_ts("first_click_at")
+        latest_reply = _max_ts("reply_received_at")
+        latest_booking = _max_ts("form_filled_at")
+
+        open_rate = round((opened_count / sent_count * 100), 1) if sent_count else 0.0
+        click_rate = round((clicked_count / sent_count * 100), 1) if sent_count else 0.0
+        reply_rate = round((replied_count / sent_count * 100), 1) if sent_count else 0.0
+
+        return {
+            "status": "success",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metrics": {
+                "total_leads": total_leads,
+                "sent": sent_count,
+                "opened": opened_count,
+                "total_opens": total_opens,
+                "clicked": clicked_count,
+                "total_clicks": total_clicks,
+                "replied": replied_count,
+                "booked": booked_count,
+                "unsubscribed": unsubscribed_count,
+                "bounced": bounced_count,
+                "open_rate_pct": open_rate,
+                "click_rate_pct": click_rate,
+                "reply_rate_pct": reply_rate,
+            },
+            "latest_events": {
+                "latest_open_at": latest_open,
+                "latest_click_at": latest_click,
+                "latest_reply_at": latest_reply,
+                "latest_booking_at": latest_booking,
+            },
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/realtime/feed")
+def get_realtime_feed(limit: int = 25):
+    """Returns chronological real-time event feed for live activity streaming."""
+    db = SessionLocal()
+    events = []
+    try:
+        rows = db.query(CampaignLog).all()
+        now = datetime.now(timezone.utc)
+
+        def _format_relative(dt):
+            if not dt:
+                return ""
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            secs = max(0, int((now - dt).total_seconds()))
+            if secs < 60:
+                return f"{secs}s ago"
+            mins = secs // 60
+            if mins < 60:
+                return f"{mins}m ago"
+            hours = mins // 60
+            if hours < 24:
+                return f"{hours}h ago"
+            return f"{hours // 24}d ago"
+
+        for r in rows:
+            # Open events
+            if getattr(r, "opened", False) and getattr(r, "last_open_at", None):
+                events.append({
+                    "id": f"open_{r.id}",
+                    "lead_id": r.lead_id or "",
+                    "name": r.name,
+                    "email": r.email,
+                    "company": r.company or "",
+                    "event_type": "email_opened",
+                    "badge": "👁️ Opened",
+                    "badge_color": "#0284C7",
+                    "timestamp": r.last_open_at.isoformat() if hasattr(r.last_open_at, "isoformat") else str(r.last_open_at),
+                    "relative_time": _format_relative(r.last_open_at),
+                    "details": f"Opened {getattr(r, 'open_count', 1)} times",
+                })
+            # Click events
+            if getattr(r, "clicked_link", False) and getattr(r, "last_click_at", None):
+                events.append({
+                    "id": f"click_{r.id}",
+                    "lead_id": r.lead_id or "",
+                    "name": r.name,
+                    "email": r.email,
+                    "company": r.company or "",
+                    "event_type": "link_clicked",
+                    "badge": "🔗 Clicked Link",
+                    "badge_color": "#2563EB",
+                    "timestamp": r.last_click_at.isoformat() if hasattr(r.last_click_at, "isoformat") else str(r.last_click_at),
+                    "relative_time": _format_relative(r.last_click_at),
+                    "details": f"Clicked {getattr(r, 'click_count', 1)} times",
+                })
+            # Reply events
+            if getattr(r, "reply_received_at", None):
+                intent = getattr(r, "reply_intent", "") or "Inquiry"
+                events.append({
+                    "id": f"reply_{r.id}",
+                    "lead_id": r.lead_id or "",
+                    "name": r.name,
+                    "email": r.email,
+                    "company": r.company or "",
+                    "event_type": "reply_received",
+                    "badge": "💬 Customer Reply",
+                    "badge_color": "#7C3AED",
+                    "timestamp": r.reply_received_at.isoformat() if hasattr(r.reply_received_at, "isoformat") else str(r.reply_received_at),
+                    "relative_time": _format_relative(r.reply_received_at),
+                    "details": f"Intent: {intent}",
+                })
+            # Booking events
+            if getattr(r, "form_filled_at", None) or getattr(r, "booking_status", "") in ("confirmed", "scheduled"):
+                b_time = getattr(r, "form_filled_at", None) or getattr(r, "created_at", None)
+                events.append({
+                    "id": f"booking_{r.id}",
+                    "lead_id": r.lead_id or "",
+                    "name": r.name,
+                    "email": r.email,
+                    "company": r.company or "",
+                    "event_type": "meeting_booked",
+                    "badge": "📅 Meeting Booked",
+                    "badge_color": "#059669",
+                    "timestamp": b_time.isoformat() if hasattr(b_time, "isoformat") else str(b_time),
+                    "relative_time": _format_relative(b_time),
+                    "details": f"Slot: {getattr(r, 'confirmed_slot', '') or 'Consultation Scheduled'}",
+                })
+
+        events.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
+
+        return {
+            "status": "success",
+            "total_events": len(events),
+            "events": events[:limit],
+        }
+    finally:
+        db.close()
 
 
 # 1x1 Transparent GIF Byte stream for open tracking pixel

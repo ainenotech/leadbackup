@@ -120,6 +120,24 @@ if os.getenv("AUTO_START_REPLY_DAEMON", "").lower() in {"1", "true", "yes"}:
     if not ReplyDaemonManager.is_running():
         ReplyDaemonManager.start(interval_seconds=30)
 
+# Keep Render backend warm and awake while the dashboard is running
+try:
+    from Backend.keepalive import RenderKeepAliveDaemon
+    if "dashboard_keepalive_active" not in st.session_state:
+        st.session_state.dashboard_keepalive_active = True
+        import threading
+        def _dashboard_keepalive_loop():
+            while True:
+                try:
+                    time.sleep(300)  # Ping every 5 minutes
+                    RenderKeepAliveDaemon.ping_now()
+                except Exception:
+                    pass
+        _t = threading.Thread(target=_dashboard_keepalive_loop, name="DashboardRenderKeepAlive", daemon=True)
+        _t.start()
+except Exception as _e:
+    pass
+
 # Auto-expand sidebar if it was collapsed from a previous session
 if "sidebar_checked" not in st.session_state:
     st.session_state.sidebar_checked = True
@@ -422,7 +440,7 @@ with st.sidebar:
 
     st.markdown("<hr style='border: none; border-top: 1px solid #E2E8F0; margin: 16px 0 12px 0;'>", unsafe_allow_html=True)
 
-    # ── Live System Health in Sidebar ──
+    # ── Live System Health & Render Keep-Alive in Sidebar ──
     api_endpoint = os.getenv("API_BASE_URL", "http://localhost:8000").replace("https://", "").replace("http://", "").split("/")[0] or "localhost:8000"
     st.markdown(
         f"""
@@ -436,6 +454,10 @@ with st.sidebar:
                 <strong style="color: #2563EB; font-size: 11px;">{api_endpoint}</strong>
             </div>
             <div class="sidebar-health-row">
+                <span>Render Keep-Alive</span>
+                <span style="font-size: 11px; color: #059669; font-weight: 600;">● Active (24/7)</span>
+            </div>
+            <div class="sidebar-health-row">
                 <span>Outreach Sender</span>
                 <span style="font-size: 11px; color: #475569;">support@nenotech...</span>
             </div>
@@ -447,6 +469,49 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+
+    # ── Real-Time Live Sync Controller ──
+    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+    sync_cols = st.columns([6, 4])
+    with sync_cols[0]:
+        st.caption("⚡ **Live Sync Speed**")
+    with sync_cols[1]:
+        if st.button("🔄 Sync", key="sync_now_sidebar_btn", use_container_width=True, help="Force immediate data refresh"):
+            st.rerun()
+
+    live_intervals = [
+        "⚡ Real-Time (5s)",
+        "🚀 Fast (15s)",
+        "⏱️ Standard (30s)",
+        "🕐 1 Min",
+        "⏸️ Paused",
+    ]
+    if "live_sync_choice" not in st.session_state:
+        st.session_state.live_sync_choice = "⚡ Real-Time (5s)"
+
+    selected_sync = st.selectbox(
+        "Live Sync Interval",
+        options=live_intervals,
+        index=live_intervals.index(st.session_state.live_sync_choice),
+        key="sync_interval_select",
+        label_visibility="collapsed",
+    )
+    if selected_sync != st.session_state.live_sync_choice:
+        st.session_state.live_sync_choice = selected_sync
+        st.rerun()
+
+    with st.expander("📡 Render 24/7 Keep-Alive", expanded=False):
+        st.caption("Pings your Render backend public URL to prevent 15-minute idle spin-down.")
+        if st.button("⚡ Ping Render Now", use_container_width=True, key="ping_render_btn"):
+            try:
+                from Backend.keepalive import RenderKeepAliveDaemon
+                res = RenderKeepAliveDaemon.ping_now()
+                if res.get("success"):
+                    st.success(f"Render awake! HTTP {res.get('status_code')} ({res.get('latency_ms')}ms)")
+                else:
+                    st.warning(f"Ping result: {res.get('error', 'Unknown')}")
+            except Exception as pe:
+                st.error(f"Keepalive error: {pe}")
 
     with st.expander("🗑️ Reset / Zero All Data", expanded=False):
         st.caption("Erase all uploaded leads, drafts, logs, replies, and bookings to test fresh with 0 records.")
@@ -473,6 +538,149 @@ def render_top_banner(title: str, subtitle: str, badge_text: str = None):
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_live_activity_stream(df: pd.DataFrame) -> None:
+    """Renders a real-time chronological lead interaction activity stream."""
+    if df.empty:
+        return
+
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+
+    def _relative_str(dt):
+        if not dt or pd.isna(dt):
+            return ""
+        if isinstance(dt, str):
+            try:
+                dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+            except Exception:
+                return str(dt)[:16]
+        if hasattr(dt, "tzinfo") and dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        try:
+            secs = max(0, int((now - dt).total_seconds()))
+            if secs < 60:
+                return f"{secs}s ago"
+            mins = secs // 60
+            if mins < 60:
+                return f"{mins}m ago"
+            hours = mins // 60
+            if hours < 24:
+                return f"{hours}h ago"
+            return f"{hours // 24}d ago"
+        except Exception:
+            return ""
+
+    events = []
+    for _, r in df.iterrows():
+        name = str(r.get("name") or "Lead")
+        email = str(r.get("email") or "")
+        company = str(r.get("company") or "")
+
+        # Open event
+        if r.get("opened") and pd.notna(r.get("last_open_at")):
+            t = r.get("last_open_at")
+            events.append({
+                "badge": "👁️ Opened",
+                "badge_style": "background: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD;",
+                "name": name,
+                "email": email,
+                "company": company,
+                "detail": f"Viewed email {int(r.get('open_count') or 1)}x",
+                "time_obj": t,
+                "relative_time": _relative_str(t),
+            })
+        # Click event
+        if r.get("clicked_link") and pd.notna(r.get("last_click_at")):
+            t = r.get("last_click_at")
+            events.append({
+                "badge": "🔗 Clicked Link",
+                "badge_style": "background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;",
+                "name": name,
+                "email": email,
+                "company": company,
+                "detail": f"Clicked tracking link ({int(r.get('click_count') or 1)} clicks)",
+                "time_obj": t,
+                "relative_time": _relative_str(t),
+            })
+        # Reply event
+        if pd.notna(r.get("reply_received_at")):
+            t = r.get("reply_received_at")
+            intent = str(r.get("reply_intent") or "Inquiry")
+            events.append({
+                "badge": "💬 Customer Reply",
+                "badge_style": "background: #F3E8FF; color: #6D28D9; border: 1px solid #DDD6FE;",
+                "name": name,
+                "email": email,
+                "company": company,
+                "detail": f"Intent: {intent}",
+                "time_obj": t,
+                "relative_time": _relative_str(t),
+            })
+        # Booking event
+        if pd.notna(r.get("form_filled_at")) or str(r.get("booking_status") or "").lower() in ("confirmed", "scheduled", "booked"):
+            t = r.get("form_filled_at") or r.get("created_at")
+            slot = str(r.get("confirmed_slot") or "Consultation Scheduled")
+            events.append({
+                "badge": "📅 Meeting Booked",
+                "badge_style": "background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0;",
+                "name": name,
+                "email": email,
+                "company": company,
+                "detail": slot[:40],
+                "time_obj": t,
+                "relative_time": _relative_str(t),
+            })
+
+    def _safe_sort_key(item):
+        val = item.get("time_obj")
+        if val is None or pd.isna(val):
+            return ""
+        return str(val)
+
+    events.sort(key=_safe_sort_key, reverse=True)
+    recent_events = events[:6]
+
+    sync_choice = st.session_state.get("live_sync_choice", "⚡ Real-Time (5s)")
+
+    if recent_events:
+        cards_html = ""
+        for ev in recent_events:
+            company_pill = f'<span style="background: #F1F5F9; color: #475569; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">{html.escape(ev["company"])}</span>' if ev["company"] else ""
+            cards_html += f"""
+            <div style="background: white; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 9999px; {ev['badge_style']}">{ev['badge']}</span>
+                    <strong style="font-size: 13px; color: #0F172A;">{html.escape(ev['name'])}</strong>
+                    <span style="font-size: 12px; color: #64748B;">({html.escape(ev['email'])})</span>
+                    {company_pill}
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 12px; color: #475569; font-weight: 500;">{html.escape(ev['detail'])}</span>
+                    <span style="font-size: 11px; color: #94A3B8; background: #F8FAFC; padding: 2px 6px; border-radius: 4px; border: 1px solid #E2E8F0;">⏱️ {ev['relative_time']}</span>
+                </div>
+            </div>
+            """
+
+        st.markdown(
+            f"""
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; margin: 18px 0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);"></span>
+                        <strong style="font-size: 14px; color: #0F172A; font-weight: 700;">⚡ Real-Time Activity Feed</strong>
+                        <span style="font-size: 11px; color: #64748B;">({len(events)} live telemetry events recorded)</span>
+                    </div>
+                    <div style="font-size: 11px; color: #059669; font-weight: 600; background: #ECFDF5; padding: 3px 8px; border-radius: 9999px; border: 1px solid #A7F3D0;">
+                        ● Live Sync: {sync_choice}
+                    </div>
+                </div>
+                {cards_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -644,6 +852,9 @@ def render_overview(df: pd.DataFrame) -> None:
     if df.empty:
         st.info("💡 **Pipeline is clean with 0 records.** Real-time sync is active: any consultation bookings arriving in **Excel** (`booked_leads.xlsx` via your Bookings $\\to$ Excel $\\to$ Odoo CRM flow) and customer replies in **Outlook** will automatically populate the Dashboard & Analytics. You can also upload a lead spreadsheet in the **Upload & Draft** tab to start outreach.")
         return
+
+    # ── Real-Time Live Activity Stream ──
+    render_live_activity_stream(df)
 
     # ── Interactive Modern Charts Section ──
     col_c1, col_c2 = st.columns([7, 5], gap="large")
@@ -2672,7 +2883,17 @@ def render_replies(df: pd.DataFrame) -> None:
 # ─────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 
-@st.fragment(run_every="60s")
+interval_map = {
+    "⚡ Real-Time (5s)": "5s",
+    "🚀 Fast (15s)": "15s",
+    "⏱️ Standard (30s)": "30s",
+    "🕐 1 Min": "60s",
+    "⏸️ Paused": None,
+}
+sync_choice = st.session_state.get("live_sync_choice", "⚡ Real-Time (5s)")
+sync_interval = interval_map.get(sync_choice, "5s")
+
+@st.fragment(run_every=sync_interval)
 def render_live_telemetry_view(page_name: str):
     rows = load_campaign_logs()
     df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
@@ -2682,21 +2903,15 @@ def render_live_telemetry_view(page_name: str):
         render_analytics(df_logs)
     elif page_name == "replies":
         render_replies(df_logs)
+    elif page_name == "leads":
+        render_leads(df_logs)
+    elif page_name == "templates":
+        render_template_hub(df_logs)
+    elif page_name == "email":
+        render_email_review(df_logs)
 
-if page in ["overview", "analytics", "replies"]:
+if page in ["overview", "analytics", "replies", "leads", "templates", "email"]:
     render_live_telemetry_view(page)
-elif page == "templates":
-    rows = load_campaign_logs()
-    df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
-    render_template_hub(df_logs)
 elif page == "upload":
     render_upload()
-elif page == "leads":
-    rows = load_campaign_logs()
-    df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
-    render_leads(df_logs)
-elif page == "email":
-    rows = load_campaign_logs()
-    df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
-    render_email_review(df_logs)
 

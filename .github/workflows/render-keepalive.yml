@@ -1,0 +1,30 @@
+name: Render Keep-Alive 24/7 Heartbeat
+
+on:
+  schedule:
+    # Runs every 12 minutes (Render free tier sleeps after 15 minutes of inactivity)
+    - cron: "*/12 * * * *"
+  workflow_dispatch:
+    # Allows manual ping trigger from GitHub UI
+
+jobs:
+  keepalive:
+    name: Ping Render Backend Health Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Outreach Backend
+        run: |
+          echo "Dispatched keep-alive ping to Render backend..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}\nTIME_TOTAL:%{time_total}s\n" --max-time 45 "https://neno-lead.onrender.com/api/health")
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          if [ "$STATUS" -eq 404 ]; then
+            echo "ℹ️ /api/health returned 404. Pinging root URL fallback..."
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}\nTIME_TOTAL:%{time_total}s\n" --max-time 45 "https://neno-lead.onrender.com/")
+            STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          fi
+          echo "$RESPONSE"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+            echo "✅ Render backend is awake and healthy! (Status: $STATUS)"
+          else
+            echo "⚠️ Warning: Render backend returned status $STATUS"
+          fi
