@@ -77,14 +77,18 @@ from services.rag import (
     list_documents,
 )
 from Agent.reply_agent import process_incoming_reply
-import importlib
 import services.template_service
-importlib.reload(services.template_service)
 import template_hub_view
-importlib.reload(template_hub_view)
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from services.template_service import load_all_templates, get_template_by_id, render_template
+from utils.theme import (
+    get_current_theme,
+    is_dark_mode,
+    set_theme,
+    apply_chart_theme,
+    get_complete_theme_css,
+)
 
 @st.cache_resource(show_spinner=False)
 def ensure_database_ready() -> bool:
@@ -131,1304 +135,11 @@ if "sidebar_checked" not in st.session_state:
     )
 
 # ─────────────────────────────────────────────────────────────
-# EXECUTIVE LIGHT THEME CSS — 100% Light Mode, Zero Dark Content
 # ─────────────────────────────────────────────────────────────
-st.markdown(
-    """
-<style>
-/* ── Perplexity AI Typography (Newsreader + Inter + JetBrains Mono) ── */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Inter:ital,wght@0,300..700;1,300..700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+# MASTER DUAL THEME SYSTEM (Dark & Light Mode Dynamic CSS)
+# ─────────────────────────────────────────────────────────────
+st.markdown(get_complete_theme_css(is_dark_mode()), unsafe_allow_html=True)
 
-/* ── Perplexity AI Design Tokens ── */
-:root {
-    --bg-canvas: #FAFAF9;
-    --bg-surface: #FFFFFF;
-    --bg-elevated: #FFFFFF;
-    --border-subtle: #E4E4E7;
-    --border-strong: #D4D4D8;
-    --text-primary: #18181B;
-    --text-secondary: #3F3F46;
-    --text-muted: #71717A;
-    --text-micro: #A1A1AA;
-    --brand-primary: #2563EB;
-    --brand-hover: #1D4ED8;
-    --brand-soft: #EFF6FF;
-    --brand-border: #BFDBFE;
-    --perplexity-teal: #0D9488;
-    --perplexity-teal-soft: #F0FDFA;
-    --perplexity-teal-border: #99F6E4;
-    --success-primary: #0D9488;
-    --success-soft: #F0FDFA;
-    --success-border: #99F6E4;
-    --warning-primary: #D97706;
-    --warning-soft: #FFFBEB;
-    --warning-border: #FDE68A;
-    --danger-primary: #DC2626;
-    --danger-soft: #FEF2F2;
-    --danger-border: #FECACA;
-    --ai-primary: #0D9488;
-    --ai-soft: #F0FDFA;
-    --ai-border: #99F6E4;
-    --radius-lg: 12px;
-    --radius-md: 8px;
-    --radius-sm: 6px;
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
-    --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
-}
-
-/* ── Global Canvas & Resets ── */
-html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-    color: var(--text-primary) !important;
-    background-color: var(--bg-canvas) !important;
-    -webkit-font-smoothing: antialiased !important;
-    -moz-osx-font-smoothing: grayscale !important;
-    letter-spacing: -0.011em !important;
-    line-height: 1.6 !important;
-}
-
-/* ── Perplexity Editorial Headings ── */
-h1, h2, [data-testid="stMarkdownContainer"] h1, [data-testid="stMarkdownContainer"] h2 {
-    font-family: 'Newsreader', Georgia, 'Source Serif 4', serif !important;
-    font-weight: 600 !important;
-    letter-spacing: -0.025em !important;
-    color: var(--text-primary) !important;
-    line-height: 1.25 !important;
-}
-
-h3, h4, h5, h6, [data-testid="stMarkdownContainer"] h3, [data-testid="stMarkdownContainer"] h4 {
-    font-family: 'Inter', -apple-system, sans-serif !important;
-    font-weight: 600 !important;
-    letter-spacing: -0.015em !important;
-    color: var(--text-secondary) !important;
-}
-
-p, [data-testid="stMarkdownContainer"] p {
-    font-family: 'Inter', -apple-system, sans-serif !important;
-    letter-spacing: -0.01em !important;
-    line-height: 1.6 !important;
-}
-
-/* ── Monospace Citations, Chips & Codes ── */
-code, pre, .mono-text {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-    font-feature-settings: "zero", "tnum" !important;
-}
-
-[data-testid="stHeader"] {
-    background: transparent !important;
-}
-
-/* Hide deploy & developer toolbar buttons on top-right */
-[data-testid="stToolbarActions"],
-[data-testid="stStatusWidget"],
-[data-testid="stAppDeployButton"],
-.stDeployButton,
-#MainMenu, footer {
-    display: none !important;
-}
-
-/* ── Sidebar Expand & Collapse Button Styling ── */
-[data-testid="stExpandSidebarButton"] {
-    display: inline-flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    background: #FFFFFF !important;
-    border: 1px solid var(--border-strong) !important;
-    border-radius: var(--radius-sm) !important;
-    box-shadow: var(--shadow-sm) !important;
-    padding: 6px 10px !important;
-    margin: 10px 0 0 12px !important;
-    transition: all 0.2s ease !important;
-}
-[data-testid="stExpandSidebarButton"]:hover {
-    background: var(--brand-soft) !important;
-    border-color: var(--brand-primary) !important;
-}
-
-[data-testid="stSidebarCollapseButton"] {
-    background: #F8FAFC !important;
-    border: 1px solid var(--border-subtle) !important;
-    border-radius: var(--radius-sm) !important;
-    padding: 4px 6px !important;
-    transition: all 0.2s ease !important;
-}
-[data-testid="stSidebarCollapseButton"]:hover {
-    background: var(--brand-soft) !important;
-    color: var(--brand-primary) !important;
-}
-
-/* ── Sidebar Navigation ── */
-section[data-testid="stSidebar"] {
-    background-color: #FFFFFF !important;
-    border-right: 1px solid var(--border-subtle) !important;
-    box-shadow: 2px 0 12px rgba(15, 23, 42, 0.02) !important;
-}
-section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-    padding-top: 1rem !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-}
-
-.sidebar-brand-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 14px 16px;
-    background: linear-gradient(135deg, #0B1120 0%, #0F172A 60%, #1E293B 100%);
-    border: 1px solid #1E293B;
-    border-radius: var(--radius-md);
-    margin-bottom: 18px;
-    box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    transition: all 0.2s ease;
-}
-.sidebar-brand-card:hover {
-    border-color: rgba(59, 130, 246, 0.35);
-    box-shadow: 0 6px 20px -2px rgba(37, 99, 235, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-.sidebar-brand-logo-wrapper {
-    width: 100%;
-    display: flex;
-    align-items: center;
-}
-.sidebar-brand-logo-img {
-    height: 32px;
-    max-width: 100%;
-    width: auto;
-    object-fit: contain;
-    display: block;
-}
-.sidebar-brand-subtitle {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 10px !important;
-    font-weight: 600 !important;
-    color: #94A3B8 !important;
-    margin: 8px 0 0 0 !important;
-    letter-spacing: 0.05em !important;
-    text-transform: uppercase !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-}
-.sidebar-brand-dot {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: #10B981;
-    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
-}
-
-/* Sidebar Nav Buttons */
-section[data-testid="stSidebar"] .stButton > button {
-    font-family: 'Inter', -apple-system, sans-serif !important;
-    width: 100%;
-    background: #FFFFFF !important;
-    border: 1px solid transparent !important;
-    color: var(--text-secondary) !important;
-    text-align: left !important;
-    padding: 10px 14px !important;
-    border-radius: var(--radius-sm) !important;
-    font-size: 13.5px !important;
-    font-weight: 500 !important;
-    letter-spacing: -0.01em !important;
-    transition: all 0.15s ease !important;
-    justify-content: flex-start !important;
-    margin-bottom: 3px !important;
-}
-section[data-testid="stSidebar"] .stButton > button:hover {
-    background: #F4F4F5 !important;
-    color: var(--text-primary) !important;
-    border-color: var(--border-subtle) !important;
-}
-section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-    background: var(--brand-soft) !important;
-    color: var(--brand-primary) !important;
-    font-weight: 600 !important;
-    border: 1px solid var(--brand-border) !important;
-    border-left: 4px solid var(--brand-primary) !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-
-/* Sidebar System Health Card */
-.sidebar-health-card {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
-    padding: 12px 14px;
-    margin-top: 14px;
-    box-shadow: var(--shadow-sm);
-}
-.sidebar-health-title {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 10.5px !important;
-    font-weight: 600 !important;
-    color: var(--text-muted) !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.06em !important;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.sidebar-health-row {
-    font-family: 'Inter', sans-serif !important;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 12px;
-    color: var(--text-secondary);
-    padding: 3px 0;
-    letter-spacing: -0.01em;
-}
-.health-pill {
-    font-family: 'JetBrains Mono', monospace !important;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 7px;
-    border-radius: 6px;
-    font-size: 10.5px;
-    font-weight: 600;
-}
-.health-pill-green {
-    background: #F0FDFA;
-    color: #0F766E;
-    border: 1px solid #99F6E4;
-}
-
-/* ── Top Executive Header Banner ── */
-.top-header-banner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 22px 28px;
-    margin-bottom: 24px;
-    box-shadow: var(--shadow-sm);
-}
-.top-header-title {
-    font-family: 'Newsreader', Georgia, 'Source Serif 4', serif !important;
-    font-size: 28px !important;
-    font-weight: 600 !important;
-    color: var(--text-primary) !important;
-    letter-spacing: -0.025em !important;
-    line-height: 1.25 !important;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.top-header-desc {
-    font-family: 'Inter', sans-serif !important;
-    font-size: 13.5px !important;
-    color: var(--text-muted) !important;
-    margin: 6px 0 0 0;
-    line-height: 1.55 !important;
-    letter-spacing: -0.01em !important;
-}
-.top-header-badges {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-/* ── Modern KPI Grid with Pixel-Perfect Gaps ── */
-.kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-    margin-top: 4px;
-    margin-bottom: 28px;
-    width: 100%;
-}
-@media (max-width: 1100px) {
-    .kpi-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 16px;
-    }
-}
-@media (max-width: 680px) {
-    .kpi-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-.kpi-card {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 22px 24px 20px 24px;
-    box-shadow: var(--shadow-sm);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    min-height: 148px;
-}
-.kpi-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
-    border-color: #CBD5E1;
-}
-.kpi-top-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-}
-.kpi-bar-blue   { background: linear-gradient(90deg, #2563EB, #60A5FA); }
-.kpi-bar-amber  { background: linear-gradient(90deg, #F59E0B, #FCD34D); }
-.kpi-bar-teal   { background: linear-gradient(90deg, #0D9488, #2DD4BF); }
-.kpi-bar-cyan   { background: linear-gradient(90deg, #06B6D4, #67E8F9); }
-.kpi-bar-purple { background: linear-gradient(90deg, #8B5CF6, #C4B5FD); }
-.kpi-bar-rose   { background: linear-gradient(90deg, #F43F5E, #FDA4AF); }
-
-.kpi-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-.kpi-label {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    color: var(--text-muted) !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.06em !important;
-}
-.kpi-icon-box {
-    width: 36px;
-    height: 36px;
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 17px;
-    flex-shrink: 0;
-}
-.kpi-value {
-    font-family: 'Inter', -apple-system, sans-serif !important;
-    font-feature-settings: "tnum", "cv02", "cv03", "cv04", "cv11" !important;
-    font-size: 34px !important;
-    font-weight: 700 !important;
-    color: var(--text-primary) !important;
-    line-height: 1.1 !important;
-    letter-spacing: -0.035em !important;
-    margin-bottom: 10px;
-}
-.kpi-micro {
-    font-family: 'Inter', sans-serif !important;
-    font-size: 12.5px !important;
-    font-weight: 500 !important;
-    color: var(--text-muted) !important;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    letter-spacing: -0.01em !important;
-}
-.kpi-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 2.5px 7px;
-    border-radius: 5px;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important;
-    font-weight: 600;
-    line-height: 1.2;
-}
-.kpi-pill-blue   { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
-.kpi-pill-amber  { background: #FFFBEB; color: #B45309; border: 1px solid #FDE68A; }
-.kpi-pill-teal   { background: #F0FDFA; color: #0F766E; border: 1px solid #99F6E4; }
-.kpi-pill-cyan   { background: #ECFEFF; color: #0E7490; border: 1px solid #A5F3FC; }
-.kpi-pill-purple { background: #F5F3FF; color: #6D28D9; border: 1px solid #DDD6FE; }
-.kpi-pill-rose   { background: #FFF1F2; color: #BE123C; border: 1px solid #FECDD3; }
-
-/* ── Visual Conversion Funnel Card ── */
-.funnel-container {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 22px 26px 20px 26px;
-    margin-bottom: 28px;
-    box-shadow: var(--shadow-sm);
-}
-.funnel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 18px;
-}
-.funnel-title {
-    font-family: 'Newsreader', Georgia, serif !important;
-    font-size: 19px !important;
-    font-weight: 600 !important;
-    color: var(--text-primary) !important;
-    letter-spacing: -0.02em !important;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.funnel-stages {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 12px;
-}
-@media (max-width: 1024px) {
-    .funnel-stages {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
-.funnel-stage {
-    background: #FAFAF9;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    padding: 14px 12px;
-    text-align: center;
-    position: relative;
-    transition: all 0.2s ease;
-}
-.funnel-stage:hover {
-    background: #FFFFFF;
-    border-color: #CBD5E1;
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-sm);
-}
-.funnel-stage-name {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 10.5px !important;
-    font-weight: 600 !important;
-    color: var(--text-muted) !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    margin-bottom: 5px;
-}
-.funnel-stage-val {
-    font-family: 'Inter', sans-serif !important;
-    font-feature-settings: "tnum" !important;
-    font-size: 22px !important;
-    font-weight: 700 !important;
-    color: var(--text-primary) !important;
-    letter-spacing: -0.02em !important;
-    margin-bottom: 4px;
-}
-.funnel-stage-sub {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 10.5px !important;
-    font-weight: 600 !important;
-    color: var(--text-muted) !important;
-}
-
-/* ── Modern Premium Chart Containers ── */
-.chart-box {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 22px 24px 18px 24px;
-    box-shadow: var(--shadow-sm);
-    margin-bottom: 24px;
-    transition: all 0.2s ease;
-}
-.chart-box:hover {
-    border-color: #CBD5E1;
-    box-shadow: var(--shadow-md);
-}
-.chart-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 12px;
-}
-.chart-title-group h3 {
-    font-family: 'Newsreader', Georgia, serif !important;
-    font-size: 18px !important;
-    font-weight: 600 !important;
-    color: var(--text-primary) !important;
-    margin: 0 !important;
-    letter-spacing: -0.015em !important;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.chart-title-group p {
-    font-family: 'Inter', sans-serif !important;
-    font-size: 12.5px !important;
-    color: var(--text-muted) !important;
-    margin: 3px 0 0 0 !important;
-}
-
-/* ── Native Streamlit Bordered Containers Styled as Premium Cards ── */
-[data-testid="stVerticalBlockBorderWrapper"] {
-    background: #FFFFFF !important;
-    border: 1px solid var(--border-subtle) !important;
-    border-radius: var(--radius-lg) !important;
-    box-shadow: var(--shadow-sm) !important;
-    padding: 20px 22px !important;
-    transition: all 0.2s ease !important;
-}
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
-    border-color: #CBD5E1 !important;
-    box-shadow: var(--shadow-md) !important;
-}
-
-/* ── Modern Premium Cards ── */
-.premium-card {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 22px 24px;
-    margin-bottom: 20px;
-    box-shadow: var(--shadow-sm);
-}
-.card-header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 14px;
-}
-.card-title {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    color: var(--text-muted) !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.06em !important;
-}
-.card-text {
-    font-family: 'Inter', sans-serif !important;
-    font-size: 14px;
-    color: var(--text-primary);
-    margin: 4px 0;
-    line-height: 1.55;
-    letter-spacing: -0.01em;
-}
-.card-text-light {
-    font-family: 'Inter', sans-serif !important;
-    font-size: 13px;
-    color: var(--text-muted);
-    margin: 2px 0;
-    letter-spacing: -0.01em;
-}
-
-/* ── Badges / Pills (Perplexity Citation Chip Style) ── */
-.badge {
-    font-family: 'JetBrains Mono', monospace !important;
-    display: inline-flex;
-    align-items: center;
-    padding: 2.5px 8px;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1.3;
-    letter-spacing: 0.02em;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
-}
-.badge-sent      { background: #F0FDFA; color: #0F766E; border: 1px solid #99F6E4; }
-.badge-drafted   { background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; }
-.badge-pending   { background: #F4F4F5; color: #27272A; border: 1px solid #E4E4E7; }
-.badge-rejected  { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
-.badge-failed    { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
-.badge-replied   { background: #F0FDFA; color: #0F766E; border: 1px solid #99F6E4; }
-.badge-scheduled { background: #F5F3FF; color: #5B21B6; border: 1px solid #DDD6FE; }
-
-/* ── Form Inputs, Textarea, Select ── */
-label, [data-testid="stWidgetLabel"] label, [data-testid="stWidgetLabel"] p {
-    color: #0F172A !important;
-    font-size: 13.5px !important;
-    font-weight: 600 !important;
-    margin-bottom: 5px !important;
-}
-div[data-baseweb="input"],
-div[data-baseweb="textarea"],
-[data-testid="stTextInput"] input,
-[data-testid="stTextArea"] textarea {
-    background-color: #FFFFFF !important;
-    color: #0F172A !important;
-    -webkit-text-fill-color: #0F172A !important;
-    border: 1px solid #CBD5E1 !important;
-    border-radius: var(--radius-sm) !important;
-    font-size: 14px !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-div[data-baseweb="input"]:focus-within,
-div[data-baseweb="textarea"]:focus-within {
-    border-color: var(--brand-primary) !important;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
-}
-[data-testid="stSelectbox"] [data-baseweb="select"] {
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    border-radius: var(--radius-sm) !important;
-    color: #0F172A !important;
-}
-
-/* ── Buttons ── */
-.stButton > button {
-    border-radius: var(--radius-sm) !important;
-    font-weight: 600 !important;
-    font-size: 13.5px !important;
-    padding: 8px 16px !important;
-    transition: all 0.15s ease !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-.stButton > button[kind="primary"] {
-    background: var(--brand-primary) !important;
-    border: 1px solid var(--brand-primary) !important;
-    color: #FFFFFF !important;
-}
-.stButton > button[kind="primary"]:hover {
-    background: var(--brand-hover) !important;
-    border-color: var(--brand-hover) !important;
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
-}
-
-/* ── Superhuman Email Client Preview Card ── */
-.email-preview-window {
-    background: #FFFFFF;
-    border: 1px solid #CBD5E1;
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-    overflow: hidden;
-    margin: 16px 0;
-}
-.email-preview-mac-header {
-    background: #F1F5F9;
-    padding: 10px 16px;
-    border-bottom: 1px solid #E2E8F0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.mac-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-}
-.dot-red   { background: #FF5F56; }
-.dot-amber { background: #FFBD2E; }
-.dot-green { background: #27C93F; }
-
-.email-preview-meta {
-    padding: 16px 20px;
-    border-bottom: 1px solid #F1F5F9;
-    background: #FAFAFA;
-}
-.email-preview-meta-row {
-    display: flex;
-    align-items: center;
-    font-size: 13px;
-    color: #475569;
-    margin-bottom: 4px;
-}
-.email-preview-meta-label {
-    width: 60px;
-    font-weight: 600;
-    color: #64748B;
-}
-.email-preview-subject {
-    font-size: 15px;
-    font-weight: 700;
-    color: #0F172A;
-    margin-top: 6px;
-}
-.email-preview-body {
-    padding: 20px 24px;
-    font-size: 14.5px;
-    line-height: 1.5;
-    color: #1E293B;
-    background: #FFFFFF;
-    word-break: break-word;
-}
-.email-preview-body p {
-    margin: 0 0 10px 0 !important;
-    padding: 0 !important;
-    line-height: 1.5 !important;
-}
-.email-preview-body ul {
-    margin: 4px 0 12px 0 !important;
-    padding-left: 18px !important;
-}
-.email-preview-body li {
-    margin-bottom: 4px !important;
-    line-height: 1.45 !important;
-}
-
-/* ── Clean Data Tables ── */
-[data-testid="stDataFrame"] {
-    border-radius: var(--radius-md) !important;
-    border: 1px solid var(--border-subtle) !important;
-    background: #FFFFFF !important;
-    box-shadow: var(--shadow-sm);
-    overflow: hidden;
-}
-
-/* ── Light Alert / Status Containers ── */
-[data-testid="stAlert"] {
-    border-radius: var(--radius-md) !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-
-/* ── 4-Column Modern KPI Grid ── */
-.kpi-grid-4 {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    margin-top: 4px;
-    margin-bottom: 24px;
-    width: 100%;
-}
-@media (max-width: 1200px) {
-    .kpi-grid-4 {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 14px;
-    }
-}
-@media (max-width: 640px) {
-    .kpi-grid-4 {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* ── Executive Action Toolbar Card ── */
-.action-toolbar-card {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 16px 22px;
-    margin-bottom: 18px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    box-shadow: var(--shadow-sm);
-    gap: 16px;
-    flex-wrap: wrap;
-}
-.action-toolbar-status {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.action-toolbar-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: #10B981;
-    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
-    display: inline-block;
-}
-
-/* ── Executive Consultation Booking Cards ── */
-.booking-card {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 20px 22px;
-    box-shadow: var(--shadow-sm);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    height: 100%;
-}
-.booking-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.08);
-    border-color: #CBD5E1;
-}
-.booking-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 14px;
-}
-.booking-lead-profile {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.booking-avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
-    color: #1D4ED8;
-    font-weight: 700;
-    font-size: 15px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid #BFDBFE;
-    flex-shrink: 0;
-}
-.booking-name-title {
-    font-size: 15.5px;
-    font-weight: 600;
-    color: var(--text-primary);
-    line-height: 1.3;
-}
-.booking-company-badge {
-    font-size: 12.5px;
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 2px;
-}
-.booking-info-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    padding: 12px 14px;
-    background: #FAFAFA;
-    border: 1px solid #F1F5F9;
-    border-radius: var(--radius-md);
-    margin: 12px 0;
-}
-.booking-info-item {
-    display: flex;
-    flex-direction: column;
-}
-.booking-info-label {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-.booking-info-val {
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin-top: 2px;
-    word-break: break-all;
-}
-.booking-slot-highlight {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    background: #F0FDFA;
-    border: 1px solid #99F6E4;
-    border-radius: var(--radius-md);
-    margin: 10px 0 14px 0;
-}
-.booking-slot-text {
-    font-size: 13px;
-    font-weight: 600;
-    color: #0F766E;
-}
-.booking-note-box {
-    font-size: 12.5px;
-    color: #475569;
-    background: #F8FAFC;
-    border-left: 3px solid #94A3B8;
-    padding: 8px 12px;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-    margin-bottom: 14px;
-    font-style: italic;
-}
-.teams-join-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 10px 16px;
-    background: linear-gradient(135deg, #4338CA 0%, #4F46E5 100%);
-    color: #FFFFFF !important;
-    font-weight: 600;
-    font-size: 13px;
-    border-radius: var(--radius-sm);
-    text-decoration: none !important;
-    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
-    transition: all 0.2s ease;
-}
-.teams-join-btn:hover {
-    background: linear-gradient(135deg, #3730A3 0%, #4338CA 100%);
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
-    transform: translateY(-1px);
-    color: #FFFFFF !important;
-}
-
-/* ── Live Reply & Conversation Thread Feed ── */
-.chat-thread-card {
-    background: #FFFFFF;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: 20px 22px;
-    margin-bottom: 18px;
-    box-shadow: var(--shadow-sm);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.chat-thread-card:hover {
-    box-shadow: var(--shadow-md);
-    border-color: #CBD5E1;
-}
-.chat-thread-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 12px;
-    margin-bottom: 14px;
-    border-bottom: 1px solid #F1F5F9;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-.chat-lead-profile {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.chat-bubble-inbound {
-    background: #F8FAFC;
-    border: 1px solid #E2E8F0;
-    border-radius: 12px 12px 12px 2px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
-}
-.chat-bubble-outbound {
-    background: #F0FDFA;
-    border: 1px solid #CCFBF1;
-    border-radius: 12px 12px 2px 12px;
-    padding: 14px 16px;
-}
-.chat-bubble-sender {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 6px;
-}
-.chat-bubble-text {
-    font-size: 13.5px;
-    color: #1E293B;
-    line-height: 1.6;
-    white-space: pre-wrap;
-}
-
-/* ── Executive Analytics Suite Styles ── */
-.analytics-feature-box {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    padding: 18px 22px;
-    margin-bottom: 18px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    transition: all 0.2s ease;
-}
-.analytics-feature-box:hover {
-    border-color: #CBD5E1;
-    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
-}
-.feature-title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-.feature-title-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.feature-icon-bubble {
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    background: #EFF6FF;
-    color: #2563EB;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    flex-shrink: 0;
-}
-.feature-name-text {
-    font-size: 15.5px;
-    font-weight: 600;
-    color: #18181B;
-    letter-spacing: -0.015em;
-    margin: 0;
-}
-.feature-explanation-sub {
-    font-size: 13px;
-    color: #64748B;
-    margin: 2px 0 0 0;
-}
-.feature-tag-pill {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10.5px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 6px;
-    background: #F8FAFC;
-    color: #475569;
-    border: 1px solid #E2E8F0;
-}
-.feature-status-active {
-    background: #F0FDFA;
-    color: #0F766E;
-    border: 1px solid #99F6E4;
-}
-
-/* ── Vertical Connected Lead Timeline ── */
-.timeline-v-wrap {
-    position: relative;
-    padding-left: 32px;
-    margin: 16px 0;
-}
-.timeline-v-wrap::before {
-    content: '';
-    position: absolute;
-    top: 10px;
-    bottom: 10px;
-    left: 13px;
-    width: 2px;
-    background: #E2E8F0;
-}
-.timeline-v-item {
-    position: relative;
-    margin-bottom: 20px;
-}
-.timeline-v-node {
-    position: absolute;
-    left: -32px;
-    top: 2px;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: #FFFFFF;
-    border: 2px solid #2563EB;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    box-shadow: 0 0 0 3px #EFF6FF;
-    z-index: 2;
-}
-.timeline-v-node.completed {
-    border-color: #0D9488;
-    box-shadow: 0 0 0 3px #F0FDFA;
-}
-.timeline-v-node.suppressed {
-    border-color: #DC2626;
-    box-shadow: 0 0 0 3px #FEF2F2;
-}
-.timeline-v-card {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 8px;
-    padding: 12px 16px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-}
-.timeline-v-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
-}
-.timeline-v-title {
-    font-size: 13.5px;
-    font-weight: 600;
-    color: #1E293B;
-}
-.timeline-v-time {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #94A3B8;
-}
-.timeline-v-desc {
-    font-size: 12.5px;
-    color: #475569;
-    margin: 0;
-}
-
-/* ── Luxury Glassmorphic Feature Cards (Whole Box Clickable) ── */
-.glass-feature-card {
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: space-between !important;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(248, 250, 252, 0.68) 100%) !important;
-    backdrop-filter: blur(16px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
-    border: 1px solid rgba(226, 232, 240, 0.85) !important;
-    border-radius: 16px !important;
-    padding: 22px 24px !important;
-    margin-bottom: 18px !important;
-    text-decoration: none !important;
-    color: inherit !important;
-    cursor: pointer !important;
-    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95) !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    position: relative !important;
-    overflow: hidden !important;
-    min-height: 148px !important;
-}
-.glass-feature-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3.5px;
-    background: linear-gradient(90deg, #2563EB 0%, #0D9488 50%, #7C3AED 100%);
-    opacity: 0;
-    transition: opacity 0.25s ease;
-}
-.glass-feature-card:hover {
-    transform: translateY(-4px) !important;
-    border-color: rgba(59, 130, 246, 0.45) !important;
-    box-shadow: 0 16px 36px -4px rgba(37, 99, 235, 0.12), inset 0 1px 2px 0 rgba(255, 255, 255, 1) !important;
-    text-decoration: none !important;
-}
-.glass-feature-card:hover::before {
-    opacity: 1;
-}
-.glass-feature-card:hover .glass-card-title {
-    color: #2563EB !important;
-}
-.glass-feature-card:hover .glass-arrow-circle {
-    background: #2563EB !important;
-    color: #FFFFFF !important;
-    transform: translateX(4px) !important;
-    border-color: #2563EB !important;
-}
-.glass-card-header {
-    display: flex !important;
-    justify-content: space-between !important;
-    align-items: flex-start !important;
-    margin-bottom: 10px !important;
-}
-.glass-card-left {
-    display: flex !important;
-    align-items: flex-start !important;
-    gap: 14px !important;
-}
-.glass-icon-box {
-    width: 44px !important;
-    height: 44px !important;
-    border-radius: 12px !important;
-    background: linear-gradient(135deg, rgba(239, 246, 255, 0.9) 0%, rgba(219, 234, 254, 0.7) 100%) !important;
-    border: 1px solid rgba(191, 219, 254, 0.8) !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    font-size: 22px !important;
-    flex-shrink: 0 !important;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08) !important;
-}
-.glass-card-title {
-    font-size: 16px !important;
-    font-weight: 700 !important;
-    color: #18181B !important;
-    letter-spacing: -0.015em !important;
-    margin: 0 !important;
-    transition: color 0.2s ease !important;
-}
-.glass-card-desc {
-    font-size: 13px !important;
-    color: #64748B !important;
-    margin: 4px 0 0 0 !important;
-    line-height: 1.5 !important;
-}
-.glass-card-footer {
-    display: flex !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    margin-top: 14px !important;
-    padding-top: 10px !important;
-    border-top: 1px solid rgba(226, 232, 240, 0.6) !important;
-}
-.glass-explore-text {
-    font-size: 11.5px !important;
-    font-weight: 600 !important;
-    color: #475569 !important;
-    letter-spacing: -0.01em !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 4px !important;
-}
-.glass-arrow-circle {
-    width: 26px !important;
-    height: 26px !important;
-    border-radius: 50% !important;
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    color: #475569 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-}
-.card-stretch-link {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    z-index: 15 !important;
-    cursor: pointer !important;
-    background: transparent !important;
-    text-decoration: none !important;
-    display: block !important;
-    border: none !important;
-    outline: none !important;
-}
-.btn-export-download {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    font-weight: 500 !important;
-    padding: 0.45rem 0.85rem !important;
-    border-radius: 8px !important;
-    min-height: 38px !important;
-    margin: 0px !important;
-    line-height: 1.5 !important;
-    color: #1E293B !important;
-    width: 100% !important;
-    user-select: none !important;
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    text-decoration: none !important;
-    font-size: 13.5px !important;
-    cursor: pointer !important;
-    transition: all 0.15s ease !important;
-    box-sizing: border-box !important;
-    text-align: center !important;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
-}
-.btn-export-download:hover {
-    border-color: #2563EB !important;
-    color: #2563EB !important;
-    background-color: #F8FAFC !important;
-    text-decoration: none !important;
-    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.12) !important;
-}
-.btn-export-download:active {
-    background-color: #EFF6FF !important;
-    transform: translateY(1px) !important;
-}
-</style>
-""",
-    unsafe_allow_html=True,
-)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1479,6 +190,17 @@ CAMPAIGN_LOG_COLUMNS = [
     "template_name",
     "created_at",
 ]
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_cached_kb_summary() -> dict:
+    db = SessionLocal()
+    try:
+        return get_knowledge_base_summary(db)
+    except Exception:
+        return {"total_chunks": 0, "total_documents": 0, "documents": []}
+    finally:
+        db.close()
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -1603,6 +325,7 @@ def confirm_reset_dialog():
                 from Backend.crud import reset_all_system_data
                 reset_all_system_data()
                 st.cache_data.clear()
+                fetch_cached_kb_summary.clear()
                 for k in list(st.session_state.keys()):
                     if k.startswith("_pdf_") or k.startswith("_excel_") or k == "campaign_data_version":
                         del st.session_state[k]
@@ -1614,7 +337,9 @@ def confirm_reset_dialog():
 
 
 with st.sidebar:
-    logo_file = os.path.join(os.path.dirname(__file__), "logo-light.png")
+    curr_theme = get_current_theme()
+    logo_name = "logo-dark.png" if curr_theme == "dark" else "logo-light.png"
+    logo_file = os.path.join(os.path.dirname(__file__), logo_name)
     logo_b64 = get_image_base64(logo_file)
     if logo_b64:
         logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" alt="Neno Technology" class="sidebar-brand-logo-img" />'
@@ -1636,7 +361,23 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div style='font-family: \"JetBrains Mono\", monospace; font-size: 10.5px; font-weight: 600; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 8px 6px;'>Navigation</div>", unsafe_allow_html=True)
+        # ── Appearance Mode Switcher ──
+    st.markdown("<div style='font-family: \"JetBrains Mono\", monospace; font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 6px 6px;'>Theme Mode</div>", unsafe_allow_html=True)
+    th_col1, th_col2 = st.columns(2)
+    with th_col1:
+        dark_btn_kind = "primary" if curr_theme == "dark" else "secondary"
+        if st.button("🌙 Dark", key="btn_switch_dark", type=dark_btn_kind, use_container_width=True):
+            if curr_theme != "dark":
+                set_theme("dark")
+                st.rerun()
+    with th_col2:
+        light_btn_kind = "primary" if curr_theme == "light" else "secondary"
+        if st.button("☀️ Light", key="btn_switch_light", type=light_btn_kind, use_container_width=True):
+            if curr_theme != "light":
+                set_theme("light")
+                st.rerun()
+
+    st.markdown("<div style='font-family: \"JetBrains Mono\", monospace; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 10px 0 8px 6px;'>Navigation</div>", unsafe_allow_html=True)
 
     for key, nav in NAV_ITEMS.items():
         btn_type = "primary" if st.session_state.active_page == key else "secondary"
@@ -1946,7 +687,8 @@ def render_overview(df: pd.DataFrame) -> None:
                     tickfont=dict(family="JetBrains Mono", size=10.5, color="#71717A"),
                 ),
             )
-            st.plotly_chart(fig_funnel, use_container_width=True)
+            apply_chart_theme(fig_funnel)
+            st.plotly_chart(fig_funnel, use_container_width=True, config={"displayModeBar": False})
 
     with col_c2:
         with st.container(border=True):
@@ -2005,7 +747,8 @@ def render_overview(df: pd.DataFrame) -> None:
                     )
                 ],
             )
-            st.plotly_chart(fig_donut, use_container_width=True)
+            apply_chart_theme(fig_donut)
+            st.plotly_chart(fig_donut, use_container_width=True, config={"displayModeBar": False})
 
     st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
@@ -2991,13 +1734,7 @@ def render_replies(df: pd.DataFrame) -> None:
     status_badge_cls = "badge-sent" if is_monitoring else "badge-pending"
     status_dot_color = "#10B981" if is_monitoring else "#94A3B8"
 
-    db_kb = SessionLocal()
-    try:
-        kb_summary = get_knowledge_base_summary(db_kb)
-    except Exception:
-        kb_summary = {"total_chunks": 0, "total_documents": 0, "documents": []}
-    finally:
-        db_kb.close()
+    kb_summary = fetch_cached_kb_summary()
 
     kb_chunks = kb_summary.get("total_chunks", 0)
     kb_docs_count = kb_summary.get("total_documents", 0)
@@ -3447,25 +2184,25 @@ def render_replies(df: pd.DataFrame) -> None:
         # Knowledge Base KPI summary grid
         rag_kpi_html = f"""
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px;">
-            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #0D9488;">
-                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Indexed Knowledge Chunks</div>
-                <div style="font-size: 24px; font-weight: 800; color: #0F172A; margin: 4px 0;">{kb_chunks}</div>
-                <div style="font-size: 12px; color: #0D9488; font-weight: 600;">Active in RAG Vector Memory</div>
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px; border-left: 4px solid #0D9488; box-shadow: var(--shadow-sm);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Indexed Knowledge Chunks</div>
+                <div style="font-size: 26px; font-weight: 800; color: var(--text-primary); margin: 4px 0; font-family: 'JetBrains Mono', monospace;">{kb_chunks}</div>
+                <div style="font-size: 12px; color: var(--teal-primary); font-weight: 600;">Active in RAG Vector Memory</div>
             </div>
-            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #2563EB;">
-                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Source Documents</div>
-                <div style="font-size: 24px; font-weight: 800; color: #0F172A; margin: 4px 0;">{kb_docs_count}</div>
-                <div style="font-size: 12px; color: #2563EB; font-weight: 600;">Attached Files (PDF / MD / TXT)</div>
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px; border-left: 4px solid var(--brand-primary); box-shadow: var(--shadow-sm);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Source Documents</div>
+                <div style="font-size: 26px; font-weight: 800; color: var(--text-primary); margin: 4px 0; font-family: 'JetBrains Mono', monospace;">{kb_docs_count}</div>
+                <div style="font-size: 12px; color: var(--brand-primary); font-weight: 600;">Attached Files (PDF / MD / TXT)</div>
             </div>
-            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #7C3AED;">
-                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Embedding Engine</div>
-                <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin: 8px 0 4px 0;">Gemini Embeddings</div>
-                <div style="font-size: 12px; color: #64748B;">3,072-dim Normalized Vectors</div>
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px; border-left: 4px solid var(--purple-primary); box-shadow: var(--shadow-sm);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Embedding Engine</div>
+                <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 8px 0 4px 0;">Gemini Embeddings</div>
+                <div style="font-size: 12px; color: var(--text-muted);">Normalized Dense Vectors</div>
             </div>
-            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #F59E0B;">
-                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Retrieval Algorithm</div>
-                <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin: 8px 0 4px 0;">Cosine Similarity</div>
-                <div style="font-size: 12px; color: #64748B;">Strict Min-Score 0.35 Filter</div>
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px; border-left: 4px solid var(--amber-primary); box-shadow: var(--shadow-sm);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Retrieval Algorithm</div>
+                <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 8px 0 4px 0;">Cosine Similarity</div>
+                <div style="font-size: 12px; color: var(--text-muted);">Strict Min-Score 0.35 Filter</div>
             </div>
         </div>
         """
@@ -3484,7 +2221,7 @@ def render_replies(df: pd.DataFrame) -> None:
         with up_col2:
             custom_doc_title = st.text_input(
                 "Document Title (Optional)",
-                placeholder="e.g. Neno Capabilities 2026",
+                placeholder="e.g. Capabilities 2026",
                 key="rag_doc_custom_title",
             )
             ingest_btn = st.button("📥 Ingest & Attach to RAG Memory", type="primary", use_container_width=True, disabled=(uploaded_rag_file is None), key="btn_ingest_rag_doc")
@@ -3509,49 +2246,37 @@ def render_replies(df: pd.DataFrame) -> None:
                 finally:
                     db_ingest.close()
                 st.cache_data.clear()
+                fetch_cached_kb_summary.clear()
             st.success(f"✅ Successfully attached and indexed '{uploaded_rag_file.name}' into RAG memory ({num_chunks} vector chunks created)!")
             st.rerun()
 
-        # Workspace Knowledge Sync Button
-        st.markdown("<hr style='margin: 18px 0; border: none; border-top: 1px solid #E2E8F0;'>", unsafe_allow_html=True)
+        # Workspace Knowledge Sync & Management Button
+        st.markdown("<hr style='margin: 18px 0; border: none; border-top: 1px solid var(--border-subtle);'>", unsafe_allow_html=True)
         sync_col1, sync_col2 = st.columns([3, 1.2])
         with sync_col1:
             if kb_chunks == 0:
-                st.warning("⚠️ **Notice**: Knowledge files (`neno_technology_knowledge_base.pdf`, `company_faqs.md`) are present in `knowledge_base/` on disk, but have not been indexed into the database yet. Click below to index them into RAG memory now.")
+                st.info("💡 **Clean State**: Vector memory is clean (0 Chunks). Upload your PDF, Markdown, or text documentation above to index knowledge for the AI reply agent.")
             else:
-                st.caption(f"Knowledge base has **{kb_chunks}** active chunks across **{kb_docs_count}** document(s). You can re-sync workspace files anytime to refresh vector memory.")
+                st.caption(f"Knowledge base has **{kb_chunks}** active chunks across **{kb_docs_count}** document(s). You can index more files or manage them below.")
         with sync_col2:
-            if st.button("⚡ Sync & Index Workspace Files", key="btn_seed_workspace_kb", use_container_width=True):
-                with st.spinner("Extracting text and embedding all workspace knowledge files..."):
-                    import glob
-                    kb_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
-                    pdf_files = sorted(glob.glob(os.path.join(kb_dir, "*.pdf")))
-                    other_files = sorted(glob.glob(os.path.join(kb_dir, "*.md")) + glob.glob(os.path.join(kb_dir, "*.txt")))
-                    all_kb_files = pdf_files + other_files
-                    total_synced = 0
-                    db_seed = SessionLocal()
+            if kb_chunks > 0:
+                if st.button("🗑️ Purge All RAG Documents", key="btn_purge_kb_docs", use_container_width=True, type="secondary"):
+                    from services.rag import clear_all_knowledge_documents
+                    db_p = SessionLocal()
                     try:
-                        seen_t = set()
-                        for p in all_kb_files:
-                            ext = os.path.splitext(p)[1].lower()
-                            bname = os.path.splitext(os.path.basename(p))[0].replace("_", " ").replace("-", " ").title()
-                            t_title = f"{bname} (PDF)" if ext == ".pdf" else bname
-                            if ext == ".md" and f"{bname} (PDF)" in seen_t:
-                                continue
-                            n_c = ingest_file_content(db_seed, filename=os.path.basename(p), file_bytes_or_content=p, title=t_title)
-                            seen_t.add(t_title)
-                            total_synced += n_c
+                        clear_all_knowledge_documents(db_p)
                     finally:
-                        db_seed.close()
+                        db_p.close()
                     st.cache_data.clear()
-                st.success(f"✅ Synced all workspace knowledge files: {total_synced} chunks active in RAG memory!")
-                st.rerun()
+                    fetch_cached_kb_summary.clear()
+                    st.toast("✅ All RAG documents cleared to 0 chunks!", icon="🗑️")
+                    st.rerun()
 
         # Currently Attached Documents List
         st.markdown("#### 📑 Active Attached Knowledge Documents")
         docs_list = kb_summary.get("documents", [])
         if not docs_list:
-            st.info("No documents indexed in vector memory yet. Upload a file above or click '⚡ Sync & Index Workspace Files'.")
+            st.info("No documents indexed in vector memory yet. Upload your PDF or text document above to ground the AI assistant.")
         else:
             for doc in docs_list:
                 d_title = doc.get("title", "Untitled")
@@ -3560,14 +2285,14 @@ def render_replies(df: pd.DataFrame) -> None:
                 d_cat = doc.get("category") or "Documentation"
 
                 card_html = f"""
-                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; box-shadow: var(--shadow-sm); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <div>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 15px; font-weight: 700; color: #0F172A;">📄 {d_title}</span>
+                            <span style="font-size: 15px; font-weight: 700; color: var(--text-primary);">📄 {d_title}</span>
                             <span class="badge badge-scheduled" style="font-size: 11px;">{d_cat}</span>
                             <span class="badge badge-sent" style="font-size: 11px;">{d_chunks} Chunks Embedded</span>
                         </div>
-                        <div style="font-size: 12.5px; color: #64748B; margin-top: 4px; max-width: 750px;">
+                        <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 4px; max-width: 750px;">
                             {html.escape(d_preview[:180])}...
                         </div>
                     </div>
@@ -3939,7 +2664,7 @@ def render_replies(df: pd.DataFrame) -> None:
 # ─────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 
-@st.fragment(run_every="20s")
+@st.fragment(run_every="60s")
 def render_live_telemetry_view(page_name: str):
     rows = load_campaign_logs()
     df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)

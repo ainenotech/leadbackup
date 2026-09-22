@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from Email import get_mailer
 from services.excel_logger import log_booking_to_excel, log_form_submission_to_excel
-from .models import CampaignLog
+from .models import CampaignLog, KnowledgeDocument, ProcessedReply
 
 
 def get_already_sent_emails(db: Session) -> Set[str]:
@@ -611,13 +611,13 @@ def record_bounce(db: Session, email_or_token: str, reason: str = "550 User Unkn
 
 def reset_all_system_data(db: Optional[Session] = None) -> dict:
     """Atomically resets all application data:
-    1. Clears PostgreSQL campaign_log table.
+    1. Clears PostgreSQL campaign_log, knowledge_documents, and processed_replies tables.
     2. Resets Excel files (leads.xlsx, booked_leads.xlsx, customer_replies.xlsx) to clean empty headers.
-    3. Cleans local SQLite database if present.
+    3. Cleans local SQLite database tables if present.
     """
     import sqlite3
     from .db import SessionLocal
-    from .models import CampaignLog
+    from .models import CampaignLog, KnowledgeDocument, ProcessedReply
 
     close_db = False
     if db is None:
@@ -625,8 +625,12 @@ def reset_all_system_data(db: Optional[Session] = None) -> dict:
         close_db = True
 
     deleted_pg = 0
+    deleted_kb = 0
+    deleted_pr = 0
     try:
         deleted_pg = db.query(CampaignLog).delete()
+        deleted_kb = db.query(KnowledgeDocument).delete()
+        deleted_pr = db.query(ProcessedReply).delete()
         db.commit()
     except Exception as e:
         db.rollback()
@@ -660,15 +664,18 @@ def reset_all_system_data(db: Optional[Session] = None) -> dict:
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [r[0] for r in cur.fetchall()]
-            if "campaign_log" in tables:
-                cur.execute("DELETE FROM campaign_log;")
+            for tbl in ["campaign_log", "knowledge_documents", "processed_replies"]:
+                if tbl in tables:
+                    cur.execute(f"DELETE FROM {tbl};")
             conn.commit()
             conn.close()
         except Exception:
             pass
 
     return {
-        "deleted_rows": deleted_pg,
+        "deleted_campaign_logs": deleted_pg,
+        "deleted_knowledge_docs": deleted_kb,
+        "deleted_processed_replies": deleted_pr,
         "status": "success",
     }
 
