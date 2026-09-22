@@ -79,6 +79,7 @@ from services.rag import (
 )
 from Agent.reply_agent import process_incoming_reply
 import services.template_service
+from services.template_service import load_all_templates, render_template
 import template_hub_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub

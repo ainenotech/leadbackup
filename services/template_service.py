@@ -35,99 +35,127 @@ def _build_responsive_template_html(
     callout question box, bullets, and complete Tirth Patel signature.
     """
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
 <title>{title}</title>
+<!--[if mso]>
+<xml>
+<o:OfficeDocumentSettings>
+<o:AllowPNG/>
+<o:PixelsPerInch>96</o:PixelsPerInch>
+</o:OfficeDocumentSettings>
+</xml>
+<![endif]-->
 <style>
   body {{
     margin: 0;
     padding: 0;
-    background-color: #f1f5f9;
+    background-color: #f0f4f8;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }}
   table {{
     border-collapse: collapse;
+    mso-table-lspace: 0pt;
+    mso-table-rspace: 0pt;
+  }}
+  img {{
+    -ms-interpolation-mode: bicubic;
+    border: 0;
+    outline: none;
+    text-decoration: none;
   }}
   @media only screen and (max-width: 620px) {{
-    .outer-table {{ padding: 12px 6px !important; }}
-    .email-container {{ width: 100% !important; border-radius: 8px !important; }}
-    .content-cell {{ padding: 22px 18px !important; }}
-    .cta-btn {{ display: block !important; width: 100% !important; text-align: center !important; box-sizing: border-box !important; }}
+    .outer-table {{ padding: 10px 4px !important; }}
+    .email-container {{ width: 100% !important; border-radius: 10px !important; }}
+    .content-cell {{ padding: 24px 20px !important; }}
+    .cta-btn {{ display: block !important; width: 100% !important; text-align: center !important; box-sizing: border-box !important; padding: 14px 20px !important; }}
+    .sig-links {{ font-size: 11px !important; }}
   }}
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f1f5f9;">
+<body style="margin:0;padding:0;background-color:#f0f4f8;">
 
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f1f5f9;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f0f4f8;">
   {preheader}
 </div>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="outer-table" style="background-color:#f1f5f9;padding:28px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="outer-table" style="background-color:#f0f4f8;padding:24px 10px;">
 <tr>
   <td align="center">
-    <!-- Main Card Container -->
-    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:620px;max-width:100%;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+
+    <!-- Accent Top Bar -->
+    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:620px;max-width:100%;">
       <tr>
-        <td class="content-cell" style="padding:32px 36px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1e293b;text-align:left;">
-          
+        <td style="height:4px;background:linear-gradient(90deg,{accent_color},#6366f1);border-radius:12px 12px 0 0;font-size:0;line-height:0;" height="4">&nbsp;</td>
+      </tr>
+    </table>
+
+    <!-- Main Card Container -->
+    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:620px;max-width:100%;background-color:#ffffff;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;border-radius:0 0 12px 12px;overflow:hidden;box-shadow:0 2px 8px -2px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04);">
+      <tr>
+        <td class="content-cell" style="padding:28px 32px 24px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1e293b;text-align:left;">
+
           <!-- Logo -->
-          <div style="margin-bottom:24px;">
-            <img src="LOGO_URL" alt="Neno Technology" style="height:38px;max-height:42px;max-width:180px;display:block;border:0;outline:none;" />
+          <div style="margin:0 0 16px 0;padding:0 0 14px 0;border-bottom:1px solid #eef0f4;">
+            <img src="LOGO_URL" alt="Nenotechnology" width="140" height="36" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:140px;height:36px;max-height:40px;" />
           </div>
 
           <!-- Greeting & Intro -->
-          <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#1e293b;">Dear {{FirstName}},</p>
-          <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#1e293b;">I hope you and the team at {{Company}} are doing well.</p>
-          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#1e293b;">
+          <p style="margin:0 0 8px 0;font-size:15px;line-height:1.55;color:#1e293b;">Dear {{FirstName}},</p>
+          <p style="margin:0 0 8px 0;font-size:15px;line-height:1.55;color:#1e293b;">I hope you and the team at {{Company}} are doing well.</p>
+          <p style="margin:0 0 12px 0;font-size:15px;line-height:1.55;color:#1e293b;">
             {intro_html}
           </p>
 
           <!-- Callout Question Box -->
-          <div style="border-left:3px solid {accent_color};background-color:#f8fafc;padding:14px 18px;margin:20px 0;border-radius:0 8px 8px 0;font-size:14.5px;line-height:1.55;color:#0f172a;font-weight:500;">
+          <div style="border-left:3px solid {accent_color};background-color:#f8fafc;padding:12px 16px;margin:12px 0 14px 0;border-radius:0 6px 6px 0;font-size:14.5px;line-height:1.5;color:#0f172a;font-weight:500;">
             {callout_html}
           </div>
 
           <!-- CTA Button -->
-          <div style="margin:22px 0 26px 0;">
-            <a href="BOOKING_LINK" target="_blank" class="cta-btn" style="display:inline-block;background-color:{accent_color};color:#ffffff;padding:12px 24px;border-radius:6px;font-weight:600;font-size:14.5px;text-decoration:none;letter-spacing:0.01em;">
-              {cta_text}
+          <div style="margin:14px 0 18px 0;">
+            <a href="BOOKING_LINK" target="_blank" class="cta-btn" style="display:inline-block;background-color:{accent_color};color:#ffffff;padding:11px 26px;border-radius:6px;font-weight:600;font-size:14px;text-decoration:none;letter-spacing:0.01em;box-shadow:0 2px 4px rgba(0,0,0,0.12);mso-padding-alt:11px 26px;">
+              {cta_text} &rarr;
             </a>
           </div>
 
           <!-- Section Heading -->
-          <div style="font-size:16px;font-weight:700;color:#0f172a;margin:24px 0 14px 0;line-height:1.3;">
+          <div style="font-size:15px;font-weight:700;color:#0f172a;margin:16px 0 10px 0;line-height:1.3;">
             {section_heading}
           </div>
 
           <!-- Bullets -->
-          <div style="font-size:14.5px;line-height:1.65;color:#334155;">
+          <div style="font-size:14px;line-height:1.55;color:#334155;">
             {bullets_html}
           </div>
 
           <!-- Closing pitch -->
-          <p style="margin:20px 0 12px 0;font-size:14.5px;line-height:1.6;color:#1e293b;">
+          <p style="margin:14px 0 8px 0;font-size:14px;line-height:1.55;color:#1e293b;">
             {closing_html}
           </p>
-          <p style="margin:0 0 24px 0;font-size:13px;line-height:1.5;color:#64748b;">
-            Or simply reply to this email - it comes straight to me.
+          <p style="margin:0 0 0 0;font-size:12.5px;line-height:1.45;color:#94a3b8;">
+            Or simply reply to this email &mdash; it comes straight to me.
           </p>
 
-          <!-- Warm Regards / Signature (Exact screenshot match) -->
-          <div style="margin-top:26px;padding-top:20px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-            <div style="font-size:14px;color:#475569;margin-bottom:3px;">Warm regards,</div>
-            <div style="font-size:16.5px;font-weight:700;color:#0f172a;line-height:1.3;">Tirth Patel</div>
-            <div style="font-size:13px;color:#334155;margin-top:2px;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
-            <div style="font-size:12px;color:#64748b;margin-top:3px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
-            <div style="font-size:12px;color:#64748b;margin-top:2px;">Ahmedabad, Gujarat, India</div>
-            <div style="font-size:12px;color:#2563eb;margin-top:6px;">
-              <a href="mailto:support@nenotechnology.com" style="color:#2563eb;text-decoration:none;">support@nenotechnology.com</a> &nbsp;|&nbsp;
-              <a href="tel:+917863852024" style="color:#2563eb;text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
-              <a href="https://www.nenotechnology.com" target="_blank" style="color:#2563eb;text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
-              <a href="LINKEDIN_URL" target="_blank" style="color:#2563eb;text-decoration:none;">LinkedIn</a>
+          <!-- Signature -->
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Warm regards,</div>
+            <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">Tirth Patel</div>
+            <div style="font-size:12.5px;color:#334155;margin-top:1px;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
+            <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
+            <div style="font-size:11.5px;color:#94a3b8;margin-top:1px;">Ahmedabad, Gujarat, India</div>
+            <div class="sig-links" style="font-size:12px;margin-top:6px;">
+              <a href="mailto:support@nenotechnology.com" style="color:{accent_color};text-decoration:none;">support@nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="tel:+917863852024" style="color:{accent_color};text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
+              <a href="https://www.nenotechnology.com" target="_blank" style="color:{accent_color};text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="LINKEDIN_URL" target="_blank" style="color:{accent_color};text-decoration:none;">LinkedIn</a>
             </div>
           </div>
 
@@ -135,10 +163,10 @@ def _build_responsive_template_html(
       </tr>
     </table>
 
-    <!-- Footer / Unsubscribe -->
-    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;margin-top:14px;">
+    <!-- Footer -->
+    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;margin-top:10px;">
       <tr>
-        <td style="font-size:11.5px;line-height:1.5;color:#94a3b8;text-align:center;padding:8px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+        <td style="font-size:11px;line-height:1.45;color:#94a3b8;text-align:center;padding:6px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
           Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
           Prefer not to hear from us? <a href="UNSUBSCRIBE_LINK" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a>
         </td>
@@ -164,9 +192,9 @@ RAW_TEMPLATE_1 = _build_responsive_template_html(
     callout_html="Would you be open to a 20-minute call to explore what would be most useful for {{Company}} right now? No pitch deck, no obligation &mdash; just a focused conversation about where AI and automation can save you real time.",
     cta_text="Book a Free Consultation",
     section_heading="What you get",
-    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Forward Deployed Engineers.</strong> One person who takes a requirement through build and deployment &mdash; using AI coding tools and agentic workflows to move at several times normal speed.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">AI and full-stack developers.</strong> AI agent developers, backend, full-stack and deployment engineers &mdash; already on our bench, not being recruited after you sign.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Vetted before you meet them.</strong> Every engineer clears our five-stage screening. You interview the shortlist and pick who joins you.</p>
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Forward Deployed Engineers.</strong> One person who takes a requirement through build and deployment &mdash; using AI coding tools and agentic workflows to move at several times normal speed.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">AI and full-stack developers.</strong> AI agent developers, backend, full-stack and deployment engineers &mdash; already on our bench, not being recruited after you sign.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Vetted before you meet them.</strong> Every engineer clears our five-stage screening. You interview the shortlist and pick who joins you.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">A fraction of local contract rates.</strong> Fixed monthly cost per developer. No payroll, no super, no desk, no notice period risk.</p>""",
     closing_html="Our goal is simple: help businesses like yours reduce operational overhead while improving efficiency and customer experience &mdash; at a fraction of local agency costs.",
     accent_color="#1A5CFF",
@@ -179,9 +207,9 @@ RAW_TEMPLATE_2 = _build_responsive_template_html(
     callout_html="Could {{Company}} benefit from an AI voice agent answering customer calls in under 60 seconds 24/7? Let's take 15 minutes to run a live demonstration over the phone.",
     cta_text="Experience a Live Voice AI Demo",
     section_heading="How Autonomous Voice Agents Transform Your Pipeline",
-    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Sub-Second Voice Latency.</strong> Natural, human-like voice agents that navigate multi-turn conversations, answer service questions, and overcome objections flawlessly.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">24/7 Lead Capture.</strong> Never lose after-hours, holiday, or weekend leads again. Every call is answered, qualified, and scheduled on your calendar instantly.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Instant CRM &amp; Calendar Sync.</strong> Real-time call transcription, structured notes, and confirmed bookings pushed automatically to HubSpot, Salesforce, or Google Calendar.</p>
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Sub-Second Voice Latency.</strong> Natural, human-like voice agents that navigate multi-turn conversations, answer service questions, and overcome objections flawlessly.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">24/7 Lead Capture.</strong> Never lose after-hours, holiday, or weekend leads again. Every call is answered, qualified, and scheduled on your calendar instantly.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Instant CRM &amp; Calendar Sync.</strong> Real-time call transcription, structured notes, and confirmed bookings pushed automatically to HubSpot, Salesforce, or Google Calendar.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Unlimited Concurrent Capacity.</strong> Handle 100 simultaneous calls during marketing spikes without hiring extra call center staff or paying per-minute agency fees.</p>""",
     closing_html="Our voice agents eliminate missed opportunities, slash response latency from hours to seconds, and book meetings directly into your team's calendar.",
     accent_color="#7C3AED",
@@ -194,9 +222,9 @@ RAW_TEMPLATE_3 = _build_responsive_template_html(
     callout_html="Have an AI feature, RAG pipeline, or custom agent backlog waiting to be built at {{Company}}? Let's spend 20 minutes reviewing the technical architecture and delivery timeline.",
     cta_text="Schedule an AI Architecture Call",
     section_heading="Engineering Capabilities on Demand",
-    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Autonomous Agentic Workflows.</strong> Multi-agent systems built with LangGraph, LlamaIndex, and custom tool integrations that execute complex multi-step reasoning autonomously.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Enterprise RAG &amp; Hybrid Search.</strong> Highly accurate knowledge retrieval pipelines with semantic re-ranking, token-cost optimization, and strict anti-hallucination guardrails.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Bench Ready Next Week.</strong> Senior Python, TypeScript, FastAPI, and Next.js engineers who connect to your GitHub repo and Jira on day one &mdash; no recruiting lag.</p>
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Autonomous Agentic Workflows.</strong> Multi-agent systems built with LangGraph, LlamaIndex, and custom tool integrations that execute complex multi-step reasoning autonomously.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Enterprise RAG &amp; Hybrid Search.</strong> Highly accurate knowledge retrieval pipelines with semantic re-ranking, token-cost optimization, and strict anti-hallucination guardrails.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Bench Ready Next Week.</strong> Senior Python, TypeScript, FastAPI, and Next.js engineers who connect to your GitHub repo and Jira on day one &mdash; no recruiting lag.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Predictable Monthly Sprints.</strong> Fixed monthly pricing per engineer with transparent weekly deliverables and zero long-term vendor lock-in.</p>""",
     closing_html="Whether you need an end-to-end AI product built from scratch or an extra engineer to clear your backlog, our squad delivers fast, production-grade code.",
     accent_color="#0284C7",
@@ -209,9 +237,9 @@ RAW_TEMPLATE_4 = _build_responsive_template_html(
     callout_html="Where is {{Company}} losing the most hours each week to repetitive copy-paste work? Let's take 20 minutes to pinpoint high-impact automation quick wins.",
     cta_text="Review Automation Opportunities",
     section_heading="What We Automate For Your Business",
-    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Cross-Platform Pipeline Sync.</strong> Connect your CRM, email inboxes, WhatsApp Business API, accounting platforms, and databases into zero-touch automated workflows.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Automated Document &amp; Invoice Parsing.</strong> Extract structured data from supplier invoices, client contracts, and receipts automatically with 99.8% precision.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Zero Manual Entry Errors.</strong> Replace fragile human data copying with automated schema validation, webhook alerts, and error failover logging.</p>
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Cross-Platform Pipeline Sync.</strong> Connect your CRM, email inboxes, WhatsApp Business API, accounting platforms, and databases into zero-touch automated workflows.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Automated Document &amp; Invoice Parsing.</strong> Extract structured data from supplier invoices, client contracts, and receipts automatically with 99.8% precision.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Zero Manual Entry Errors.</strong> Replace fragile human data copying with automated schema validation, webhook alerts, and error failover logging.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Fast 7-14 Day Turnaround.</strong> Most operational bottlenecks can be fully automated within 1 to 2 weeks without disrupting your day-to-day business.</p>""",
     closing_html="We free your top talent from low-value repetitive tasks so they can spend their energy speaking to clients and driving revenue.",
     accent_color="#059669",
@@ -224,9 +252,9 @@ RAW_TEMPLATE_5 = _build_responsive_template_html(
     callout_html="Considering scaling your development capacity this quarter? Let's do a quick 20-minute discussion on how our dedicated workbench model fits {{Company}}.",
     cta_text="Explore Dedicated Workbench",
     section_heading="How Our Dedicated Workbench Works",
-    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Direct Team Integration.</strong> Engineers work exclusively for {{Company}}, attend your daily standups, communicate in your Slack, and follow your coding standards.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Top 1% Indian Tech Talent.</strong> Every engineer clears our rigorous 5-stage technical screening, live system architecture rounds, and fluent English communication tests.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Guaranteed Time-Zone Alignment.</strong> Daily working hours synchronized with Australian Eastern Standard Time (AEST) and Western time zones for real-time collaboration.</p>
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Direct Team Integration.</strong> Engineers work exclusively for {{Company}}, attend your daily standups, communicate in your Slack, and follow your coding standards.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Top 1% Indian Tech Talent.</strong> Every engineer clears our rigorous 5-stage technical screening, live system architecture rounds, and fluent English communication tests.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Guaranteed Time-Zone Alignment.</strong> Daily working hours synchronized with Australian Eastern Standard Time (AEST) and Western time zones for real-time collaboration.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Zero Office or HR Overhead.</strong> We take care of state-of-the-art office facilities, high-speed fiber, compliance, laptops, and payroll &mdash; you simply assign tasks.</p>""",
     closing_html="Get the engineering velocity and senior talent of a dedicated development team without the local hiring costs, recruiting agency fees, or long-term liability.",
     accent_color="#D97706",
@@ -239,9 +267,9 @@ RAW_TEMPLATE_6 = _build_responsive_template_html(
     callout_html="Are clunky internal tools slowing down {{Company}}'s daily operations? Let's connect for 20 minutes to see how a streamlined custom portal could accelerate your team.",
     cta_text="Discuss System Modernization",
     section_heading="Modern Portal &amp; Internal Tool Capabilities",
-    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Modern High-Performance Stack.</strong> Fast Next.js, React, Node, Python, and cloud-native serverless backends replacing slow legacy systems.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">AI-Assisted Dashboards.</strong> Real-time operational dashboards with natural-language AI query assistants so any team member can ask questions about company data.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Fast Prototype to Production.</strong> Interactive clickable prototypes delivered within 5 days, production deployment within 3-4 weeks.</p>
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Modern High-Performance Stack.</strong> Fast Next.js, React, Node, Python, and cloud-native serverless backends replacing slow legacy systems.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">AI-Assisted Dashboards.</strong> Real-time operational dashboards with natural-language AI query assistants so any team member can ask questions about company data.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Fast Prototype to Production.</strong> Interactive clickable prototypes delivered within 5 days, production deployment within 3-4 weeks.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Transparent Fixed Milestones.</strong> Clear milestone deliverables with no surprise hourly charges or scope creep.</p>""",
     closing_html="Give your staff and clients a fast, modern digital interface that eliminates friction and unlocks real-time operational visibility.",
     accent_color="#4F46E5",
@@ -254,9 +282,9 @@ RAW_TEMPLATE_7 = _build_responsive_template_html(
     callout_html="No sales pitch, no slides &mdash; just founder-to-founder. Would you be open to a 20-minute chat about the top 2 bottlenecks holding back {{Company}}'s margins?",
     cta_text="Book a Founder Strategy Call",
     section_heading="What We Focus on During Our Call",
-    bullets_html="""<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Unvarnished Strategic Advice.</strong> Direct guidance from Tirth Patel on what AI can realistically solve today versus what is just marketing hype.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Tailored ROI Roadmap.</strong> Identify the specific 20% of repetitive workflows that will generate 80% of your operational savings.</p>
-<p style="margin:0 0 10px 0;"><strong style="color:#0f172a;">Hands-On Implementation Squad.</strong> If there's a mutual fit, we provide the exact engineering team to execute the roadmap end-to-end.</p>
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Unvarnished Strategic Advice.</strong> Direct guidance from Tirth Patel on what AI can realistically solve today versus what is just marketing hype.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Tailored ROI Roadmap.</strong> Identify the specific 20% of repetitive workflows that will generate 80% of your operational savings.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Hands-On Implementation Squad.</strong> If there's a mutual fit, we provide the exact engineering team to execute the roadmap end-to-end.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Strict Confidentiality &amp; Full IP Ownership.</strong> 100% of all intellectual property, custom models, code, and automations belong entirely to {{Company}}.</p>""",
     closing_html="I only take 3 advisory calls a week to ensure high impact. If you want a straight, honest perspective on AI for {{Company}}, let's connect.",
     accent_color="#DC2626",
