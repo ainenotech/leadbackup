@@ -602,7 +602,7 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
 
             results["processed_count"] += 1
             processed_emails_this_run.add(sender_addr)
-            print(f"[Inbox] Processing campaign lead message from {sender_name} <{sender_addr}>: '{subject}'")
+            print(f"[Agent Activated] Inbound customer reply detected from {sender_name} <{sender_addr}>: '{subject}'. Activating RAG grounded auto-reply...")
 
             # Extract real verified name and company
             if lead:

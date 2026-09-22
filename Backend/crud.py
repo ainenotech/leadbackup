@@ -226,6 +226,11 @@ def reject_entry(db: Session, entry_id: str) -> CampaignLog:
         entry.status = "rejected"
         db.commit()
         db.refresh(entry)
+        try:
+            from leads import update_lead_sheet_status
+            update_lead_sheet_status(email=entry.email, status="rejected")
+        except Exception as e:
+            print(f"Warning: Could not sync rejected status to leads sheet: {e}")
     return entry
 
 

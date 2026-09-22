@@ -1,5 +1,6 @@
 import utils.dns_patch  # Fast fallback DNS resolver for Microsoft Graph & login APIs
 import base64
+import html
 from datetime import datetime
 import json as _json
 import os
@@ -68,6 +69,14 @@ import analytics_view
 
 import reply_worker
 from reply_worker import ReplyDaemonManager, check_and_reply_inbox
+from services.rag import (
+    get_knowledge_base_summary,
+    ingest_file_content,
+    delete_document,
+    retrieve_relevant_chunks,
+    list_documents,
+)
+from Agent.reply_agent import process_incoming_reply
 import importlib
 import services.template_service
 importlib.reload(services.template_service)
@@ -2522,6 +2531,52 @@ def confirm_approve_all_dialog(drafts_data, template_id: int = 1):
             st.rerun()
 
 
+@st.dialog("Confirm Bulk Draft Rejection")
+def confirm_reject_all_dialog(drafts_data):
+    count = len(drafts_data)
+    st.markdown(
+        f"""
+        <div style="margin-bottom: 12px;">
+            <p style="font-size: 15px; margin-bottom: 6px; color: #0F172A;">
+                Are you sure you want to reject all <strong style="color: #DC2626;">{count}</strong> pending email drafts?
+            </p>
+            <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 13.5px; color: #991B1B;">
+                🛑 <strong>Bulk Rejection:</strong> All {count} drafts will be marked as <strong>Rejected</strong> and removed from the review queue. No emails will be dispatched to these recipients.
+            </div>
+            <p style="font-size: 13px; color: #64748B; margin: 0;">
+                You can re-import or re-draft these leads anytime from the Upload &amp; Draft tab.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.expander(f"📋 Review Leads to be Rejected ({count})", expanded=False):
+        for d in drafts_data:
+            st.write(f"- **{d['email']}** ({d.get('name') or 'Lead'}, {d.get('company') or 'N/A'})")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button(f"✕ Reject All {count} Drafts", type="primary", use_container_width=True, key="dlg_confirm_reject_all_btn"):
+            db = SessionLocal()
+            rejected_count = 0
+            for d in drafts_data:
+                try:
+                    reject_entry(db, d["id"])
+                    rejected_count += 1
+                except Exception as ex:
+                    print(f"Error rejecting {d.get('email')}: {ex}")
+            db.close()
+            st.session_state["send_success_banner"] = f"✕ Successfully rejected {rejected_count} email drafts."
+            st.cache_data.clear()
+            st.rerun()
+
+    with c2:
+        if st.button("Cancel", use_container_width=True, key="dlg_cancel_reject_all_btn"):
+            st.rerun()
+
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -2809,14 +2864,25 @@ def render_email_review(df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
-    if st.button(
-        f"⭐ Approve All & Send Primary ({pending_count})",
-        key="bulk_send_opt1",
-        type="primary",
-        use_container_width=True,
-        help="Approve and send all remaining drafts formatted with Primary Template",
-    ):
-        confirm_approve_all_dialog(drafts.to_dict("records"), template_id=1)
+    bulk_col1, bulk_col2 = st.columns([2.8, 1.4])
+    with bulk_col1:
+        if st.button(
+            f"⭐ Bulk Approve & Send Remaining ({pending_count} Leads)",
+            key="bulk_send_opt1",
+            type="primary",
+            use_container_width=True,
+            help="Approve and send all remaining drafts formatted with Primary Template",
+        ):
+            confirm_approve_all_dialog(drafts.to_dict("records"), template_id=1)
+
+    with bulk_col2:
+        if st.button(
+            f"✕ Reject All Drafts ({pending_count})",
+            key="bulk_reject_all_opt",
+            use_container_width=True,
+            help="Reject all remaining pending drafts without sending emails",
+        ):
+            confirm_reject_all_dialog(drafts.to_dict("records"))
 
 
 
@@ -2912,17 +2978,34 @@ def format_reply_intent(intent_raw: str) -> tuple[str, str]:
 
 
 def render_replies(df: pd.DataFrame) -> None:
+    import html
     render_top_banner(
         "Replies & Consultation Bookings",
         "AI Auto-Reply Agent, inbound email conversations, customer appointment submissions, and permanent Excel sheets.",
         "CRM & Intelligence",
     )
 
-    # ── AI Auto-Reply Agent Control Center ──
+    # ── AI Auto-Reply Agent Control Center & Dynamic RAG Knowledge Status ──
     is_monitoring = ReplyDaemonManager.is_running()
     status_label = "Active & Monitoring Inbox (30s)" if is_monitoring else "Idle / On-Demand Mode"
     status_badge_cls = "badge-sent" if is_monitoring else "badge-pending"
     status_dot_color = "#10B981" if is_monitoring else "#94A3B8"
+
+    db_kb = SessionLocal()
+    try:
+        kb_summary = get_knowledge_base_summary(db_kb)
+    except Exception:
+        kb_summary = {"total_chunks": 0, "total_documents": 0, "documents": []}
+    finally:
+        db_kb.close()
+
+    kb_chunks = kb_summary.get("total_chunks", 0)
+    kb_docs_count = kb_summary.get("total_documents", 0)
+
+    if kb_chunks > 0:
+        kb_badge_html = f'<span class="badge badge-scheduled" style="font-size: 11px;">📚 Grounded in RAG Knowledge Base ({kb_docs_count} Docs · {kb_chunks} Chunks)</span>'
+    else:
+        kb_badge_html = '<span class="badge badge-pending" style="font-size: 11px;">⚠️ RAG Knowledge Empty (0 Chunks) · Attach Files in Tab Below</span>'
 
     agent_status_html = f"""
     <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
@@ -2937,10 +3020,10 @@ def render_replies(df: pd.DataFrame) -> None:
                         <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background-color: {status_dot_color}; margin-right: 5px;"></span>
                         {status_label}
                     </span>
-                    <span class="badge badge-scheduled" style="font-size: 11px;">📚 Grounded in Neno Technology Knowledge Base (PDF · 70 Chunks)</span>
+                    {kb_badge_html}
                 </div>
                 <div style="font-size: 13px; color: #64748B; margin-top: 3px;">
-                    Monitors <code>support@nenotechnology.com</code> inbox · Analyzes customer questions · Answers with verified company intelligence
+                    Monitors <code>support@nenotechnology.com</code> inbox · Auto-activates only on customer reply · Answers via RAG vector intelligence
                 </div>
             </div>
         </div>
@@ -2984,7 +3067,7 @@ def render_replies(df: pd.DataFrame) -> None:
             st.cache_data.clear()
             st.rerun()
 
-    # ── Reconcile Customer Replies from Excel and DB ──
+    # ── Reconcile Customer Replies from Excel and DB (Strict Real-Reply Filter) ──
     all_replies = []
     seen_emails = set()
 
@@ -2993,15 +3076,18 @@ def render_replies(df: pd.DataFrame) -> None:
             excel_r_df = pd.read_excel(DEFAULT_REPLIES_EXCEL)
             for _, r in excel_r_df.iterrows():
                 em = str(r.get("email") or "").strip().lower()
-                if em and em not in seen_emails and "microsoftexchange" not in em and "postmaster" not in em:
+                cust_reply = str(r.get("customer_reply") or "").strip()
+                ai_reply = extract_text_from_ai_message(str(r.get("ai_response_sent") or "")).strip()
+                # Strict: must have an actual customer reply or AI reply text
+                if em and (cust_reply or ai_reply) and em not in seen_emails and "microsoftexchange" not in em and "postmaster" not in em:
                     seen_emails.add(em)
                     all_replies.append({
                         "email": em,
                         "name": str(r.get("name") or "").strip() if pd.notna(r.get("name")) and str(r.get("name")).strip() else "Customer",
                         "company": str(r.get("company") or "").strip() if pd.notna(r.get("company")) and str(r.get("company")).strip() else "—",
                         "reply_intent": str(r.get("reply_intent") or "question").strip(),
-                        "customer_reply": str(r.get("customer_reply") or "").strip() if pd.notna(r.get("customer_reply")) else "",
-                        "ai_response_sent": extract_text_from_ai_message(str(r.get("ai_response_sent") or "")),
+                        "customer_reply": cust_reply,
+                        "ai_response_sent": ai_reply,
                         "reply_received_at": str(r.get("reply_received_at") or "").strip() if pd.notna(r.get("reply_received_at")) else "",
                         "ai_reply_sent_at": str(r.get("ai_reply_sent_at") or "").strip() if pd.notna(r.get("ai_reply_sent_at")) else "",
                     })
@@ -3009,9 +3095,24 @@ def render_replies(df: pd.DataFrame) -> None:
             pass
 
     if not df.empty:
-        r_rows = df[df["reply_received_at"].notna() | df["reply_body"].notna() | df["ai_reply_sent"].notna()]
+        # Strict filter: Lead MUST have actual non-empty reply text or AI reply text or received reply timestamp with valid replied status!
+        has_reply_body = df["reply_body"].fillna("").astype(str).str.strip().ne("")
+        has_ai_reply = df["ai_reply_sent"].fillna("").astype(str).str.strip().ne("")
+        has_valid_received = (
+            df["reply_received_at"].notna()
+            & df["reply_received_at"].astype(str).str.strip().ne("")
+            & df["reply_received_at"].astype(str).str.strip().ne("None")
+        )
+        has_replied_status = df["status"].astype(str).str.strip().str.lower().isin(["replied", "form_submitted", "scheduled"])
+
+        r_rows = df[(has_reply_body | has_ai_reply | (has_valid_received & has_replied_status))]
         for _, r in r_rows.iterrows():
             em = str(r.get("email") or "").strip().lower()
+            cust_reply = str(r.get("reply_body") or "").strip()
+            ai_reply = extract_text_from_ai_message(str(r.get("ai_reply_sent") or "")).strip()
+            # Double safety guard: must have actual message content to show in Conversation Cards
+            if not cust_reply and not ai_reply:
+                continue
             if em and em not in seen_emails and "microsoftexchange" not in em and "postmaster" not in em:
                 seen_emails.add(em)
                 all_replies.append({
@@ -3019,8 +3120,8 @@ def render_replies(df: pd.DataFrame) -> None:
                     "name": str(r.get("name") or "").strip() if pd.notna(r.get("name")) and str(r.get("name")).strip() else "Customer",
                     "company": str(r.get("company") or "").strip() if pd.notna(r.get("company")) and str(r.get("company")).strip() else "—",
                     "reply_intent": str(r.get("reply_intent") or "question").strip(),
-                    "customer_reply": str(r.get("reply_body") or "").strip() if pd.notna(r.get("reply_body")) else "",
-                    "ai_response_sent": extract_text_from_ai_message(str(r.get("ai_reply_sent") or "")),
+                    "customer_reply": cust_reply,
+                    "ai_response_sent": ai_reply,
                     "reply_received_at": str(r.get("reply_received_at") or "").strip() if pd.notna(r.get("reply_received_at")) else "",
                     "ai_reply_sent_at": str(r.get("ai_reply_sent_at") or "").strip() if pd.notna(r.get("ai_reply_sent_at")) else "",
                 })
@@ -3126,8 +3227,9 @@ def render_replies(df: pd.DataFrame) -> None:
             st.toast(f"✅ Synced {s_res.get('synced_bookings', 0)} bookings and {s_res.get('synced_replies', 0)} replies!", icon="🔄")
             st.rerun()
 
-    tab_replies_stream, tab_bookings_stream, tab_excel_stream = st.tabs([
+    tab_replies_stream, tab_rag_hub, tab_bookings_stream, tab_excel_stream = st.tabs([
         f"💬 Customer Inquiries & AI Auto-Replies ({replies_count})",
+        f"📚 RAG Knowledge Base & Attachments ({kb_chunks} Chunks)",
         f"📋 Customer Consultation Form Submissions ({forms_count})",
         f"📗 Permanent Excel Archives ({total_archive_records})",
     ])
@@ -3137,7 +3239,47 @@ def render_replies(df: pd.DataFrame) -> None:
     # ═══════════════════════════════════════════════════════════════
     with tab_replies_stream:
         if not all_replies:
-            st.info("No customer replies recorded yet. Click '⚡ Check Inbox & Auto-Reply Now' or start the background monitor to process incoming messages.")
+            st.markdown(
+                clean_html(
+                    f"""
+                    <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; padding: 34px 28px; text-align: center; margin-top: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                        <div style="width: 58px; height: 58px; border-radius: 16px; background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); color: #0D9488; font-size: 28px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid #99F6E4;">
+                            🤖
+                        </div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 19px; font-weight: 700; color: #0F172A;">
+                            AI Auto-Reply Agent is Active & on Standby
+                        </h3>
+                        <p style="margin: 0 auto 22px auto; max-width: 660px; font-size: 13.5px; color: #64748B; line-height: 1.6;">
+                            Exclusive Conversation Cards are <strong>only activated when a customer actually replies</strong> to an outreach email. No dummy records are created for leads who haven't replied yet.
+                        </p>
+                        <div style="display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-bottom: 24px;">
+                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; text-align: left; max-width: 220px;">
+                                <div style="font-size: 12px; font-weight: 700; color: #2563EB; margin-bottom: 5px;">1. Inbound Reply</div>
+                                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">Monitors Outlook inbox for responses to outreach campaign emails.</div>
+                            </div>
+                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; text-align: left; max-width: 220px;">
+                                <div style="font-size: 12px; font-weight: 700; color: #0D9488; margin-bottom: 5px;">2. RAG Intelligence</div>
+                                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">Retrieves verified facts from attached knowledge files ({kb_chunks} chunks ready).</div>
+                            </div>
+                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; text-align: left; max-width: 220px;">
+                                <div style="font-size: 12px; font-weight: 700; color: #7C3AED; margin-bottom: 5px;">3. Auto-Dispatch</div>
+                                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">Sends corporate reply with Bookings link & quoted primary thread.</div>
+                            </div>
+                        </div>
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
+            col_sb1, col_sb2 = st.columns([1, 1])
+            with col_sb1:
+                if st.button("⚡ Scan Outlook Inbox for New Replies", key="btn_standby_check", use_container_width=True):
+                    with st.spinner("Checking Outlook inbox for customer replies..."):
+                        check_and_reply_inbox(sync_existing=False)
+                        st.cache_data.clear()
+                    st.rerun()
+            with col_sb2:
+                st.info("💡 Tip: To attach or review company knowledge documents (PDFs, FAQs), switch to the **📚 RAG Knowledge Base & Attachments** tab.")
         else:
             rc_col1, rc_col2 = st.columns([3, 1.3])
             with rc_col1:
@@ -3225,7 +3367,7 @@ def render_replies(df: pd.DataFrame) -> None:
                                     </div>
                                     <div class="chat-bubble-text">{ai_reply_clean}</div>
                                     <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                        <span class="badge badge-scheduled" style="font-size: 10.5px;">📚 Grounded in Neno Technology Knowledge Base (PDF)</span>
+                                        <span class="badge badge-scheduled" style="font-size: 10.5px;">📚 Grounded in Attached RAG Knowledge Base ({kb_chunks} Chunks)</span>
                                         <span class="badge badge-sent" style="font-size: 10.5px;">✓ Dispatched via Microsoft Graph (support@nenotechnology.com)</span>
                                     </div>
                                     <div style="margin-top: 12px;">
@@ -3283,7 +3425,224 @@ def render_replies(df: pd.DataFrame) -> None:
                     )
 
     # ═══════════════════════════════════════════════════════════════
-    # TAB 2: CUSTOMER CONSULTATION FORM SUBMISSIONS
+    # TAB 2: RAG KNOWLEDGE BASE & ATTACHMENTS
+    # ═══════════════════════════════════════════════════════════════
+    with tab_rag_hub:
+        st.markdown(
+            clean_html(
+                """
+                <div style="margin-top: 6px; margin-bottom: 16px;">
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                        <span>📚</span> RAG Knowledge Base & Document Attachments
+                    </h3>
+                    <p style="margin: 2px 0 0 0; font-size: 13px; color: var(--text-muted);">
+                        Attach company PDFs, pitch decks, FAQs, or service guides. When a customer replies, the AI Auto-Reply Agent strictly retrieves relevant facts from these documents to answer with 100% accuracy.
+                    </p>
+                </div>
+                """
+            ),
+            unsafe_allow_html=True,
+        )
+
+        # Knowledge Base KPI summary grid
+        rag_kpi_html = f"""
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px;">
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #0D9488;">
+                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Indexed Knowledge Chunks</div>
+                <div style="font-size: 24px; font-weight: 800; color: #0F172A; margin: 4px 0;">{kb_chunks}</div>
+                <div style="font-size: 12px; color: #0D9488; font-weight: 600;">Active in RAG Vector Memory</div>
+            </div>
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #2563EB;">
+                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Source Documents</div>
+                <div style="font-size: 24px; font-weight: 800; color: #0F172A; margin: 4px 0;">{kb_docs_count}</div>
+                <div style="font-size: 12px; color: #2563EB; font-weight: 600;">Attached Files (PDF / MD / TXT)</div>
+            </div>
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #7C3AED;">
+                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Embedding Engine</div>
+                <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin: 8px 0 4px 0;">Gemini Embeddings</div>
+                <div style="font-size: 12px; color: #64748B;">3,072-dim Normalized Vectors</div>
+            </div>
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px; border-left: 4px solid #F59E0B;">
+                <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Retrieval Algorithm</div>
+                <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin: 8px 0 4px 0;">Cosine Similarity</div>
+                <div style="font-size: 12px; color: #64748B;">Strict Min-Score 0.35 Filter</div>
+            </div>
+        </div>
+        """
+        st.markdown(rag_kpi_html, unsafe_allow_html=True)
+
+        # Upload / Attach File Section
+        st.markdown("#### 📤 Attach New Knowledge Base Document")
+        up_col1, up_col2 = st.columns([3, 1.2])
+        with up_col1:
+            uploaded_rag_file = st.file_uploader(
+                "Upload Document (.pdf, .md, .txt)",
+                type=["pdf", "md", "txt"],
+                key="rag_knowledge_uploader",
+                help="Upload company sales decks, technical specifications, service outlines, or FAQs.",
+            )
+        with up_col2:
+            custom_doc_title = st.text_input(
+                "Document Title (Optional)",
+                placeholder="e.g. Neno Capabilities 2026",
+                key="rag_doc_custom_title",
+            )
+            ingest_btn = st.button("📥 Ingest & Attach to RAG Memory", type="primary", use_container_width=True, disabled=(uploaded_rag_file is None), key="btn_ingest_rag_doc")
+
+        if ingest_btn and uploaded_rag_file is not None:
+            with st.spinner(f"Extracting text, chunking, and computing Gemini embeddings for '{uploaded_rag_file.name}'..."):
+                kb_save_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
+                os.makedirs(kb_save_dir, exist_ok=True)
+                saved_path = os.path.join(kb_save_dir, uploaded_rag_file.name)
+                file_bytes = uploaded_rag_file.getvalue()
+                with open(saved_path, "wb") as f_out:
+                    f_out.write(file_bytes)
+
+                db_ingest = SessionLocal()
+                try:
+                    num_chunks = ingest_file_content(
+                        db=db_ingest,
+                        filename=uploaded_rag_file.name,
+                        file_bytes_or_content=file_bytes,
+                        title=custom_doc_title.strip() if custom_doc_title else None,
+                    )
+                finally:
+                    db_ingest.close()
+                st.cache_data.clear()
+            st.success(f"✅ Successfully attached and indexed '{uploaded_rag_file.name}' into RAG memory ({num_chunks} vector chunks created)!")
+            st.rerun()
+
+        # Workspace Knowledge Sync Button
+        st.markdown("<hr style='margin: 18px 0; border: none; border-top: 1px solid #E2E8F0;'>", unsafe_allow_html=True)
+        sync_col1, sync_col2 = st.columns([3, 1.2])
+        with sync_col1:
+            if kb_chunks == 0:
+                st.warning("⚠️ **Notice**: Knowledge files (`neno_technology_knowledge_base.pdf`, `company_faqs.md`) are present in `knowledge_base/` on disk, but have not been indexed into the database yet. Click below to index them into RAG memory now.")
+            else:
+                st.caption(f"Knowledge base has **{kb_chunks}** active chunks across **{kb_docs_count}** document(s). You can re-sync workspace files anytime to refresh vector memory.")
+        with sync_col2:
+            if st.button("⚡ Sync & Index Workspace Files", key="btn_seed_workspace_kb", use_container_width=True):
+                with st.spinner("Extracting text and embedding all workspace knowledge files..."):
+                    import glob
+                    kb_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
+                    pdf_files = sorted(glob.glob(os.path.join(kb_dir, "*.pdf")))
+                    other_files = sorted(glob.glob(os.path.join(kb_dir, "*.md")) + glob.glob(os.path.join(kb_dir, "*.txt")))
+                    all_kb_files = pdf_files + other_files
+                    total_synced = 0
+                    db_seed = SessionLocal()
+                    try:
+                        seen_t = set()
+                        for p in all_kb_files:
+                            ext = os.path.splitext(p)[1].lower()
+                            bname = os.path.splitext(os.path.basename(p))[0].replace("_", " ").replace("-", " ").title()
+                            t_title = f"{bname} (PDF)" if ext == ".pdf" else bname
+                            if ext == ".md" and f"{bname} (PDF)" in seen_t:
+                                continue
+                            n_c = ingest_file_content(db_seed, filename=os.path.basename(p), file_bytes_or_content=p, title=t_title)
+                            seen_t.add(t_title)
+                            total_synced += n_c
+                    finally:
+                        db_seed.close()
+                    st.cache_data.clear()
+                st.success(f"✅ Synced all workspace knowledge files: {total_synced} chunks active in RAG memory!")
+                st.rerun()
+
+        # Currently Attached Documents List
+        st.markdown("#### 📑 Active Attached Knowledge Documents")
+        docs_list = kb_summary.get("documents", [])
+        if not docs_list:
+            st.info("No documents indexed in vector memory yet. Upload a file above or click '⚡ Sync & Index Workspace Files'.")
+        else:
+            for doc in docs_list:
+                d_title = doc.get("title", "Untitled")
+                d_chunks = doc.get("chunks", 0)
+                d_preview = doc.get("preview", "")
+                d_cat = doc.get("category") or "Documentation"
+
+                card_html = f"""
+                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 15px; font-weight: 700; color: #0F172A;">📄 {d_title}</span>
+                            <span class="badge badge-scheduled" style="font-size: 11px;">{d_cat}</span>
+                            <span class="badge badge-sent" style="font-size: 11px;">{d_chunks} Chunks Embedded</span>
+                        </div>
+                        <div style="font-size: 12.5px; color: #64748B; margin-top: 4px; max-width: 750px;">
+                            {html.escape(d_preview[:180])}...
+                        </div>
+                    </div>
+                </div>
+                """
+                st.markdown(card_html, unsafe_allow_html=True)
+
+        # Interactive RAG Playground
+        st.markdown("<hr style='margin: 22px 0; border: none; border-top: 1px solid #E2E8F0;'>", unsafe_allow_html=True)
+        st.markdown("#### 🧪 Interactive RAG Grounding Playground")
+        st.caption("Simulate a customer question to test which knowledge chunks are retrieved and how the agent composes a factual, grounded response.")
+
+        q_col1, q_col2 = st.columns([3.5, 1.2])
+        with q_col1:
+            test_query = st.text_input(
+                "Simulate Inbound Customer Question",
+                value="Do you guys build custom web platforms and provide Forward-Deployed Engineering? How do we get started?",
+                key="rag_test_query_input",
+            )
+        with q_col2:
+            test_rag_btn = st.button("🔍 Test RAG Retrieval & AI Draft", type="primary", use_container_width=True, key="btn_run_rag_test")
+
+        if test_rag_btn and test_query:
+            with st.spinner("Embedding query and querying vector memory with cosine similarity..."):
+                db_test = SessionLocal()
+                try:
+                    retrieved = retrieve_relevant_chunks(db_test, query=test_query, top_k=4, min_score=0.35)
+                    test_agent_res = process_incoming_reply(
+                        db=db_test,
+                        from_email="inquiry@client.com",
+                        from_name="Prospective Client",
+                        company="Client Enterprise",
+                        subject="Inquiry: Services & Engineering",
+                        raw_body=test_query,
+                    )
+                finally:
+                    db_test.close()
+
+            t_res_col1, t_res_col2 = st.columns([1.2, 1.8])
+            with t_res_col1:
+                st.markdown(f"**Retrieved Knowledge Chunks ({len(retrieved)}):**")
+                if not retrieved:
+                    st.warning("No chunks cleared the relevance threshold (0.35). General Nenotechnology core capabilities will be used.")
+                else:
+                    for idx, c in enumerate(retrieved, 1):
+                        score = c.get("score", 0)
+                        score_pct = int(score * 100)
+                        pill_cls = "badge-sent" if score >= 0.50 else "badge-pending"
+                        st.markdown(
+                            f"""
+                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 12px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                    <span style="font-weight: 700; color: #1E293B;">Chunk #{idx} · {c.get('title', 'KB')}</span>
+                                    <span class="badge {pill_cls}" style="font-size: 10px;">{score_pct}% Match</span>
+                                </div>
+                                <div style="color: #475569; font-size: 11.5px; line-height: 1.4;">{html.escape(c.get('content', '')[:160])}...</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+            with t_res_col2:
+                st.markdown(f"**Grounded AI Draft Response (Intent: `{test_agent_res.get('intent', 'question')}`):**")
+                draft_preview = test_agent_res.get("response_text", "")
+                st.markdown(
+                    f"""
+                    <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 10px; padding: 16px; font-size: 13px; color: #0F172A; line-height: 1.6; white-space: pre-wrap; max-height: 380px; overflow-y: auto;">
+                        {html.escape(draft_preview)}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    # ═══════════════════════════════════════════════════════════════
+    # TAB 3: CUSTOMER CONSULTATION FORM SUBMISSIONS
     # ═══════════════════════════════════════════════════════════════
     with tab_bookings_stream:
         st.markdown(
