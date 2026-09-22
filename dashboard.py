@@ -82,6 +82,9 @@ import template_hub_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from services.template_service import load_all_templates, get_template_by_id, render_template
+import importlib
+import utils.theme
+importlib.reload(utils.theme)
 from utils.theme import (
     get_current_theme,
     is_dark_mode,
@@ -89,6 +92,9 @@ from utils.theme import (
     apply_chart_theme,
     get_complete_theme_css,
 )
+import analytics_view
+importlib.reload(analytics_view)
+from analytics_view import render_analytics
 
 @st.cache_resource(show_spinner=False)
 def ensure_database_ready() -> bool:
@@ -103,6 +109,10 @@ st.set_page_config(
 )
 
 ensure_database_ready()
+
+# Process theme query parameter early before CSS generation
+if "theme" in st.query_params and st.query_params["theme"] in ["dark", "light"]:
+    set_theme(st.query_params["theme"])
 
 # Starting the Outlook monitor during dashboard boot makes page loads wait on
 # network-heavy work. Keep it opt-in; the Replies page still has a start button.
@@ -196,7 +206,20 @@ CAMPAIGN_LOG_COLUMNS = [
 def fetch_cached_kb_summary() -> dict:
     db = SessionLocal()
     try:
-        return get_knowledge_base_summary(db)
+        summary = get_knowledge_base_summary(db)
+        if summary.get("total_chunks", 0) == 0:
+            kb_dir = os.path.join(os.path.dirname(__file__), "knowledge_base")
+            if os.path.isdir(kb_dir):
+                for fname in os.listdir(kb_dir):
+                    if fname.endswith((".md", ".pdf", ".txt")) and not fname.startswith("."):
+                        fpath = os.path.join(kb_dir, fname)
+                        try:
+                            with open(fpath, "r", encoding="utf-8", errors="replace") as kf:
+                                ingest_file_content(db, fname, kf.read(), title=f"Neno Technology Knowledge Base ({fname.split('.')[-1].upper()})")
+                        except Exception:
+                            pass
+                summary = get_knowledge_base_summary(db)
+        return summary
     except Exception:
         return {"total_chunks": 0, "total_documents": 0, "documents": []}
     finally:
@@ -338,13 +361,14 @@ def confirm_reset_dialog():
 
 with st.sidebar:
     curr_theme = get_current_theme()
-    logo_name = "logo-dark.png" if curr_theme == "dark" else "logo-light.png"
+    logo_name = "logo-light.png" if curr_theme == "dark" else "logo-dark.png"
     logo_file = os.path.join(os.path.dirname(__file__), logo_name)
     logo_b64 = get_image_base64(logo_file)
     if logo_b64:
         logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" alt="Neno Technology" class="sidebar-brand-logo-img" />'
     else:
-        logo_img_tag = '<span style="color: #FFFFFF; font-weight: 700; font-size: 15px;">⚡ Neno Technology</span>'
+        logo_fallback_color = "#FFFFFF" if curr_theme == "dark" else "#0F172A"
+        logo_img_tag = f'<span style="color: {logo_fallback_color}; font-weight: 700; font-size: 15px;">⚡ Neno Technology</span>'
 
     st.markdown(
         f"""
@@ -1745,21 +1769,21 @@ def render_replies(df: pd.DataFrame) -> None:
         kb_badge_html = '<span class="badge badge-pending" style="font-size: 11px;">⚠️ RAG Knowledge Empty (0 Chunks) · Attach Files in Tab Below</span>'
 
     agent_status_html = f"""
-    <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+    <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; box-shadow: var(--shadow-sm); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
         <div style="display: flex; align-items: center; gap: 14px;">
-            <div style="width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%); color: #2563EB; display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid #BFDBFE;">
+            <div style="width: 44px; height: 44px; border-radius: 12px; background: var(--brand-soft); color: var(--brand-primary); display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid var(--brand-border);">
                 🤖
             </div>
             <div>
                 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <span style="font-size: 16px; font-weight: 700; color: #0F172A;">AI Auto-Reply Agent</span>
+                    <span style="font-size: 16px; font-weight: 700; color: var(--text-primary); font-family: 'Outfit', sans-serif;">AI Auto-Reply Agent</span>
                     <span class="badge {status_badge_cls}" style="font-size: 11px;">
                         <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background-color: {status_dot_color}; margin-right: 5px;"></span>
                         {status_label}
                     </span>
                     {kb_badge_html}
                 </div>
-                <div style="font-size: 13px; color: #64748B; margin-top: 3px;">
+                <div style="font-size: 13px; color: var(--text-muted); margin-top: 3px; font-family: 'Inter', sans-serif;">
                     Monitors <code>support@nenotechnology.com</code> inbox · Auto-activates only on customer reply · Answers via RAG vector intelligence
                 </div>
             </div>
@@ -1943,9 +1967,9 @@ def render_replies(df: pd.DataFrame) -> None:
         st.markdown(
             clean_html(
                 """
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 7px 12px; margin-bottom: 8px;">
-                    <div style="font-size: 12.5px; color: #334155;">
-                        <span style="font-weight: 600; color: #0F172A;">🔗 Live Data Pipeline:</span>
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 14px; margin-bottom: 8px; box-shadow: var(--shadow-sm);">
+                    <div style="font-size: 12.5px; color: var(--text-secondary); font-family: 'Inter', sans-serif;">
+                        <span style="font-weight: 600; color: var(--text-primary);">🔗 Live Data Pipeline:</span>
                         <span>Synchronizing <strong>Outlook</strong> (Replies) &amp; <strong>Excel</strong> (<code>booked_leads.xlsx</code> via Power Automate &rarr; Odoo CRM) into <strong>Dashboard &amp; Analytics</strong>.</span>
                     </div>
                 </div>
@@ -1979,44 +2003,28 @@ def render_replies(df: pd.DataFrame) -> None:
             st.markdown(
                 clean_html(
                     f"""
-                    <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; padding: 34px 28px; text-align: center; margin-top: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                        <div style="width: 58px; height: 58px; border-radius: 16px; background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); color: #0D9488; font-size: 28px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; border: 1px solid #99F6E4;">
-                            🤖
+                    <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 14px; padding: 36px 24px; text-align: center; margin-top: 14px; box-shadow: var(--shadow-sm);">
+                        <div style="width: 52px; height: 52px; border-radius: 14px; background: var(--brand-soft); color: var(--brand-primary); font-size: 26px; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px auto; border: 1px solid var(--brand-border);">
+                            💬
                         </div>
-                        <h3 style="margin: 0 0 8px 0; font-size: 19px; font-weight: 700; color: #0F172A;">
-                            AI Auto-Reply Agent is Active & on Standby
+                        <h3 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 700; color: var(--text-primary); font-family: 'Outfit', sans-serif;">
+                            No Customer Replies Recorded Yet
                         </h3>
-                        <p style="margin: 0 auto 22px auto; max-width: 660px; font-size: 13.5px; color: #64748B; line-height: 1.6;">
-                            Exclusive Conversation Cards are <strong>only activated when a customer actually replies</strong> to an outreach email. No dummy records are created for leads who haven't replied yet.
+                        <p style="margin: 0 auto 20px auto; max-width: 540px; font-size: 13.5px; color: var(--text-muted); line-height: 1.55; font-family: 'Inter', sans-serif;">
+                            The AI Auto-Reply Agent is actively monitoring your outreach campaign inbox. Once a customer replies, their conversation thread and grounded corporate response will immediately appear here.
                         </p>
-                        <div style="display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-bottom: 24px;">
-                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; text-align: left; max-width: 220px;">
-                                <div style="font-size: 12px; font-weight: 700; color: #2563EB; margin-bottom: 5px;">1. Inbound Reply</div>
-                                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">Monitors Outlook inbox for responses to outreach campaign emails.</div>
-                            </div>
-                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; text-align: left; max-width: 220px;">
-                                <div style="font-size: 12px; font-weight: 700; color: #0D9488; margin-bottom: 5px;">2. RAG Intelligence</div>
-                                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">Retrieves verified facts from attached knowledge files ({kb_chunks} chunks ready).</div>
-                            </div>
-                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 18px; text-align: left; max-width: 220px;">
-                                <div style="font-size: 12px; font-weight: 700; color: #7C3AED; margin-bottom: 5px;">3. Auto-Dispatch</div>
-                                <div style="font-size: 12px; color: #64748B; line-height: 1.4;">Sends corporate reply with Bookings link & quoted primary thread.</div>
-                            </div>
-                        </div>
                     </div>
                     """
                 ),
                 unsafe_allow_html=True,
             )
-            col_sb1, col_sb2 = st.columns([1, 1])
-            with col_sb1:
-                if st.button("⚡ Scan Outlook Inbox for New Replies", key="btn_standby_check", use_container_width=True):
+            col_sb1, col_sb2, col_sb3 = st.columns([1.2, 2.2, 1.2])
+            with col_sb2:
+                if st.button("⚡ Scan Outlook Inbox for New Replies", key="btn_standby_check", type="primary", use_container_width=True):
                     with st.spinner("Checking Outlook inbox for customer replies..."):
                         check_and_reply_inbox(sync_existing=False)
                         st.cache_data.clear()
                     st.rerun()
-            with col_sb2:
-                st.info("💡 Tip: To attach or review company knowledge documents (PDFs, FAQs), switch to the **📚 RAG Knowledge Base & Attachments** tab.")
         else:
             rc_col1, rc_col2 = st.columns([3, 1.3])
             with rc_col1:

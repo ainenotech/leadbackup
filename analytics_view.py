@@ -163,7 +163,7 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
         <div>
             <h1 class="top-header-title">
                 Enterprise Outreach Analytics &amp; Intelligence
-                <span class="badge badge-sent" style="font-size: 11px; font-weight: 600; background: #F0FDFA; color: #0F766E; border: 1px solid #99F6E4;">14 Engines Active</span>
+                <span class="badge badge-sent" style="font-size: 11px; font-weight: 600;">14 Engines Active</span>
             </h1>
             <p class="top-header-desc">
                 Comprehensive multi-channel telemetry: email open tracking, link clicks, AI reply intent, engagement scoring, latency analysis, and sequence optimization.
@@ -189,8 +189,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
         )
     with c_f2:
         badge_text = f"""
-        <div style="font-size: 13px; color: #64748B; padding: 8px 12px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; text-align: center;">
-            👥 Tracking <strong>{totals['total_leads']}</strong> Active Lead Journeys
+        <div style="font-size: 13px; color: var(--text-muted); padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; text-align: center;">
+            👥 Tracking <strong style="color: var(--text-primary);">{totals['total_leads']}</strong> Active Lead Journeys
         </div>
         """
         st.markdown(clean_html(badge_text), unsafe_allow_html=True)
@@ -427,8 +427,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
         st.markdown(
             clean_html("""
             <div style="margin: 14px 0 18px 0;">
-                <h3 style="font-size: 18px; margin: 0 0 4px 0; color: #18181B;">Comprehensive 14-Feature Intelligence Matrix</h3>
-                <p style="font-size: 13.5px; color: #64748B; margin: 0;">
+                <h3 style="font-size: 19px; margin: 0 0 5px 0; color: var(--text-primary); font-family: 'Outfit', sans-serif; font-weight: 700;">Comprehensive 14-Feature Intelligence Matrix</h3>
+                <p style="font-size: 13.5px; color: var(--text-muted); margin: 0; font-family: 'Inter', sans-serif;">
                     Select any feature card below to immediately inspect live telemetry, event logs, AI intent classifications, and conversion diagnostics.
                 </p>
             </div>
@@ -444,7 +444,7 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
             with cols[i % 2]:
                 card_markup = f"""
                 <div class="glass-feature-card">
-                    <a href="?page=analytics&tab={target_meta['tab']}&feature={fid}" target="_self" class="card-stretch-link" title="Deep Dive {feat['name']}"></a>
+                    <a href="?page=analytics&tab={target_meta['tab']}&feature={fid}" target="_self" class="card-stretch-link" title="Deep Dive {feat['name']}" onclick="window.location.search = '?page=analytics&tab={target_meta['tab']}&feature={fid}'; return true;"></a>
                     <div>
                         <div class="glass-card-header">
                             <div class="glass-card-left">

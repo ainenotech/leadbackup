@@ -243,8 +243,8 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {{
     flex-direction: column;
     align-items: flex-start;
     padding: 14px 16px;
-    background: {'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)' if is_dark else 'linear-gradient(135deg, #0B1120 0%, #0F172A 60%, #1E293B 100%)'};
-    border: 1px solid var(--border-strong);
+    background: {'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)' if is_dark else 'linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)'} !important;
+    border: 1px solid {'#1F2937' if is_dark else '#E2E8F0'} !important;
     border-radius: var(--radius-md);
     margin-bottom: 12px;
     box-shadow: var(--shadow-sm);
@@ -252,7 +252,7 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {{
 }}
 .sidebar-brand-card:hover {{
     border-color: var(--brand-primary);
-    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 16px rgba(59, 130, 246, {'0.25' if is_dark else '0.12'});
 }}
 .sidebar-brand-logo-img {{
     height: 32px;
@@ -399,6 +399,19 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
 @media (max-width: 680px) {{
     .kpi-grid {{ grid-template-columns: 1fr; }}
 }}
+.kpi-grid-4 {{
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 16px !important;
+    margin-bottom: 22px !important;
+    width: 100% !important;
+}}
+@media (max-width: 1100px) {{
+    .kpi-grid-4 {{ grid-template-columns: repeat(2, 1fr) !important; }}
+}}
+@media (max-width: 600px) {{
+    .kpi-grid-4 {{ grid-template-columns: 1fr !important; }}
+}}
 .kpi-card {{
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
@@ -462,6 +475,44 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
     align-items: center;
     gap: 6px;
 }}
+.kpi-icon-box {{
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 9px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 17px !important;
+    flex-shrink: 0 !important;
+}}
+.kpi-micro {{
+    font-family: 'Inter', sans-serif !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    color: var(--text-muted) !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    letter-spacing: -0.01em !important;
+    margin-top: 4px !important;
+}}
+.kpi-pill {{
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    padding: 2.5px 8px !important;
+    border-radius: 6px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10.5px !important;
+    font-weight: 600 !important;
+    line-height: 1.2 !important;
+}}
+.kpi-pill-blue   {{ background: {'rgba(59, 130, 246, 0.16)' if is_dark else '#EFF6FF'} !important; color: {'#93C5FD' if is_dark else '#1D4ED8'} !important; border: 1px solid {'rgba(59, 130, 246, 0.35)' if is_dark else '#BFDBFE'} !important; }}
+.kpi-pill-amber  {{ background: {'rgba(245, 158, 11, 0.16)' if is_dark else '#FFFBEB'} !important; color: {'#FCD34D' if is_dark else '#B45309'} !important; border: 1px solid {'rgba(245, 158, 11, 0.35)' if is_dark else '#FDE68A'} !important; }}
+.kpi-pill-teal   {{ background: {'rgba(20, 184, 166, 0.16)' if is_dark else '#F0FDFA'} !important; color: {'#5EEAD4' if is_dark else '#0F766E'} !important; border: 1px solid {'rgba(20, 184, 166, 0.35)' if is_dark else '#99F6E4'} !important; }}
+.kpi-pill-cyan   {{ background: {'rgba(6, 182, 212, 0.16)' if is_dark else '#ECFEFF'} !important; color: {'#67E8F9' if is_dark else '#0E7490'} !important; border: 1px solid {'rgba(6, 182, 212, 0.35)' if is_dark else '#A5F3FC'} !important; }}
+.kpi-pill-purple {{ background: {'rgba(139, 92, 246, 0.16)' if is_dark else '#F5F3FF'} !important; color: {'#C4B5FD' if is_dark else '#6D28D9'} !important; border: 1px solid {'rgba(139, 92, 246, 0.35)' if is_dark else '#DDD6FE'} !important; }}
+.kpi-pill-rose   {{ background: {'rgba(244, 63, 94, 0.16)' if is_dark else '#FFF1F2'} !important; color: {'#FDA4AF' if is_dark else '#BE123C'} !important; border: 1px solid {'rgba(244, 63, 94, 0.35)' if is_dark else '#FECDD3'} !important; }}
 
 /* ── Visual Conversion Funnel Card ── */
 .funnel-container {{
@@ -792,34 +843,192 @@ div[data-baseweb="textarea"]:focus-within {{
     color: var(--input-color) !important;
 }}
 
-/* ── Buttons ── */
+/* ── Buttons (Elevated Executive Aesthetics) ── */
 .stButton > button {{
-    border-radius: var(--radius-sm) !important;
+    border-radius: 9px !important;
+    font-family: 'Inter', sans-serif !important;
     font-weight: 600 !important;
     font-size: 13.5px !important;
-    padding: 8px 16px !important;
-    transition: all 0.15s ease !important;
-    box-shadow: var(--shadow-sm) !important;
+    padding: 8px 18px !important;
+    letter-spacing: -0.01em !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 7px !important;
 }}
 .stButton > button[kind="primary"] {{
-    background: var(--brand-primary) !important;
-    border: 1px solid var(--brand-primary) !important;
+    background: {'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)' if is_dark else 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)'} !important;
+    border: 1px solid {'rgba(96, 165, 250, 0.5)' if is_dark else '#1D4ED8'} !important;
     color: #FFFFFF !important;
+    box-shadow: {'0 2px 8px rgba(37, 99, 235, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2)' if is_dark else '0 2px 6px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25)'} !important;
 }}
 .stButton > button[kind="primary"]:hover {{
-    background: var(--brand-hover) !important;
-    border-color: var(--brand-hover) !important;
-    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35) !important;
+    background: {'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)' if is_dark else 'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%)'} !important;
+    border-color: {'#93C5FD' if is_dark else '#1E40AF'} !important;
+    transform: translateY(-1px) !important;
+    box-shadow: {'0 6px 20px rgba(59, 130, 246, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3)' if is_dark else '0 6px 18px rgba(37, 99, 235, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3)'} !important;
+}}
+.stButton > button[kind="primary"]:active {{
+    transform: translateY(0px) !important;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2) !important;
 }}
 .stButton > button[kind="secondary"] {{
-    background: var(--bg-surface) !important;
-    color: var(--text-primary) !important;
-    border: 1px solid var(--border-strong) !important;
+    background: {'linear-gradient(180deg, #1F2937 0%, #161F30 100%)' if is_dark else 'linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)'} !important;
+    color: {'#F3F4F6' if is_dark else '#1E293B'} !important;
+    border: 1px solid {'#374151' if is_dark else '#CBD5E1'} !important;
+    box-shadow: {'0 1px 3px rgba(0, 0, 0, 0.3)' if is_dark else '0 1px 2px rgba(0, 0, 0, 0.04)'} !important;
 }}
 .stButton > button[kind="secondary"]:hover {{
-    background: var(--bg-elevated) !important;
-    border-color: var(--brand-primary) !important;
-    color: var(--brand-primary) !important;
+    background: {'linear-gradient(180deg, #374151 0%, #1F2937 100%)' if is_dark else 'linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%)'} !important;
+    border-color: {'#60A5FA' if is_dark else '#94A3B8'} !important;
+    color: {'#FFFFFF' if is_dark else '#0F172A'} !important;
+    transform: translateY(-1px) !important;
+    box-shadow: {'0 4px 12px rgba(0, 0, 0, 0.4)' if is_dark else '0 4px 12px rgba(0, 0, 0, 0.06)'} !important;
+}}
+.stButton > button[kind="secondary"]:active {{
+    transform: translateY(0px) !important;
+}}
+
+/* ── Luxury Glassmorphic Feature Cards (Whole Box Clickable) ── */
+.glass-feature-card {{
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    background: {'linear-gradient(135deg, rgba(17, 24, 39, 0.88) 0%, rgba(31, 41, 55, 0.68) 100%)' if is_dark else 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.85) 100%)'} !important;
+    backdrop-filter: blur(16px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+    border: 1px solid {'rgba(55, 65, 81, 0.85)' if is_dark else 'rgba(226, 232, 240, 0.9)'} !important;
+    border-radius: 16px !important;
+    padding: 22px 24px !important;
+    margin-bottom: 18px !important;
+    text-decoration: none !important;
+    color: inherit !important;
+    cursor: pointer !important;
+    box-shadow: {'0 4px 20px -2px rgba(0, 0, 0, 0.4), inset 0 1px 1px 0 rgba(255, 255, 255, 0.05)' if is_dark else '0 4px 20px -2px rgba(15, 23, 42, 0.05), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95)'} !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    position: relative !important;
+    overflow: hidden !important;
+    min-height: 148px !important;
+}}
+.glass-feature-card::before {{
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3.5px;
+    background: linear-gradient(90deg, #3B82F6 0%, #14B8A6 50%, #8B5CF6 100%);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}}
+.glass-feature-card:hover {{
+    transform: translateY(-4px) !important;
+    border-color: {'rgba(96, 165, 250, 0.6)' if is_dark else 'rgba(37, 99, 235, 0.45)'} !important;
+    box-shadow: {'0 16px 36px -4px rgba(0, 0, 0, 0.6), 0 0 20px rgba(59, 130, 246, 0.25)' if is_dark else '0 16px 36px -4px rgba(37, 99, 235, 0.12), inset 0 1px 2px 0 rgba(255, 255, 255, 1)'} !important;
+    text-decoration: none !important;
+}}
+.glass-feature-card:hover::before {{
+    opacity: 1;
+}}
+.glass-feature-card:hover .glass-card-title {{
+    color: {'#60A5FA' if is_dark else '#2563EB'} !important;
+}}
+.glass-feature-card:hover .glass-arrow-circle {{
+    background: {'#3B82F6' if is_dark else '#2563EB'} !important;
+    color: #FFFFFF !important;
+    transform: translateX(4px) !important;
+    border-color: {'#3B82F6' if is_dark else '#2563EB'} !important;
+}}
+.glass-card-header {{
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    margin-bottom: 10px !important;
+}}
+.glass-card-left {{
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 14px !important;
+}}
+.glass-icon-box {{
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 12px !important;
+    background: {'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.8) 100%)' if is_dark else 'linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(219, 234, 254, 0.8) 100%)'} !important;
+    border: 1px solid {'rgba(59, 130, 246, 0.35)' if is_dark else 'rgba(191, 219, 254, 0.8)'} !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 22px !important;
+    flex-shrink: 0 !important;
+    box-shadow: {'0 2px 8px rgba(0, 0, 0, 0.3)' if is_dark else '0 2px 8px rgba(37, 99, 235, 0.08)'} !important;
+}}
+.glass-card-title {{
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+    letter-spacing: -0.015em !important;
+    margin: 0 !important;
+    transition: color 0.2s ease !important;
+}}
+.glass-card-desc {{
+    font-family: 'Inter', sans-serif !important;
+    font-size: 13px !important;
+    color: var(--text-muted) !important;
+    margin: 4px 0 0 0 !important;
+    line-height: 1.5 !important;
+}}
+.glass-card-footer {{
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin-top: 14px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid {'rgba(55, 65, 81, 0.6)' if is_dark else 'rgba(226, 232, 240, 0.8)'} !important;
+}}
+.glass-explore-text {{
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11.5px !important;
+    font-weight: 600 !important;
+    color: {'#93C5FD' if is_dark else '#2563EB'} !important;
+    letter-spacing: -0.01em !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+}}
+.glass-arrow-circle {{
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 50% !important;
+    background: {'#1F2937' if is_dark else '#FFFFFF'} !important;
+    border: 1px solid {'#374151' if is_dark else '#E2E8F0'} !important;
+    color: {'#93C5FD' if is_dark else '#2563EB'} !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}}
+.card-stretch-link {{
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 15 !important;
+    cursor: pointer !important;
+    background: transparent !important;
+    text-decoration: none !important;
+    display: block !important;
+    border: none !important;
+    outline: none !important;
 }}
 
 /* ── Action Toolbar Card ── */
