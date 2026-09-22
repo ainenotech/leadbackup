@@ -84,10 +84,9 @@ import template_hub_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 import utils.theme
-if os.getenv("DASHBOARD_DEV_RELOAD", "").lower() in {"1", "true", "yes"}:
-    import importlib
-    importlib.reload(utils.theme)
-    importlib.reload(analytics_view)
+import importlib
+importlib.reload(utils.theme)
+importlib.reload(analytics_view)
 from utils.theme import (
     get_current_theme,
     is_dark_mode,

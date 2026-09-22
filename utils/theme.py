@@ -208,6 +208,21 @@ p, [data-testid="stMarkdownContainer"] p {{
     color: var(--text-secondary);
 }}
 
+/* Allow button child text to inherit button font and color instead of default paragraph styling */
+.stButton button p,
+.stButton button span,
+.stButton button div,
+button[data-testid="stBaseButton-primary"] p,
+button[data-testid="stBaseButton-primary"] span,
+button[data-testid="stBaseButton-secondary"] p,
+button[data-testid="stBaseButton-secondary"] span {{
+    font-family: inherit !important;
+    color: inherit;
+    line-height: inherit !important;
+    margin: 0 !important;
+}}
+
+
 code, pre, .mono-text, .kpi-number, [data-testid="stMetricValue"] {{
     font-family: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace !important;
     font-feature-settings: "zero", "tnum" !important;
@@ -298,10 +313,21 @@ section[data-testid="stSidebar"] .stButton > button {{
     justify-content: flex-start !important;
     margin-bottom: 3px !important;
 }}
+section[data-testid="stSidebar"] .stButton > button p,
+section[data-testid="stSidebar"] .stButton > button span,
+section[data-testid="stSidebar"] .stButton > button div {{
+    color: inherit !important;
+    -webkit-text-fill-color: inherit !important;
+}}
 section[data-testid="stSidebar"] .stButton > button:hover {{
     background: var(--bg-elevated) !important;
     color: var(--text-primary) !important;
     border-color: var(--border-strong) !important;
+}}
+section[data-testid="stSidebar"] .stButton > button:hover p,
+section[data-testid="stSidebar"] .stButton > button:hover span {{
+    color: var(--text-primary) !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
 }}
 section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
     background: var(--brand-soft) !important;
@@ -309,6 +335,12 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
     font-weight: 600 !important;
     border: 1px solid var(--brand-border) !important;
     border-left: 4px solid var(--brand-primary) !important;
+}}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] p,
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] span,
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] div {{
+    color: {'#60A5FA' if is_dark else 'var(--brand-primary)'} !important;
+    -webkit-text-fill-color: {'#60A5FA' if is_dark else 'var(--brand-primary)'} !important;
 }}
 
 /* Sidebar Health Card */
@@ -844,7 +876,10 @@ div[data-baseweb="textarea"]:focus-within {{
 }}
 
 /* ── Buttons (Elevated Executive Aesthetics) ── */
-.stButton > button {{
+.stButton > button,
+button[data-testid="stBaseButton-primary"],
+button[data-testid="stBaseButton-secondary"],
+div[data-testid="stFormSubmitButton"] > button {{
     border-radius: 9px !important;
     font-family: 'Inter', sans-serif !important;
     font-weight: 600 !important;
@@ -858,36 +893,197 @@ div[data-baseweb="textarea"]:focus-within {{
     justify-content: center !important;
     gap: 7px !important;
 }}
-.stButton > button[kind="primary"] {{
+
+/* Inherit button styling down to all internal wrappers */
+.stButton > button p,
+.stButton > button span,
+.stButton > button div,
+div[data-testid="stFormSubmitButton"] > button p,
+div[data-testid="stFormSubmitButton"] > button span,
+div[data-testid="stFormSubmitButton"] > button div {{
+    font-family: inherit !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: inherit !important;
+}}
+
+/* ── Primary Buttons (Blue Background & White Text) ── */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="stBaseButton-primary"],
+button[kind="primary"],
+button[data-testid="stBaseButton-primary"],
+div[data-testid="stFormSubmitButton"] > button[kind="primary"],
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"] {{
     background: {'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)' if is_dark else 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)'} !important;
     border: 1px solid {'rgba(96, 165, 250, 0.5)' if is_dark else '#1D4ED8'} !important;
     color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
     box-shadow: {'0 2px 8px rgba(37, 99, 235, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2)' if is_dark else '0 2px 6px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25)'} !important;
 }}
-.stButton > button[kind="primary"]:hover {{
+
+/* Pure white text on ALL children inside primary/blue buttons */
+.stButton > button[kind="primary"] *,
+.stButton > button[kind="primary"] p,
+.stButton > button[kind="primary"] span,
+.stButton > button[kind="primary"] div,
+.stButton > button[kind="primary"] [data-testid="stMarkdownContainer"] p,
+.stButton > button[kind="primary"] [data-testid="stMarkdownContainer"] span,
+.stButton > button[data-testid="stBaseButton-primary"] *,
+.stButton > button[data-testid="stBaseButton-primary"] p,
+.stButton > button[data-testid="stBaseButton-primary"] span,
+.stButton > button[data-testid="stBaseButton-primary"] div,
+.stButton > button[data-testid="stBaseButton-primary"] [data-testid="stMarkdownContainer"] p,
+.stButton > button[data-testid="stBaseButton-primary"] [data-testid="stMarkdownContainer"] span,
+button[kind="primary"] *,
+button[kind="primary"] p,
+button[kind="primary"] span,
+button[kind="primary"] div,
+button[kind="primary"] [data-testid="stMarkdownContainer"] p,
+button[kind="primary"] [data-testid="stMarkdownContainer"] span,
+button[data-testid="stBaseButton-primary"] *,
+button[data-testid="stBaseButton-primary"] p,
+button[data-testid="stBaseButton-primary"] span,
+button[data-testid="stBaseButton-primary"] div,
+button[data-testid="stBaseButton-primary"] [data-testid="stMarkdownContainer"] p,
+button[data-testid="stBaseButton-primary"] [data-testid="stMarkdownContainer"] span,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"] *,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"] p,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"] span,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"] *,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"] p,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"] span {{
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}}
+
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="stBaseButton-primary"]:hover,
+button[kind="primary"]:hover,
+button[data-testid="stBaseButton-primary"]:hover,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"]:hover {{
     background: {'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)' if is_dark else 'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%)'} !important;
     border-color: {'#93C5FD' if is_dark else '#1E40AF'} !important;
     transform: translateY(-1px) !important;
     box-shadow: {'0 6px 20px rgba(59, 130, 246, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3)' if is_dark else '0 6px 18px rgba(37, 99, 235, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3)'} !important;
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
 }}
-.stButton > button[kind="primary"]:active {{
+
+.stButton > button[kind="primary"]:hover *,
+.stButton > button[kind="primary"]:hover p,
+.stButton > button[kind="primary"]:hover span,
+.stButton > button[data-testid="stBaseButton-primary"]:hover *,
+.stButton > button[data-testid="stBaseButton-primary"]:hover p,
+.stButton > button[data-testid="stBaseButton-primary"]:hover span,
+button[kind="primary"]:hover *,
+button[kind="primary"]:hover p,
+button[kind="primary"]:hover span,
+button[data-testid="stBaseButton-primary"]:hover *,
+button[data-testid="stBaseButton-primary"]:hover p,
+button[data-testid="stBaseButton-primary"]:hover span,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover *,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover p,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"]:hover *,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"]:hover p {{
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}}
+
+.stButton > button[kind="primary"]:active,
+.stButton > button[kind="primary"]:focus,
+.stButton > button[data-testid="stBaseButton-primary"]:active,
+.stButton > button[data-testid="stBaseButton-primary"]:focus,
+button[kind="primary"]:active,
+button[kind="primary"]:focus,
+button[data-testid="stBaseButton-primary"]:active,
+button[data-testid="stBaseButton-primary"]:focus,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"]:active,
+div[data-testid="stFormSubmitButton"] > button[kind="primary"]:focus,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"]:active,
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-primary"]:focus {{
     transform: translateY(0px) !important;
     box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2) !important;
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
 }}
-.stButton > button[kind="secondary"] {{
+
+.stButton > button[kind="primary"]:active *,
+.stButton > button[kind="primary"]:active p,
+.stButton > button[kind="primary"]:focus *,
+.stButton > button[kind="primary"]:focus p,
+.stButton > button[data-testid="stBaseButton-primary"]:active *,
+.stButton > button[data-testid="stBaseButton-primary"]:active p,
+.stButton > button[data-testid="stBaseButton-primary"]:focus *,
+.stButton > button[data-testid="stBaseButton-primary"]:focus p,
+button[kind="primary"]:active *,
+button[kind="primary"]:active p,
+button[kind="primary"]:focus *,
+button[kind="primary"]:focus p,
+button[data-testid="stBaseButton-primary"]:active *,
+button[data-testid="stBaseButton-primary"]:active p,
+button[data-testid="stBaseButton-primary"]:focus *,
+button[data-testid="stBaseButton-primary"]:focus p {{
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}}
+
+/* ── Secondary Buttons (Clean Neutral Background) ── */
+.stButton > button[kind="secondary"],
+.stButton > button[data-testid="stBaseButton-secondary"],
+button[kind="secondary"],
+button[data-testid="stBaseButton-secondary"],
+div[data-testid="stFormSubmitButton"] > button[kind="secondary"],
+div[data-testid="stFormSubmitButton"] > button[data-testid="stBaseButton-secondary"] {{
     background: {'linear-gradient(180deg, #1F2937 0%, #161F30 100%)' if is_dark else 'linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)'} !important;
     color: {'#F3F4F6' if is_dark else '#1E293B'} !important;
+    -webkit-text-fill-color: {'#F3F4F6' if is_dark else '#1E293B'} !important;
     border: 1px solid {'#374151' if is_dark else '#CBD5E1'} !important;
     box-shadow: {'0 1px 3px rgba(0, 0, 0, 0.3)' if is_dark else '0 1px 2px rgba(0, 0, 0, 0.04)'} !important;
 }}
-.stButton > button[kind="secondary"]:hover {{
+
+.stButton > button[kind="secondary"] p,
+.stButton > button[kind="secondary"] span,
+.stButton > button[kind="secondary"] div,
+.stButton > button[data-testid="stBaseButton-secondary"] p,
+.stButton > button[data-testid="stBaseButton-secondary"] span,
+button[kind="secondary"] p,
+button[kind="secondary"] span,
+button[data-testid="stBaseButton-secondary"] p,
+button[data-testid="stBaseButton-secondary"] span {{
+    color: inherit !important;
+    -webkit-text-fill-color: inherit !important;
+}}
+
+.stButton > button[kind="secondary"]:hover,
+.stButton > button[data-testid="stBaseButton-secondary"]:hover,
+button[kind="secondary"]:hover,
+button[data-testid="stBaseButton-secondary"]:hover {{
     background: {'linear-gradient(180deg, #374151 0%, #1F2937 100%)' if is_dark else 'linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%)'} !important;
     border-color: {'#60A5FA' if is_dark else '#94A3B8'} !important;
     color: {'#FFFFFF' if is_dark else '#0F172A'} !important;
+    -webkit-text-fill-color: {'#FFFFFF' if is_dark else '#0F172A'} !important;
     transform: translateY(-1px) !important;
     box-shadow: {'0 4px 12px rgba(0, 0, 0, 0.4)' if is_dark else '0 4px 12px rgba(0, 0, 0, 0.06)'} !important;
 }}
-.stButton > button[kind="secondary"]:active {{
+
+.stButton > button[kind="secondary"]:hover p,
+.stButton > button[kind="secondary"]:hover span,
+.stButton > button[data-testid="stBaseButton-secondary"]:hover p,
+.stButton > button[data-testid="stBaseButton-secondary"]:hover span,
+button[kind="secondary"]:hover p,
+button[kind="secondary"]:hover span,
+button[data-testid="stBaseButton-secondary"]:hover p,
+button[data-testid="stBaseButton-secondary"]:hover span {{
+    color: {'#FFFFFF' if is_dark else '#0F172A'} !important;
+    -webkit-text-fill-color: {'#FFFFFF' if is_dark else '#0F172A'} !important;
+}}
+
+.stButton > button[kind="secondary"]:active,
+button[kind="secondary"]:active {{
     transform: translateY(0px) !important;
 }}
 
