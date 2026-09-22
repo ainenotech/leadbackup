@@ -53,8 +53,6 @@ from Email import get_mailer
 from services.excel_logger import log_booking_to_excel, log_reply_to_excel
 from utils.microsoft_auth import MS_SENDER_EMAIL, get_graph_headers
 
-init_db()
-
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 SYSTEM_SENDERS = [
     "copy@nenotechnology.com",
@@ -95,8 +93,13 @@ class ReplyDaemonManager:
         cls._is_running = True
 
         def _loop():
-            from Backend.db import SessionLocal
+            from Backend.db import SessionLocal, init_db
             from Backend.crud import sync_excel_and_outlook_to_db
+
+            try:
+                init_db()
+            except Exception:
+                pass
 
             print(f"[Daemon] Continuous real-time background sync started (every {interval_seconds}s).")
             _network_offline_logged = False
@@ -794,6 +797,7 @@ def run_monitoring_loop(interval_seconds: int = 30):
 
 
 if __name__ == "__main__":
+    init_db()
     parser = argparse.ArgumentParser(description="AI Auto-Reply Agent for Nenotechnology Outlook Inbox")
     parser.add_argument("--once", action="store_true", help="Run a single scan & reply pass, then exit")
     parser.add_argument("--sync", action="store_true", help="Run full inbox sync & backfill on existing messages")

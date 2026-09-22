@@ -19,15 +19,21 @@ def _init_engine(url: str):
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
     try:
-        from sqlalchemy.pool import NullPool
-        eng = create_engine(url, poolclass=NullPool, pool_pre_ping=True)
-        with eng.connect() as conn:
-            pass
+        from sqlalchemy.pool import QueuePool
+        eng = create_engine(
+            url,
+            poolclass=QueuePool,
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=15,
+            pool_recycle=300,
+            pool_pre_ping=True,
+        )
         return eng
     except Exception as exc:
         sqlite_fallback = "sqlite:///campaign.db"
         server_info = url.split("@")[-1] if "@" in url else url
-        print(f"[Notice] Could not connect to PostgreSQL at {server_info} ({exc}).")
+        print(f"[Notice] Could not initialize PostgreSQL engine at {server_info} ({exc}).")
         print(f"[Notice] Automatically falling back to local SQLite database: '{sqlite_fallback}'.")
         return create_engine(sqlite_fallback, connect_args={"check_same_thread": False, "timeout": 30})
 
@@ -49,7 +55,6 @@ def init_db():
     from sqlalchemy import inspect, text
     import Backend.models  # Ensure all model tables are registered on Base
 
-    Base.metadata.create_all(bind=engine)
     new_cols = [
         ("phone", "VARCHAR"),
         ("opened", "BOOLEAN DEFAULT FALSE"),
@@ -82,18 +87,23 @@ def init_db():
         ("template_id", "VARCHAR"),
         ("template_name", "VARCHAR"),
     ]
-    inspector = inspect(engine)
-    if "campaign_log" in inspector.get_table_names():
-        existing_cols = {col["name"] for col in inspector.get_columns("campaign_log")}
-        with engine.connect() as conn:
-            for col_name, col_type in new_cols:
-                if col_name not in existing_cols:
-                    try:
-                        conn.execute(text(f"ALTER TABLE campaign_log ADD COLUMN {col_name} {col_type};"))
-                        conn.commit()
-                    except Exception:
-                        conn.rollback()
+    try:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        if "campaign_log" not in tables:
+            Base.metadata.create_all(bind=engine)
+        else:
+            existing_cols = {col["name"] for col in inspector.get_columns("campaign_log")}
+            missing = [c for c in new_cols if c[0] not in existing_cols]
+            if missing:
+                with engine.connect() as conn:
+                    for col_name, col_type in missing:
+                        try:
+                            conn.execute(text(f"ALTER TABLE campaign_log ADD COLUMN {col_name} {col_type};"))
+                            conn.commit()
+                        except Exception:
+                            conn.rollback()
+    except Exception as e:
+        print(f"[init_db notice] DB initialization/check note: {e}")
 
     _DB_INITIALIZED = True
-
-

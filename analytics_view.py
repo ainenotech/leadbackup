@@ -23,7 +23,7 @@ def clean_html(html_str: str) -> str:
     return "".join(line.strip() for line in str(html_str).strip().splitlines() if line.strip())
 
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_cached_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
     return build_comprehensive_analytics(df_logs)
 

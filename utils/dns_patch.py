@@ -58,7 +58,10 @@ def patched_getaddrinfo(host: Any, port: Any, family: int = 0, type: int = 0, pr
 
     # Try standard system resolution
     try:
-        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+        res = _orig_getaddrinfo(host, port, family, type, proto, flags)
+        if res and res[0] and len(res[0]) >= 5 and res[0][4]:
+            _dns_cache[host] = res[0][4][0]
+        return res
     except (socket.gaierror, socket.herror, TimeoutError):
         # Fallback to public DNS on failure
         ip = _resolve_with_public_dns(host)

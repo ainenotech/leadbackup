@@ -1,6 +1,7 @@
 import utils.dns_patch  # Fast fallback DNS resolver for Microsoft Graph & login APIs
 import base64
 import html
+import time
 from datetime import datetime
 import json as _json
 import os
@@ -81,10 +82,11 @@ import services.template_service
 import template_hub_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
-from services.template_service import load_all_templates, get_template_by_id, render_template
-import importlib
 import utils.theme
-importlib.reload(utils.theme)
+if os.getenv("DASHBOARD_DEV_RELOAD", "").lower() in {"1", "true", "yes"}:
+    import importlib
+    importlib.reload(utils.theme)
+    importlib.reload(analytics_view)
 from utils.theme import (
     get_current_theme,
     is_dark_mode,
@@ -92,8 +94,6 @@ from utils.theme import (
     apply_chart_theme,
     get_complete_theme_css,
 )
-import analytics_view
-importlib.reload(analytics_view)
 from analytics_view import render_analytics
 
 @st.cache_resource(show_spinner=False)
@@ -123,19 +123,9 @@ if os.getenv("AUTO_START_REPLY_DAEMON", "").lower() in {"1", "true", "yes"}:
 # Keep Render backend warm and awake while the dashboard is running
 try:
     from Backend.keepalive import RenderKeepAliveDaemon
-    if "dashboard_keepalive_active" not in st.session_state:
-        st.session_state.dashboard_keepalive_active = True
-        import threading
-        def _dashboard_keepalive_loop():
-            while True:
-                try:
-                    time.sleep(300)  # Ping every 5 minutes
-                    RenderKeepAliveDaemon.ping_now()
-                except Exception:
-                    pass
-        _t = threading.Thread(target=_dashboard_keepalive_loop, name="DashboardRenderKeepAlive", daemon=True)
-        _t.start()
-except Exception as _e:
+    if not RenderKeepAliveDaemon.is_running():
+        RenderKeepAliveDaemon.start(interval_minutes=5)
+except Exception:
     pass
 
 # Auto-expand sidebar if it was collapsed from a previous session
@@ -244,7 +234,7 @@ def fetch_cached_kb_summary() -> dict:
         db.close()
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def load_campaign_logs():
     db = SessionLocal()
     try:
@@ -477,6 +467,7 @@ with st.sidebar:
         st.caption("⚡ **Live Sync Speed**")
     with sync_cols[1]:
         if st.button("🔄 Sync", key="sync_now_sidebar_btn", use_container_width=True, help="Force immediate data refresh"):
+            load_campaign_logs.clear()
             st.rerun()
 
     live_intervals = [
@@ -487,7 +478,7 @@ with st.sidebar:
         "⏸️ Paused",
     ]
     if "live_sync_choice" not in st.session_state:
-        st.session_state.live_sync_choice = "⚡ Real-Time (5s)"
+        st.session_state.live_sync_choice = "⏱️ Standard (30s)"
 
     selected_sync = st.selectbox(
         "Live Sync Interval",
@@ -642,7 +633,7 @@ def render_live_activity_stream(df: pd.DataFrame) -> None:
     events.sort(key=_safe_sort_key, reverse=True)
     recent_events = events[:6]
 
-    sync_choice = st.session_state.get("live_sync_choice", "⚡ Real-Time (5s)")
+    sync_choice = st.session_state.get("live_sync_choice", "⏱️ Standard (30s)")
 
     if recent_events:
         cards_html = ""
@@ -2890,8 +2881,8 @@ interval_map = {
     "🕐 1 Min": "60s",
     "⏸️ Paused": None,
 }
-sync_choice = st.session_state.get("live_sync_choice", "⚡ Real-Time (5s)")
-sync_interval = interval_map.get(sync_choice, "5s")
+sync_choice = st.session_state.get("live_sync_choice", "⏱️ Standard (30s)")
+sync_interval = interval_map.get(sync_choice, "30s")
 
 @st.fragment(run_every=sync_interval)
 def render_live_telemetry_view(page_name: str):
