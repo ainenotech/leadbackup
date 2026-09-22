@@ -16,7 +16,7 @@ scanning every row per query — fine for a knowledge base of FAQs/policies
 """
 
 import os
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import numpy as np
 from sqlalchemy.orm import Session
