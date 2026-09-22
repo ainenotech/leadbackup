@@ -1,3 +1,4 @@
+from utils.theme import apply_chart_theme, is_dark_mode
 import html
 import os
 import textwrap
@@ -35,8 +36,8 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
         """
         <style>
         .top-tpl-banner {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
             border-radius: 12px;
             padding: 20px 24px;
             margin-bottom: 22px;
@@ -50,7 +51,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
         .top-tpl-title {
             font-size: 22px;
             font-weight: 700;
-            color: #0F172A;
+            color: var(--text-primary);
             margin: 0;
             display: flex;
             align-items: center;
@@ -59,7 +60,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
         }
         .top-tpl-desc {
             font-size: 13.5px;
-            color: #64748B;
+            color: var(--text-muted);
             margin: 4px 0 0 0;
             line-height: 1.45;
         }
@@ -74,19 +75,19 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
             gap: 5px;
         }
         .tpl-card-box {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
             border-radius: 10px;
             padding: 14px 16px;
             margin-bottom: 10px;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .tpl-card-box:hover {
-            border-color: #CBD5E1;
+            border-color: var(--border-strong);
             box-shadow: 0 4px 12px rgba(0,0,0,0.04);
         }
         .tpl-card-box.is-active {
-            background: #F8FAFC;
+            background: var(--bg-elevated);
             border: 1.5px solid #2563EB;
             border-left: 4px solid #2563EB;
             box-shadow: 0 4px 14px -2px rgba(37, 99, 235, 0.12);
@@ -94,14 +95,14 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
         .tpl-meta-tag {
             font-size: 10.5px;
             font-weight: 600;
-            color: #475569;
-            background: #F1F5F9;
+            color: var(--text-secondary);
+            background: var(--bg-nested);
             padding: 2px 7px;
             border-radius: 6px;
         }
         .email-window-header {
-            background: #F8FAFC;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
             border-bottom: 1px solid #E2E8F0;
             border-radius: 10px 10px 0 0;
             padding: 10px 16px;
@@ -121,24 +122,24 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
             display: inline-block;
         }
         .email-subject-box {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
             border-top: none;
             padding: 14px 18px;
             margin-bottom: 14px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.02);
         }
         .email-preview-frame {
-            background: #F1F5F9;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-nested);
+            border: 1px solid var(--border-subtle);
             border-radius: 10px;
             padding: 14px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.03);
         }
         /* Step Cards for Batch Outreach */
         .batch-step-card {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
             border-radius: 12px;
             padding: 20px 22px;
             margin-bottom: 16px;
@@ -146,7 +147,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
             transition: all 0.2s ease;
         }
         .batch-step-card:hover {
-            border-color: #CBD5E1;
+            border-color: var(--border-strong);
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
         .batch-step-num {
@@ -164,13 +165,13 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
         .batch-step-title {
             font-size: 15px;
             font-weight: 700;
-            color: #0F172A;
+            color: var(--text-primary);
             margin-top: 6px;
             margin-bottom: 3px;
         }
         .batch-step-desc {
             font-size: 12.5px;
-            color: #64748B;
+            color: var(--text-muted);
             line-height: 1.4;
             margin-bottom: 12px;
         }
@@ -178,20 +179,20 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: #F8FAFC;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
             padding: 5px 12px;
             border-radius: 8px;
             font-size: 12px;
             font-weight: 600;
-            color: #334155;
+            color: var(--text-secondary);
         }
         .analytics-subbanner {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
             border-radius: 10px;
             padding: 16px 20px;
             margin-bottom: 18px;
@@ -786,7 +787,8 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                 xaxis=dict(gridcolor="#F1F5F9"),
                 margin=dict(l=20, r=20, t=40, b=20),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            apply_chart_theme(fig)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             if chosen_tpl_filter != "All Templates (Comparative)":
                 st.info(f"💡 No daily outreach telemetry recorded yet for **{chosen_tpl_filter}**. As emails are sent for this cohort, its daily {metric_choice} trajectory will appear here.")
@@ -885,7 +887,8 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                     margin=dict(l=20, r=20, t=30, b=20),
                 )
-                st.plotly_chart(fig_bar, use_container_width=True)
+                apply_chart_theme(fig_bar)
+                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
 
     # ═══════════════════════════════════════════════════════════════
     # TAB 3: SHEET-TO-TEMPLATE BATCH OUTREACH (20–25 LEADS)

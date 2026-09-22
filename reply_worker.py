@@ -762,7 +762,17 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
 def run_monitoring_loop(interval_seconds: int = 30):
     """Runs a continuous background polling loop."""
     print(f"[Agent] AI Auto-Reply Agent active for mailbox: {MS_SENDER_EMAIL}")
-    print(f"[Knowledge] Grounded in: neno_technology_knowledge_base.pdf (70 Chunks)")
+    try:
+        from Backend.db import SessionLocal
+        from services.rag import get_knowledge_base_summary
+        _db_check = SessionLocal()
+        _kb_info = get_knowledge_base_summary(_db_check)
+        _db_check.close()
+        _chunks = _kb_info.get("total_chunks", 0)
+        _docs = _kb_info.get("total_documents", 0)
+        print(f"[Knowledge] Active RAG Memory: {_chunks} Chunks across {_docs} Document(s)")
+    except Exception:
+        print("[Knowledge] Active RAG Memory ready")
     print(f"[Consultation] Microsoft Bookings Portal: {BOOKING_URL}")
     print(f"[Status] Polling interval: every {interval_seconds}s (Press Ctrl+C to stop)\n")
 

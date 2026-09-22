@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 from services.analytics_service import FEATURE_DEFINITIONS, build_comprehensive_analytics
 from services.analytics_export import generate_analytics_excel, generate_analytics_pdf
 from services.template_service import compute_template_analytics
+from utils.theme import apply_chart_theme, is_dark_mode
 
 
 def clean_html(html_str: str) -> str:
@@ -619,7 +620,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                 legend=dict(orientation="h", yanchor="bottom", y=-0.3),
                 margin=dict(l=20, r=20, t=40, b=20),
             )
-            st.plotly_chart(fig_trend, use_container_width=True)
+            apply_chart_theme(fig_trend)
+            st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False})
         else:
             if chosen_av_tpl != "All Templates (Comparative)":
                 st.info(f"ℹ️ No daily telemetry recorded yet for **{chosen_av_tpl}**. Send outreach batches using this template to visualize its daily conversion curve.")
@@ -675,7 +677,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                     plot_bgcolor="rgba(0,0,0,0)",
                     margin=dict(l=20, r=20, t=40, b=20),
                 )
-                st.plotly_chart(fig_bar, use_container_width=True)
+                apply_chart_theme(fig_bar)
+                st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
     # ─────────────────────────────────────────────────────────────
     # TAB 2: DELIVERABILITY, OPENS & CLICKS (FEATURES 1, 2, 4, 5)
@@ -738,7 +741,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                 coloraxis_showscale=False,
                 font=dict(family="Inter, sans-serif", size=11),
             )
-            st.plotly_chart(fig_open, use_container_width=True)
+            apply_chart_theme(fig_open)
+            st.plotly_chart(fig_open, use_container_width=True, config={'displayModeBar': False})
 
         with col_o2:
             st.caption("Live Lead Open Event Logs:")
@@ -806,7 +810,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                 legend=dict(orientation="h", yanchor="bottom", y=-0.2),
                 font=dict(family="Inter, sans-serif", size=11),
             )
-            st.plotly_chart(fig_click, use_container_width=True)
+            apply_chart_theme(fig_click)
+            st.plotly_chart(fig_click, use_container_width=True, config={'displayModeBar': False})
 
         st.markdown("<hr style='border: none; border-top: 1px solid #E2E8F0; margin: 24px 0;'>", unsafe_allow_html=True)
 
@@ -970,7 +975,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                 coloraxis_showscale=False,
                 font=dict(family="Inter, sans-serif", size=11),
             )
-            st.plotly_chart(fig_lat, use_container_width=True)
+            apply_chart_theme(fig_lat)
+            st.plotly_chart(fig_lat, use_container_width=True, config={'displayModeBar': False})
 
         with c_t2:
             st.caption("Lead-by-Lead Response Turnaround:")
@@ -1127,7 +1133,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                 paper_bgcolor="rgba(0,0,0,0)",
                 font=dict(family="Inter, sans-serif", size=11),
             )
-            st.plotly_chart(fig_intent, use_container_width=True)
+            apply_chart_theme(fig_intent)
+            st.plotly_chart(fig_intent, use_container_width=True, config={'displayModeBar': False})
 
         with c_i2:
             st.caption("AI Intent Categorization Rationale:")
@@ -1219,7 +1226,8 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Inter, sans-serif", size=11),
         )
-        st.plotly_chart(fig_heat, use_container_width=True)
+        apply_chart_theme(fig_heat)
+        st.plotly_chart(fig_heat, use_container_width=True, config={'displayModeBar': False})
 
         if max_val > 0:
             rec_desc = f"Highest outreach engagement recorded on <strong>{peak_send_str}</strong>. Telemetry identifies this time window as having the highest open density and fastest reply turnarounds."

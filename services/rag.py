@@ -153,20 +153,35 @@ def add_document(
 
 def list_documents(db: Session) -> List[dict]:
     """Returns one summary row per distinct source document (grouped by
-    title), for admin/browsing views."""
+    title), without loading heavy embedding vector arrays."""
+    from sqlalchemy import func
     rows = (
-        db.query(KnowledgeDocument)
-        .order_by(KnowledgeDocument.title, KnowledgeDocument.created_at)
+        db.query(
+            KnowledgeDocument.title,
+            KnowledgeDocument.category,
+            func.count(KnowledgeDocument.id).label("chunks"),
+            func.min(func.substr(KnowledgeDocument.content, 1, 200)).label("preview"),
+        )
+        .group_by(KnowledgeDocument.title, KnowledgeDocument.category)
+        .order_by(KnowledgeDocument.title)
         .all()
     )
-    grouped: dict = {}
-    for r in rows:
-        entry = grouped.setdefault(
-            r.title,
-            {"title": r.title, "category": r.category, "chunks": 0, "preview": r.content[:200]},
-        )
-        entry["chunks"] += 1
-    return list(grouped.values())
+    return [
+        {
+            "title": r[0],
+            "category": r[1] or "Documentation",
+            "chunks": r[2],
+            "preview": (r[3] or "")[:200],
+        }
+        for r in rows
+    ]
+
+
+def clear_all_knowledge_documents(db: Session) -> int:
+    """Deletes every document chunk stored in the knowledge base, returning count removed."""
+    deleted = db.query(KnowledgeDocument).delete()
+    db.commit()
+    return deleted
 
 
 def extract_text_from_file(file_or_path, filename: str) -> str:
