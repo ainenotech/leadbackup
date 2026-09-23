@@ -614,7 +614,7 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
             "total_templates_active": 0,
         }
 
-    df_copy = df.copy()
+    df_copy = df[~df["status"].astype(str).str.lower().isin(["rejected", "cancelled", "failed"])].copy()
 
     # Normalize template_id
     if "template_id" not in df_copy.columns:
@@ -668,9 +668,9 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
         color = tpl.get("accent_color", "#2563EB")
         
         t_df = df_copy[df_copy["resolved_template_id"] == tid]
-        total_leads = len(t_df)
+        total_leads = t_df["email"].astype(str).str.strip().str.lower().nunique() if not t_df.empty else 0
         sent_df = t_df[t_df["status"].isin(["sent", "meeting_scheduled"])]
-        total_sent = len(sent_df)
+        total_sent = sent_df["email"].astype(str).str.strip().str.lower().nunique() if not sent_df.empty else 0
         
         opened_count = int(t_df["opened"].sum()) if "opened" in t_df.columns else 0
         clicked_count = int(t_df["clicked_link"].sum()) if "clicked_link" in t_df.columns else 0

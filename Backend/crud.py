@@ -139,22 +139,30 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
     if entry.status == "sent":
         raise ValueError(f"Email already sent to {entry.email} at {entry.email_sent_at}")
 
-    # Guard: check if another entry with this email was already sent
+    # Guard: check if this exact template was already sent to this email (allows multi-template outreach to the same lead)
     cleaned_email = entry.email.strip().lower()
-    existing_sent = (
-        db.query(CampaignLog)
-        .filter(
-            func.lower(CampaignLog.email) == cleaned_email,
-            CampaignLog.status == "sent",
-            CampaignLog.id != entry.id,
-        )
-        .first()
+    current_tid = str(getattr(entry, "template_id", "") or "").strip().lower()
+    current_tname = str(getattr(entry, "template_name", "") or "").strip().lower()
+
+    existing_sent_query = db.query(CampaignLog).filter(
+        func.lower(CampaignLog.email) == cleaned_email,
+        CampaignLog.status == "sent",
+        CampaignLog.id != entry.id,
     )
-    if existing_sent:
+    if current_tid or current_tname:
+        conds = []
+        if current_tid:
+            conds.append(func.lower(CampaignLog.template_id) == current_tid)
+        if current_tname:
+            conds.append(func.lower(CampaignLog.template_name) == current_tname)
+        existing_sent_query = existing_sent_query.filter(or_(*conds))
+
+    existing_sent_same_tpl = existing_sent_query.first()
+    if existing_sent_same_tpl:
         entry.status = "skipped_duplicate"
-        entry.send_error = f"Skipped: Email already sent to {entry.email} at {existing_sent.email_sent_at}"
+        entry.send_error = f"Skipped: Template '{entry.template_name or current_tid}' already sent to {entry.email} at {existing_sent_same_tpl.email_sent_at}"
         db.commit()
-        raise ValueError(f"Skipped duplicate: {entry.email} has already received an outreach email.")
+        raise ValueError(f"Skipped duplicate: {entry.email} has already received this template.")
 
     booking_url = os.getenv(
         "BOOKING_FORM_URL",
@@ -226,22 +234,36 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
     return entry
 
 
-def reject_entry(db: Session, entry_id: str) -> CampaignLog:
+def reject_entry(db: Session, entry_id: str) -> bool:
+    """Discards an un-sent draft entry from CampaignLog so it does not inflate pipeline or template metrics."""
     entry = db.query(CampaignLog).filter(CampaignLog.id == entry_id).first()
-    if entry:
+    if not entry:
+        return False
+    email = entry.email.strip().lower() if entry.email else None
+    
+    # If it was never dispatched, completely remove it from the campaign log
+    if entry.email_sent_at is None:
+        db.delete(entry)
+        db.commit()
+    else:
         entry.status = "rejected"
         db.commit()
-        db.refresh(entry)
+
+    if email:
         try:
             from leads import update_lead_sheet_status
-            update_lead_sheet_status(email=entry.email, status="rejected")
+            already_sent = is_email_already_sent(db, email)
+            new_status = "sent" if already_sent else "new"
+            update_lead_sheet_status(email=email, status=new_status)
         except Exception as e:
-            print(f"Warning: Could not sync rejected status to leads sheet: {e}")
-    return entry
+            print(f"Warning: Could not sync status to leads sheet: {e}")
+    return True
 
 
 def bulk_reject_entries(db: Session, entry_ids: List[str]) -> int:
-    """Rejects multiple campaign entries in a single optimized DB transaction and syncs to lead sheet in one atomic pass."""
+    """Rejects/discards multiple un-sent draft entries from CampaignLog in a single transaction
+    so they do not pollute Total Leads or Template Assigned metrics, and syncs lead sheet status.
+    """
     if not entry_ids:
         return 0
 
@@ -250,22 +272,45 @@ def bulk_reject_entries(db: Session, entry_ids: List[str]) -> int:
         return 0
 
     emails = []
+    deleted_count = 0
     for entry in entries:
-        entry.status = "rejected"
         if entry.email:
             emails.append(entry.email.strip().lower())
+        if entry.email_sent_at is None:
+            db.delete(entry)
+            deleted_count += 1
+        else:
+            entry.status = "rejected"
 
     db.commit()
 
     if emails:
         try:
             from leads import bulk_update_lead_sheet_status
-            bulk_updates = {em: {"status": "rejected"} for em in emails}
+            sent_emails = get_already_sent_emails(db)
+            bulk_updates = {}
+            for em in emails:
+                bulk_updates[em] = {"status": "sent" if em in sent_emails else "new"}
             bulk_update_lead_sheet_status(bulk_updates)
         except Exception as e:
-            print(f"Warning: Could not sync bulk rejected status to leads sheet: {e}")
+            print(f"Warning: Could not sync bulk status to leads sheet: {e}")
 
     return len(entries)
+
+
+def purge_orphan_rejected_drafts(db: Session) -> int:
+    """Removes historical un-sent records with status 'rejected' to clean up pipeline and template metrics."""
+    orphans = (
+        db.query(CampaignLog)
+        .filter(CampaignLog.status == "rejected", CampaignLog.email_sent_at.is_(None))
+        .all()
+    )
+    count = len(orphans)
+    if count > 0:
+        for entry in orphans:
+            db.delete(entry)
+        db.commit()
+    return count
 
 
 def bulk_approve_and_send_entries(
@@ -305,17 +350,23 @@ def bulk_approve_and_send_entries(
 
         entry_map = {e.id: e for e in entries}
 
-        # Query all emails that have already received an email to enforce strict deduplication
+        # Query emails and templates that have already been sent to prevent sending the same template twice
         all_emails = [e.email.strip().lower() for e in entries if e.email]
         already_sent_rows = (
-            db.query(CampaignLog.email)
+            db.query(CampaignLog.email, CampaignLog.template_id, CampaignLog.template_name)
             .filter(
                 func.lower(CampaignLog.email).in_(all_emails),
                 CampaignLog.status == "sent",
             )
             .all()
         )
-        sent_email_set = {row[0].strip().lower() for row in already_sent_rows if row[0]}
+        sent_template_set = set()
+        for r in already_sent_rows:
+            em = r[0].strip().lower()
+            if r[1]:
+                sent_template_set.add((em, str(r[1]).strip().lower()))
+            if r[2]:
+                sent_template_set.add((em, str(r[2]).strip().lower()))
 
         seen_in_batch = set()
         for eid in entry_ids:
@@ -324,11 +375,13 @@ def bulk_approve_and_send_entries(
                 continue
 
             cleaned_email = entry.email.strip().lower()
+            tid_key = str(entry.template_id or entry.template_name or "").strip().lower()
+            batch_key = (cleaned_email, tid_key)
 
-            # Check if already sent in DB history or duplicate in current batch
-            if cleaned_email in sent_email_set or cleaned_email in seen_in_batch:
+            # Check if this exact template was already sent to this email or duplicated in current batch
+            if (cleaned_email, tid_key) in sent_template_set or batch_key in seen_in_batch:
                 entry.status = "skipped_duplicate"
-                entry.send_error = f"Skipped: Email already sent to {entry.email}"
+                entry.send_error = f"Skipped: Template '{entry.template_name or tid_key}' already sent to {entry.email}"
                 skipped_count += 1
                 lead_sheet_updates[cleaned_email] = {"status": "skipped_duplicate"}
                 completed_counter += 1
@@ -339,7 +392,7 @@ def bulk_approve_and_send_entries(
                         pass
                 continue
 
-            seen_in_batch.add(cleaned_email)
+            seen_in_batch.add(batch_key)
 
             # Compute personalized template content
             curr_s, curr_b = get_draft_template_option(
