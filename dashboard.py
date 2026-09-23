@@ -1409,6 +1409,12 @@ def render_leads(df: pd.DataFrame) -> None:
                     t_name = "Template 5: Dedicated Offshore AI Workbench"
                 elif "modernization" in subj or "internal" in subj:
                     t_name = "Template 6: Legacy Modernization"
+                elif "strategy" in subj or "margin" in subj:
+                    t_name = "Template 7: Founder-to-Founder AI Strategy"
+                elif "note" in subj or "manage recruiters" in subj or "founder-to-founder note" in subj:
+                    t_name = "Template 8: A Founder-to-Founder Note"
+                elif "founder" in subj:
+                    t_name = "Template 7: Founder-to-Founder AI Strategy"
                 else:
                     t_name = "Custom Template"
             if t_name and t_name not in tpl_names_sent:

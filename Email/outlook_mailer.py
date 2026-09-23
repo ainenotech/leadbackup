@@ -127,7 +127,8 @@ class OutlookMailer(Mailer):
         # Construct an HTML body so hyperlinks and rich email templates render perfectly.
         if clean_body.startswith(("<div", "<table", "<html", "<!DOCTYPE", "<body")):
             if "<html" in clean_body.lower():
-                html_content = clean_body.replace("</body>", f"{telemetry_html}</body>")
+                footer_to_append = pixel_img if ("aineno innovation" in clean_body.lower() or "subscribe" in clean_body.lower()) else telemetry_html
+                html_content = clean_body.replace("</body>", f"{footer_to_append}</body>")
             else:
                 html_content = f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">

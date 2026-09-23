@@ -106,7 +106,7 @@ def build_confirmation_email(
     <strong style="color:#0f172a;">Tirth Patel</strong><br>
     Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)<br>
     <span style="font-size:11.5px;color:#94a3b8;">Ahmedabad, Gujarat, India</span><br>
-    <span style="font-size:12px;"><a href="mailto:{contact_email}" style="color:{accent};text-decoration:none;">{contact_email}</a> &nbsp;|&nbsp; <a href="tel:{contact_phone}" style="color:{accent};text-decoration:none;">+91 {contact_phone}</a> &nbsp;|&nbsp; <a href="https://www.nenotechnology.com" style="color:{accent};text-decoration:none;">www.nenotechnology.com</a></span>
+    <span style="font-size:12px;"><a href="mailto:{contact_email}" style="color:{accent};text-decoration:none;">{contact_email}</a> &nbsp;|&nbsp; <a href="tel:{contact_phone}" style="color:{accent};text-decoration:none;">+91 {contact_phone}</a> &nbsp;|&nbsp; <a href="https://www.nenotechnology.com" style="color:{accent};text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp; <a href="https://www.linkedin.com/in/tirth-patel-nenotechnology/" target="_blank" style="color:{accent};text-decoration:none;">LinkedIn</a></span>
   </div>"""
     body = _wrap_transactional_card(inner, accent)
     return subject, body
@@ -159,7 +159,7 @@ def build_rescheduled_email(
     <strong style="color:#0f172a;">Tirth Patel</strong><br>
     Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)<br>
     <span style="font-size:11.5px;color:#94a3b8;">Ahmedabad, Gujarat, India</span><br>
-    <span style="font-size:12px;"><a href="mailto:{contact_email}" style="color:#0f62fe;text-decoration:none;">{contact_email}</a> &nbsp;|&nbsp; <a href="tel:{contact_phone}" style="color:#0f62fe;text-decoration:none;">+91 {contact_phone}</a> &nbsp;|&nbsp; <a href="https://www.nenotechnology.com" style="color:#0f62fe;text-decoration:none;">www.nenotechnology.com</a></span>
+    <span style="font-size:12px;"><a href="mailto:{contact_email}" style="color:#0f62fe;text-decoration:none;">{contact_email}</a> &nbsp;|&nbsp; <a href="tel:{contact_phone}" style="color:#0f62fe;text-decoration:none;">+91 {contact_phone}</a> &nbsp;|&nbsp; <a href="https://www.nenotechnology.com" style="color:#0f62fe;text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp; <a href="https://www.linkedin.com/in/tirth-patel-nenotechnology/" target="_blank" style="color:#0f62fe;text-decoration:none;">LinkedIn</a></span>
   </div>"""
     body = _wrap_transactional_card(inner, "#0f62fe")
     return subject, body

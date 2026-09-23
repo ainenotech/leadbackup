@@ -9,14 +9,15 @@ TEMPLATES_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "d
 TEMPLATES_JSON_PATH = os.path.join(TEMPLATES_DATA_DIR, "templates.json")
 
 DEFAULT_LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
-DEFAULT_LINKEDIN_URL = "https://www.linkedin.com/in/tirthpatel-ai/"
+DEFAULT_LOGO_DARK_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-dark.png"
+DEFAULT_LINKEDIN_URL = "https://www.linkedin.com/in/tirth-patel-nenotechnology/"
 DEFAULT_BOOKING_URL = os.getenv(
     "BOOKING_FORM_URL",
     "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
 )
 
 # ─────────────────────────────────────────────────────────────
-# 7 USER-PROVIDED HIGH-CONVERTING HTML TEMPLATES
+# 8 USER-PROVIDED HIGH-CONVERTING HTML TEMPLATES
 # ─────────────────────────────────────────────────────────────
 
 def _build_responsive_template_html(
@@ -176,7 +177,7 @@ def _build_responsive_template_html(
       <tr>
         <td style="font-size:11px;line-height:1.45;color:#94a3b8;text-align:center;padding:6px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
           Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
-          Prefer not to hear from us? <a href="UNSUBSCRIBE_LINK" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a>
+          Stay updated with our latest AI insights &amp; research &middot; <a href="SUBSCRIBE_LINK" style="color:#94a3b8;text-decoration:underline;">Subscribe</a>
         </td>
       </tr>
     </table>
@@ -319,8 +320,170 @@ RAW_TEMPLATE_7 = _build_responsive_template_html(
     accent_color="#DC2626",
 )
 
+RAW_TEMPLATE_8 = """<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>A founder-to-founder note for {{Company}}</title>
+<!--[if mso]>
+<xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+<![endif]-->
+<style>
+  body { margin:0; padding:0; background-color:#f4f1ea; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+  table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }
+  img { -ms-interpolation-mode:bicubic; border:0; outline:none; text-decoration:none; }
+  @media only screen and (max-width:620px) {
+    .outer-table { padding:10px 4px !important; }
+    .email-container { width:100% !important; }
+    .content-cell { padding:26px 22px !important; }
+    .cta-btn { display:block !important; width:100% !important; text-align:center !important; box-sizing:border-box !important; }
+    .hero-text { font-size:26px !important; line-height:33px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f1ea;">
 
-# Built-in Core Template Catalog (7 Distinct Templates)
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f1ea;">
+  Founder to founder: how {{Company}} could get a senior AI engineer this month, not this quarter.
+</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="outer-table" style="background-color:#f4f1ea;padding:26px 10px;">
+<tr><td align="center">
+
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:600px;max-width:100%;background-color:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e6e0d3;">
+
+    <!-- Header: logo + founder tag with dark header banner to display logo clearly -->
+    <tr>
+      <td style="background-color:#1c1a15;padding:22px 36px 20px 36px;border-top-left-radius:9px;border-top-right-radius:9px;border-bottom:2px solid #a08a5c;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td align="left" valign="middle">
+              <a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;">
+                <img src="LOGO_URL" alt="Neno Technology" width="145" style="display:block;border:0;width:145px;max-width:145px;height:auto;" />
+              </a>
+            </td>
+            <td align="right" valign="middle" style="font-size:11px;letter-spacing:0.8px;color:#d4c29a;font-weight:700;">FOUNDER TO FOUNDER</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Hero line -->
+    <tr>
+      <td class="content-cell" style="padding:22px 36px 0 36px;">
+        <div class="hero-text" style="font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:38px;font-weight:bold;color:#1c1a15;">
+          You didn't start {{Company}} to manage recruiters.
+        </div>
+      </td>
+    </tr>
+
+    <!-- Body -->
+    <tr>
+      <td class="content-cell" style="padding:20px 36px 0 36px;font-size:15.5px;line-height:1.65;color:#3b3629;">
+        <p style="margin:0 0 14px 0;">Hi {{FirstName}},</p>
+        <p style="margin:0 0 14px 0;">
+          I'm Tirth Patel, Founder &amp; CEO of <strong style="color:#1c1a15;">Nenotechnology</strong> in Ahmedabad. I built this company for the same reason you probably built {{Company}}: I was tired of watching good ideas sit in a backlog because there was no one free to build them.
+        </p>
+        <p style="margin:0;">
+          So we did the unglamorous part first. We built a bench of vetted AI and full-stack engineers, ready before you need them, so a "we should automate that" conversation on Monday can be a working prototype by Friday.
+        </p>
+      </td>
+    </tr>
+
+    <!-- Founder-specific reasons box -->
+    <tr>
+      <td class="content-cell" style="padding:26px 36px 0 36px;">
+        <div style="font-size:16px;font-weight:700;color:#1c1a15;margin:0 0 12px 0;">Why founders choose to work with us</div>
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:0 0 14px 0;border-bottom:1px solid #f0ebe0;">
+              <div style="font-size:14.5px;line-height:1.55;color:#3b3629;padding-bottom:12px;">
+                <strong style="color:#1c1a15;">Runway matters more than headcount.</strong> A fixed monthly cost per developer, well under local contract rates, with no payroll, super or desk to carry.
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:14px 0 14px 0;border-bottom:1px solid #f0ebe0;">
+              <div style="font-size:14.5px;line-height:1.55;color:#3b3629;">
+                <strong style="color:#1c1a15;">You don't have three months to hire.</strong> Our engineers are already vetted and on the bench. You interview a shortlist and pick, without running a search.
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:14px 0 0 0;">
+              <div style="font-size:14.5px;line-height:1.55;color:#3b3629;">
+                <strong style="color:#1c1a15;">You need someone who finishes, not just codes.</strong> Our Forward Deployed Engineers own a requirement from build to deployment, using AI coding tools to move several times faster than usual.
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- CTA -->
+    <tr>
+      <td class="content-cell" style="padding:30px 36px 0 36px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fbf6ea;border-radius:10px;border:1px solid #ecdfb8;">
+          <tr>
+            <td style="padding:24px 26px;">
+              <div style="font-size:17px;line-height:24px;font-weight:700;color:#1c1a15;">One honest 20-minute call.</div>
+              <div style="font-size:14.5px;line-height:1.6;color:#5c5540;padding:8px 0 18px 0;">
+                Tell me what's slow at {{Company}} right now. I'll tell you plainly whether we're the right fit, no pitch deck, no pressure.
+              </div>
+              <a href="BOOKING_LINK" target="_blank" class="cta-btn" style="display:inline-block;background-color:#1c1a15;color:#ffffff;padding:13px 28px;border-radius:7px;font-weight:700;font-size:14.5px;text-decoration:none;mso-padding-alt:13px 28px;">
+                Book a time with me &rarr;
+              </a>
+              <div style="font-size:12.5px;line-height:1.5;color:#8a8368;padding-top:14px;">
+                Or just reply. Founder to founder, it comes straight to me, not a sales queue.
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Signature -->
+    <tr>
+      <td class="content-cell" style="padding:30px 36px 30px 36px;">
+        <div style="border-top:1px solid #f0ebe0;padding-top:20px;">
+          <div style="font-size:13px;color:#8a8368;">Talk soon,</div>
+          <div style="font-size:16px;font-weight:700;color:#1c1a15;">Tirth Patel</div>
+          <div style="font-size:13px;color:#5c5540;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
+          <div style="font-size:12px;color:#a08a5c;margin-top:3px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
+          <div style="font-size:12px;margin-top:8px;">
+            <a href="mailto:sales@nenotechnology.com" style="color:#a08a5c;text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
+            <a href="tel:+917863852024" style="color:#a08a5c;text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
+            <a href="https://www.nenotechnology.com" target="_blank" style="color:#a08a5c;text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
+            <a href="LINKEDIN_URL" target="_blank" style="color:#a08a5c;text-decoration:none;">LinkedIn</a>
+          </div>
+        </div>
+      </td>
+    </tr>
+
+  </table>
+
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;margin-top:10px;">
+    <tr>
+      <td style="font-size:11px;line-height:1.5;color:#a39d89;text-align:center;padding:6px 12px;">
+        Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
+        Stay updated with our latest AI insights &amp; research &middot; <a href="SUBSCRIBE_LINK" style="color:#a39d89;text-decoration:underline;">Subscribe</a>
+      </td>
+    </tr>
+  </table>
+
+</td></tr>
+</table>
+
+</body>
+</html>"""
+
+
+# Built-in Core Template Catalog (8 Distinct Templates)
 BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
     {
         "id": "tpl_fde_velocity",
@@ -398,6 +561,18 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "style": "crimson_direct",
         "accent_color": "#DC2626",
         "badge": "Executive Direct",
+    },
+    {
+        "id": "tpl_founder_note",
+        "name": "Template 8: A Founder-to-Founder Note",
+        "subject": "A founder-to-founder note for {{Company}}",
+        "category": "Founder & Advisory",
+        "description": "Warm editorial founder-to-founder note focusing on senior AI engineer talent without recruiter friction, fixed runway costs, and Friday prototype speed.",
+        "html_content": RAW_TEMPLATE_8,
+        "style": "warm_editorial",
+        "accent_color": "#A08A5C",
+        "badge": "Warm Editorial",
+        "logo_url": DEFAULT_LOGO_URL,
     },
 ]
 
@@ -573,9 +748,9 @@ def render_template(
     pain_text = str(pain_point).strip() if pain_point and str(pain_point).strip().lower() not in ("nan", "none", "") else "manual operational overhead"
 
     b_link = (booking_url or tracking_link or DEFAULT_BOOKING_URL).strip()
-    l_url = (logo_url or DEFAULT_LOGO_URL).strip()
+    l_url = (logo_url or tpl.get("logo_url") or DEFAULT_LOGO_URL).strip()
     li_url = (linkedin_url or DEFAULT_LINKEDIN_URL).strip()
-    unsub_link = f"mailto:support@nenotechnology.com?subject=Unsubscribe%20{company_name}"
+    sub_link = f"mailto:sales@nenotechnology.com?subject=Subscribe%20to%20AI%20Updates%20-%20{company_name}"
 
     # Subject Interpolation
     raw_subj = tpl.get("subject", "Quick idea for {{Company}}")
@@ -588,7 +763,8 @@ def render_template(
     html = html.replace("LOGO_URL", l_url)
     html = html.replace("BOOKING_LINK", b_link)
     html = html.replace("LINKEDIN_URL", li_url)
-    html = html.replace("UNSUBSCRIBE_LINK", unsub_link)
+    html = html.replace("SUBSCRIBE_LINK", sub_link)
+    html = html.replace("UNSUBSCRIBE_LINK", sub_link)
 
     return subj, html
 
@@ -652,6 +828,8 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
             return "tpl_dedicated_workbench"
         elif "modernizing" in subj or "internal" in subj or "portal" in subj or "legacy" in subj:
             return "tpl_internal_dashboards"
+        elif "note" in subj or "manage recruiters" in subj or "founder-to-founder note" in subj:
+            return "tpl_founder_note"
         elif "founder" in subj or "strategy" in subj or "margin" in subj:
             return "tpl_founder_strategy"
         return "tpl_fde_velocity"
