@@ -2,7 +2,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -219,14 +219,17 @@ def detect_lead_status_in_dataframe(
     return new_leads_df, skipped_sent_df, skipped_drafted_df
 
 
-def update_lead_sheet_status(
-    email: str,
-    status: str,
-    sent_at: Optional[str] = None,
+def bulk_update_lead_sheet_status(
+    updates: Dict[str, Dict[str, Any]],
     file_path: str = DEFAULT_LEADS_FILE,
 ) -> bool:
-    """Updates the status and timestamp for an email in leads.xlsx."""
-    if not os.path.exists(file_path):
+    """Batch updates status and sent timestamps in leads.xlsx in a single atomic file operation.
+    updates format: {
+        "lead@example.com": {"status": "sent", "sent_at": "2026-09-23 12:00:00 UTC"},
+        "lead2@example.com": {"status": "rejected"}
+    }
+    """
+    if not os.path.exists(file_path) or not updates:
         return False
 
     try:
@@ -243,22 +246,44 @@ def update_lead_sheet_status(
         if "email_sent_at" not in df.columns:
             df["email_sent_at"] = ""
 
-        mask = df["email"].astype(str).str.strip().str.lower() == email.strip().lower()
-        if not mask.any():
-            return False
+        # Normalize lookup dictionary for case-insensitive matching
+        clean_updates = {str(k).strip().lower(): v for k, v in updates.items()}
 
-        df.loc[mask, "status"] = status
-        if sent_at:
-            df.loc[mask, "email_sent_at"] = sent_at
+        # Build index mapping for emails
+        norm_series = df["email"].astype(str).str.strip().str.lower()
+        modified = False
 
-        if file_path.lower().endswith(".csv"):
-            df.to_csv(file_path, index=False)
-        else:
-            df.to_excel(file_path, index=False)
+        for idx, em in norm_series.items():
+            if em in clean_updates:
+                item_data = clean_updates[em]
+                if "status" in item_data:
+                    df.at[idx, "status"] = item_data["status"]
+                if "sent_at" in item_data:
+                    df.at[idx, "email_sent_at"] = item_data["sent_at"]
+                modified = True
+
+        if modified:
+            if file_path.lower().endswith(".csv"):
+                df.to_csv(file_path, index=False)
+            else:
+                df.to_excel(file_path, index=False)
         return True
     except Exception as e:
-        print(f"Error updating lead sheet status: {e}")
+        print(f"Error bulk updating lead sheet status: {e}")
         return False
+
+
+def update_lead_sheet_status(
+    email: str,
+    status: str,
+    sent_at: Optional[str] = None,
+    file_path: str = DEFAULT_LEADS_FILE,
+) -> bool:
+    """Updates the status and timestamp for a single email in leads.xlsx (delegates to bulk_update_lead_sheet_status)."""
+    item: Dict[str, Any] = {"status": status}
+    if sent_at:
+        item["sent_at"] = sent_at
+    return bulk_update_lead_sheet_status({email: item}, file_path=file_path)
 
 
 def append_or_update_leads_dataset(

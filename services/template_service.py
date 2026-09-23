@@ -160,7 +160,7 @@ def _build_responsive_template_html(
             <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
             <div style="font-size:11.5px;color:#94a3b8;margin-top:1px;">Ahmedabad, Gujarat, India</div>
             <div class="sig-links" style="font-size:12px;margin-top:6px;">
-              <a href="mailto:support@nenotechnology.com" style="color:{accent_color};text-decoration:none;">support@nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="mailto:sales@nenotechnology.com" style="color:{accent_color};text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
               <a href="tel:+917863852024" style="color:{accent_color};text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
               <a href="https://www.nenotechnology.com" target="_blank" style="color:{accent_color};text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
               <a href="LINKEDIN_URL" target="_blank" style="color:{accent_color};text-decoration:none;">LinkedIn</a>

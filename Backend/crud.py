@@ -1,7 +1,8 @@
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 from sqlalchemy import func, or_
@@ -232,6 +233,240 @@ def reject_entry(db: Session, entry_id: str) -> CampaignLog:
         except Exception as e:
             print(f"Warning: Could not sync rejected status to leads sheet: {e}")
     return entry
+
+
+def bulk_reject_entries(db: Session, entry_ids: List[str]) -> int:
+    """Rejects multiple campaign entries in a single optimized DB transaction and syncs to lead sheet in one atomic pass."""
+    if not entry_ids:
+        return 0
+
+    entries = db.query(CampaignLog).filter(CampaignLog.id.in_(entry_ids)).all()
+    if not entries:
+        return 0
+
+    emails = []
+    for entry in entries:
+        entry.status = "rejected"
+        if entry.email:
+            emails.append(entry.email.strip().lower())
+
+    db.commit()
+
+    if emails:
+        try:
+            from leads import bulk_update_lead_sheet_status
+            bulk_updates = {em: {"status": "rejected"} for em in emails}
+            bulk_update_lead_sheet_status(bulk_updates)
+        except Exception as e:
+            print(f"Warning: Could not sync bulk rejected status to leads sheet: {e}")
+
+    return len(entries)
+
+
+def bulk_approve_and_send_entries(
+    entry_ids: List[str],
+    template_id: int = 1,
+    max_workers: int = 5,
+    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
+) -> dict:
+    """Dispatches multiple drafts concurrently with connection-pooled Microsoft Graph calls,
+    isolated main-thread SQLite updates, and single-pass lead sheet synchronization.
+    """
+    if not entry_ids:
+        return {"approved_count": 0, "skipped_count": 0, "error_details": []}
+
+    booking_url = os.getenv(
+        "BOOKING_FORM_URL",
+        "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
+    )
+
+    from Backend.db import SessionLocal
+    from Email.draft_options import get_draft_template_option
+    from services.template_service import interpolate_lead_placeholders
+
+    # Phase 1: Pre-flight check & draft preparation on Main Thread (SQLite safe)
+    db = SessionLocal()
+    tasks_to_send = []
+    skipped_count = 0
+    error_details = []
+    lead_sheet_updates = {}
+    completed_counter = 0
+    total_count = len(entry_ids)
+
+    try:
+        entries = db.query(CampaignLog).filter(CampaignLog.id.in_(entry_ids)).all()
+        if not entries:
+            return {"approved_count": 0, "skipped_count": 0, "error_details": ["No matching entries found."]}
+
+        entry_map = {e.id: e for e in entries}
+
+        # Query all emails that have already received an email to enforce strict deduplication
+        all_emails = [e.email.strip().lower() for e in entries if e.email]
+        already_sent_rows = (
+            db.query(CampaignLog.email)
+            .filter(
+                func.lower(CampaignLog.email).in_(all_emails),
+                CampaignLog.status == "sent",
+            )
+            .all()
+        )
+        sent_email_set = {row[0].strip().lower() for row in already_sent_rows if row[0]}
+
+        seen_in_batch = set()
+        for eid in entry_ids:
+            entry = entry_map.get(eid)
+            if not entry:
+                continue
+
+            cleaned_email = entry.email.strip().lower()
+
+            # Check if already sent in DB history or duplicate in current batch
+            if cleaned_email in sent_email_set or cleaned_email in seen_in_batch:
+                entry.status = "skipped_duplicate"
+                entry.send_error = f"Skipped: Email already sent to {entry.email}"
+                skipped_count += 1
+                lead_sheet_updates[cleaned_email] = {"status": "skipped_duplicate"}
+                completed_counter += 1
+                if progress_callback:
+                    try:
+                        progress_callback(completed_counter, total_count, entry.email, "skipped")
+                    except Exception:
+                        pass
+                continue
+
+            seen_in_batch.add(cleaned_email)
+
+            # Compute personalized template content
+            curr_s, curr_b = get_draft_template_option(
+                template_id, entry.name, entry.company, booking_url
+            )
+            curr_s = curr_s.replace("\ufffd", "-").replace("—", "-").strip()
+
+            c_name = str(entry.name).strip() if entry.name and str(entry.name).strip().lower() not in ("nan", "none", "") else ""
+            first_name = c_name.split()[0].title() if c_name else "there"
+            c_comp = str(entry.company).strip() if entry.company and str(entry.company).strip().lower() not in ("nan", "none", "") else ""
+            comp_name = c_comp if c_comp else "your team"
+            subj_comp = comp_name if comp_name != "your team" else "Your Business"
+
+            try:
+                if curr_s:
+                    curr_s = interpolate_lead_placeholders(curr_s, first_name=first_name, company_name=subj_comp)
+                if curr_b:
+                    curr_b = interpolate_lead_placeholders(curr_b, first_name=first_name, company_name=comp_name)
+            except Exception:
+                pass
+
+            if curr_b:
+                curr_b = re.sub(
+                    r'href=["\']https?://(?:localhost|127\.0\.0\.1)(?::\d+)?(?:/[^"\']*)?["\']',
+                    f'href="{booking_url}"',
+                    curr_b,
+                )
+                curr_b = re.sub(
+                    r'href=["\']https?://[^/\"\'\s]+/form\?token=[^"\'\s]*["\']',
+                    f'href="{booking_url}"',
+                    curr_b,
+                )
+
+            entry.subject = curr_s
+            entry.body = curr_b
+            tasks_to_send.append({
+                "id": entry.id,
+                "email": entry.email,
+                "subject": curr_s,
+                "body": curr_b,
+                "token": entry.token,
+            })
+
+        db.commit()
+    finally:
+        db.close()
+
+    if not tasks_to_send:
+        if lead_sheet_updates:
+            try:
+                from leads import bulk_update_lead_sheet_status
+                bulk_update_lead_sheet_status(lead_sheet_updates)
+            except Exception:
+                pass
+        return {"approved_count": 0, "skipped_count": skipped_count, "error_details": error_details}
+
+    # Phase 2: Concurrent Worker Dispatch (Only Microsoft Graph Network calls!)
+    mailer = get_mailer()
+
+    def _worker_send(task):
+        try:
+            mailer.send_email(
+                to_email=task["email"],
+                subject=task["subject"],
+                body=task["body"],
+                token=task["token"],
+            )
+            return (task["id"], task["email"], True, None)
+        except Exception as e:
+            return (task["id"], task["email"], False, str(e))
+
+    send_results = []
+    worker_limit = max(1, min(max_workers, len(tasks_to_send)))
+    with ThreadPoolExecutor(max_workers=worker_limit) as executor:
+        future_map = {executor.submit(_worker_send, t): t for t in tasks_to_send}
+        for future in as_completed(future_map):
+            res = future.result()
+            send_results.append(res)
+            completed_counter += 1
+            entry_id, email, success, err = res
+            status_label = "sent" if success else "failed"
+            if progress_callback:
+                try:
+                    progress_callback(completed_counter, total_count, email, status_label)
+                except Exception:
+                    pass
+
+    # Phase 3: Main Thread Batch DB Persistence
+    approved_count = 0
+    now_utc = datetime.now(timezone.utc)
+    now_str = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    db = SessionLocal()
+    try:
+        entries = db.query(CampaignLog).filter(CampaignLog.id.in_([r[0] for r in send_results])).all()
+        emap = {e.id: e for e in entries}
+
+        for entry_id, email, success, err in send_results:
+            ent = emap.get(entry_id)
+            if not ent:
+                continue
+
+            clean_em = email.strip().lower()
+            if success:
+                ent.status = "sent"
+                ent.email_sent_at = now_utc
+                ent.send_error = None
+                approved_count += 1
+                lead_sheet_updates[clean_em] = {"status": "sent", "sent_at": now_str}
+            else:
+                ent.status = "failed"
+                ent.send_error = (err or "Unknown dispatch error")[:500]
+                error_details.append(f"{email}: {err}")
+                lead_sheet_updates[clean_em] = {"status": "failed"}
+
+        db.commit()
+    finally:
+        db.close()
+
+    # Phase 4: Single-pass Lead Sheet Synchronization
+    if lead_sheet_updates:
+        try:
+            from leads import bulk_update_lead_sheet_status
+            bulk_update_lead_sheet_status(lead_sheet_updates)
+        except Exception as e:
+            print(f"Warning: Could not sync batch to leads sheet: {e}")
+
+    return {
+        "approved_count": approved_count,
+        "skipped_count": skipped_count,
+        "error_details": error_details,
+    }
 
 
 def update_draft_content(

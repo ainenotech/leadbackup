@@ -40,6 +40,8 @@ if os.getenv("DASHBOARD_DEV_RELOAD", "").lower() in {"1", "true", "yes"}:
 from Agent.agents.composer import compose_email
 from Backend.crud import (
     approve_and_send_entry,
+    bulk_approve_and_send_entries,
+    bulk_reject_entries,
     create_pending_entry,
     get_already_drafted_emails,
     get_already_sent_emails,
@@ -1543,14 +1545,14 @@ def confirm_approve_all_dialog(drafts_data, template_id: int = 1):
                 {t_icon} <strong>{t_name} Applied:</strong> All {count} emails will be formatted with <strong>{t_desc}</strong>, personalized with each recipient's name, company, and Microsoft Bookings consultation link.
             </div>
             <p style="font-size: 13px; color: #64748B; margin: 0;">
-                Dispatched securely via Microsoft Graph. Duplicate leads are safely skipped to protect sender reputation.
+                Dispatched securely in parallel via Microsoft Graph. Duplicate leads are safely skipped to protect sender reputation.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.expander(f"📋 Review Recipients & Active Subjects ({count})", expanded=True):
+    with st.expander(f"📋 Review Recipients & Active Subjects ({count})", expanded=False):
         booking_url = os.getenv(
             "BOOKING_FORM_URL",
             "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
@@ -1564,28 +1566,32 @@ def confirm_approve_all_dialog(drafts_data, template_id: int = 1):
     c1, c2 = st.columns(2)
     with c1:
         if st.button(f"🚀 Send All {count} Emails ({t_name})", type="primary", use_container_width=True, key="dlg_confirm_send_all"):
-            db = SessionLocal()
-            approved_count = 0
-            skipped_count = 0
-            error_details = []
-            booking_url = os.getenv(
-                "BOOKING_FORM_URL",
-                "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
+            progress_bar = st.progress(0.0)
+            status_label = st.empty()
+            status_label.markdown(f"⚡ **Preparing high-speed dispatch for {count} recipients...**")
+
+            def _update_progress(completed_cnt, total_cnt, email_str, status_type):
+                pct = min(1.0, completed_cnt / max(1, total_cnt))
+                progress_bar.progress(pct)
+                if status_type == "sent":
+                    status_label.markdown(f"🚀 **[{completed_cnt}/{total_cnt}]** Dispatched to `{email_str}`")
+                elif status_type == "skipped":
+                    status_label.markdown(f"🛡️ **[{completed_cnt}/{total_cnt}]** Duplicate skipped: `{email_str}`")
+                else:
+                    status_label.markdown(f"⚠️ **[{completed_cnt}/{total_cnt}]** Failed: `{email_str}`")
+
+            res = bulk_approve_and_send_entries(
+                entry_ids=[d["id"] for d in drafts_data],
+                template_id=template_id,
+                max_workers=5,
+                progress_callback=_update_progress,
             )
-            for d in drafts_data:
-                try:
-                    curr_s, curr_b = get_draft_template_option(
-                        template_id, d.get("name"), d.get("company"), booking_url
-                    )
-                    curr_s = curr_s.replace("\ufffd", "-").replace("—", "-").strip()
-                    update_draft_content(db, d["id"], curr_s, curr_b)
-                    approve_and_send_entry(db, d["id"])
-                    approved_count += 1
-                except ValueError as ve:
-                    skipped_count += 1
-                except Exception as ex:
-                    error_details.append(f"{d.get('email')}: {str(ex)}")
-            db.close()
+
+            approved_count = res.get("approved_count", 0)
+            skipped_count = res.get("skipped_count", 0)
+            error_details = res.get("error_details", [])
+
+            progress_bar.progress(1.0)
             msg = f"🎉 Approved & sent {approved_count} emails with {t_name} successfully!"
             if skipped_count > 0:
                 msg += f" (Skipped {skipped_count} duplicate/already sent)"
@@ -1593,6 +1599,10 @@ def confirm_approve_all_dialog(drafts_data, template_id: int = 1):
                 msg += f" (Encountered {len(error_details)} errors: {'; '.join(error_details[:2])})"
             st.session_state["send_success_banner"] = msg
             st.cache_data.clear()
+            try:
+                load_campaign_logs.clear()
+            except Exception:
+                pass
             st.rerun()
 
     with c2:
@@ -1628,18 +1638,24 @@ def confirm_reject_all_dialog(drafts_data):
     c1, c2 = st.columns(2)
     with c1:
         if st.button(f"✕ Reject All {count} Drafts", type="primary", use_container_width=True, key="dlg_confirm_reject_all_btn"):
+            progress_bar = st.progress(0.0)
+            status_label = st.empty()
+            status_label.markdown(f"🛑 **Rejecting {count} drafts...**")
             db = SessionLocal()
-            rejected_count = 0
-            for d in drafts_data:
+            try:
+                rejected_count = bulk_reject_entries(db, [d["id"] for d in drafts_data])
+                progress_bar.progress(1.0)
+                st.session_state["send_success_banner"] = f"✕ Successfully rejected {rejected_count} email drafts."
+                st.cache_data.clear()
                 try:
-                    reject_entry(db, d["id"])
-                    rejected_count += 1
-                except Exception as ex:
-                    print(f"Error rejecting {d.get('email')}: {ex}")
-            db.close()
-            st.session_state["send_success_banner"] = f"✕ Successfully rejected {rejected_count} email drafts."
-            st.cache_data.clear()
-            st.rerun()
+                    load_campaign_logs.clear()
+                except Exception:
+                    pass
+                st.rerun()
+            except Exception as ex:
+                st.error(f"Rejection error: {ex}")
+            finally:
+                db.close()
 
     with c2:
         if st.button("Cancel", use_container_width=True, key="dlg_cancel_reject_all_btn"):

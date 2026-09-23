@@ -3,12 +3,34 @@ import re
 from typing import Optional
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 import utils.dns_patch
 from utils.microsoft_auth import MS_SENDER_EMAIL, get_graph_headers
 from .base import Mailer
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+# Persistent thread-safe connection pool for Microsoft Graph API calls
+_shared_session: Optional[requests.Session] = None
+
+
+def _get_shared_session() -> requests.Session:
+    global _shared_session
+    if _shared_session is None:
+        s = requests.Session()
+        retries = Retry(
+            total=2,
+            backoff_factor=0.5,
+            status_forcelist=[502, 503, 504],
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=25, max_retries=retries)
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        _shared_session = s
+    return _shared_session
 
 
 class OutlookMailer(Mailer):
@@ -177,7 +199,8 @@ class OutlookMailer(Mailer):
             "saveToSentItems": "true",
         }
 
-        resp = requests.post(
+        session = _get_shared_session()
+        resp = session.post(
             f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/sendMail",
             headers=get_graph_headers(),
             json=payload,
@@ -194,7 +217,13 @@ class OutlookMailer(Mailer):
         return f"graph-sendmail-{to_email}"
 
 
+_mailer_instance: Optional[OutlookMailer] = None
+
+
 def get_mailer() -> OutlookMailer:
-    """Factory function returning the OutlookMailer instance."""
-    return OutlookMailer()
+    """Factory function returning the OutlookMailer singleton instance."""
+    global _mailer_instance
+    if _mailer_instance is None:
+        _mailer_instance = OutlookMailer()
+    return _mailer_instance
 
