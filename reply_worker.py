@@ -367,7 +367,6 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
             pass
 
         if total_campaign_leads == 0 and leads_sheet_count == 0:
-            print("[Notice] Zero campaign leads in database/sheet (system has zero data). Auto-reply paused until real leads are imported.")
             results["message"] = "Zero campaign leads in system. Auto-reply paused."
             return results
 
@@ -561,7 +560,6 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
             if lead is None and lead_from_sheet is None:
                 results["skipped_count"] += 1
                 _mark_message_read(msg_id, db=db, sender_email=sender_addr, subject=subject, status="non_campaign_skipped")
-                print(f"[Inbox] Skipped sender '{sender_addr}': Not an outreach campaign lead (Strict Real-Data Mode).")
                 continue
 
             # ── Strict Sent-Verification: Message can ONLY be a campaign reply if outreach was actually sent! ──
@@ -577,7 +575,6 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
             if not lead_sent_at:
                 results["skipped_count"] += 1
                 _mark_message_read(msg_id, db=db, sender_email=sender_addr, subject=subject, status="no_outreach_sent_skipped")
-                print(f"[Inbox] Skipped message from '{sender_addr}': No outreach email was ever sent to this lead.")
                 continue
 
             # Incoming message can ONLY be a reply if received strictly AFTER email_sent_at!
@@ -590,10 +587,9 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                     if msg_dt <= sent_dt:
                         results["skipped_count"] += 1
                         _mark_message_read(msg_id, db=db, sender_email=sender_addr, subject=subject, status="historical_before_send_skipped")
-                        print(f"[Inbox] Skipped historical message from '{sender_addr}' (received {msg_dt} before/at outreach sent at {sent_dt}).")
                         continue
                 except Exception as e:
-                    print(f"[Warning] Timestamp comparison error: {e}")
+                    pass
 
             # Check if an AI reply was already recorded for this lead
             already_replied = bool(lead and lead.ai_reply_sent and lead.status == "replied")
