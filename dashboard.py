@@ -2073,28 +2073,132 @@ def render_email_review(df: pd.DataFrame) -> None:
     if f"body_{row['id']}" in st.session_state:
         st.session_state[f"body_{row['id']}"] = clean_natural_email_body(st.session_state[f"body_{row['id']}"])
 
-    # ── Quick Set Template Option: Primary Template Only ──
+    # ── Quick Set Template Option: 7 High-Converting Templates with Batch Apply ──
+    available_templates = load_all_templates()
+    tpl_by_id = {t["id"]: t for t in available_templates}
+    tpl_ids = list(tpl_by_id.keys())
+
+    # Determine default template index from existing lead draft metadata
+    current_tpl_id = row.get("template_id")
+    default_idx = 0
+    if current_tpl_id and current_tpl_id in tpl_ids:
+        default_idx = tpl_ids.index(current_tpl_id)
+
+    col_tpl, col_apply_single, col_apply_all = st.columns([3.0, 1.2, 1.6], vertical_alignment="bottom")
+
+    with col_tpl:
+        chosen_tpl_id = st.selectbox(
+            "🎯 Select Email Template (7 Available)",
+            options=tpl_ids,
+            index=default_idx,
+            format_func=lambda tid: tpl_by_id[tid]["name"],
+            key=f"sel_tpl_{row['id']}",
+            help="Choose any of the 7 high-converting executive outreach templates.",
+        )
+        chosen_tpl = tpl_by_id[chosen_tpl_id]
+
+    with col_apply_single:
+        if st.button(
+            "✅ Apply to Lead",
+            key=f"btn_apply_curr_{row['id']}",
+            help=f"Apply '{chosen_tpl['name']}' to this lead ({row['email']})",
+            use_container_width=True,
+        ):
+            opt_subj, opt_body = render_template(
+                chosen_tpl_id,
+                lead_name=row.get("name"),
+                company=row.get("company"),
+                booking_url=custom_form_url,
+                tracking_link=custom_form_url,
+            )
+            opt_subj = opt_subj.replace("\ufffd", "-").replace("—", "-").strip()
+            opt_body = clean_natural_email_body(opt_body)
+            st.session_state[f"subj_{row['id']}"] = opt_subj
+            st.session_state[f"body_{row['id']}"] = opt_body
+            db = SessionLocal()
+            try:
+                update_draft_content(
+                    db,
+                    row["id"],
+                    opt_subj,
+                    opt_body,
+                    template_id=chosen_tpl["id"],
+                    template_name=chosen_tpl["name"],
+                )
+            finally:
+                db.close()
+            load_campaign_logs.clear()
+            st.cache_data.clear()
+            st.toast(f"✅ Applied '{chosen_tpl['name']}' to this lead!", icon="🎯")
+            st.rerun()
+
+    with col_apply_all:
+        apply_all_label = f"👥 Confirm & Apply to All ({len(drafts)})" if len(drafts) > 1 else "👥 Confirm & Apply to All"
+        if st.button(
+            apply_all_label,
+            key=f"btn_apply_all_{row['id']}",
+            type="primary",
+            help=f"Apply '{chosen_tpl['name']}' to all {len(drafts)} pending drafts awaiting review",
+            use_container_width=True,
+        ):
+            with st.spinner(f"Applying '{chosen_tpl['name']}' to all {len(drafts)} drafts..."):
+                db = SessionLocal()
+                try:
+                    for _, d_row in drafts.iterrows():
+                        d_id = d_row["id"]
+                        d_name = d_row.get("name")
+                        d_comp = d_row.get("company")
+                        t_subj, t_body = render_template(
+                            chosen_tpl_id,
+                            lead_name=d_name,
+                            company=d_comp,
+                            booking_url=custom_form_url,
+                            tracking_link=custom_form_url,
+                        )
+                        t_subj = t_subj.replace("\ufffd", "-").replace("—", "-").strip()
+                        t_body = clean_natural_email_body(t_body)
+
+                        if d_id == row["id"]:
+                            st.session_state[f"subj_{d_id}"] = t_subj
+                            st.session_state[f"body_{d_id}"] = t_body
+                            # sel_tpl_{row['id']} is already instantiated in this run with chosen_tpl_id
+                        else:
+                            st.session_state.pop(f"subj_{d_id}", None)
+                            st.session_state.pop(f"body_{d_id}", None)
+                            st.session_state.pop(f"sel_tpl_{d_id}", None)
+
+                        update_draft_content(
+                            db,
+                            d_id,
+                            t_subj,
+                            t_body,
+                            template_id=chosen_tpl["id"],
+                            template_name=chosen_tpl["name"],
+                        )
+                    db.commit()
+                finally:
+                    db.close()
+                load_campaign_logs.clear()
+                st.cache_data.clear()
+                st.toast(f"🚀 Successfully applied '{chosen_tpl['name']}' to all {len(drafts)} drafts!", icon="✅")
+                st.rerun()
+
+    accent_color = chosen_tpl.get("accent_color", "#2563EB")
+    badge_text = chosen_tpl.get("badge") or chosen_tpl.get("category", "Template")
     st.markdown(
-        """
-        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin: 12px 0 10px 0; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 13px; font-weight: 600; color: #1E293B;">🎯 Email Draft Template:</span>
-            <span class="badge badge-sent" style="font-size: 10.5px; padding: 2px 8px;">Primary Executive Template</span>
+        f"""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid {accent_color}; border-radius: 0 8px 8px 0; padding: 8px 12px; margin: 4px 0 14px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+            <div style="font-size: 12.5px; color: #334155; line-height: 1.45;">
+                <strong style="color: #0F172A;">{chosen_tpl['name']}</strong> &nbsp;&bull;&nbsp;
+                <span>{chosen_tpl.get('description', '')}</span>
+            </div>
+            <span style="font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: #EFF6FF; color: {accent_color}; border: 1px solid #DBEAFE;">
+                {badge_text}
+            </span>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    if st.button("⭐ Reset to Primary Template", key=f"btn_opt1_{row['id']}", help="Apply Primary template: Forward-Deployed Engineers, Vetted bench & consultation call"):
-        opt_subj, opt_body = Email.draft_options.get_draft_template_option(1, row["name"], row["company"], custom_form_url)
-        opt_subj = opt_subj.replace("\ufffd", "-").replace("—", "-").strip()
-        st.session_state[f"subj_{row['id']}"] = opt_subj
-        st.session_state[f"body_{row['id']}"] = opt_body
-        db = SessionLocal()
-        update_draft_content(db, row["id"], opt_subj, opt_body)
-        db.close()
-        st.cache_data.clear()
-        st.toast("✅ Applied Primary Template!", icon="⭐")
-        st.rerun()
 
     initial_subj = st.session_state.get(f"subj_{row['id']}", current_subject)
     initial_subj = initial_subj.replace("\ufffd", "-").replace("—", "-").strip()
