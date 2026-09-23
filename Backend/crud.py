@@ -191,7 +191,12 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
 
     mailer = get_mailer()
     try:
-        mailer.send_email(to_email=entry.email, subject=entry.subject, body=entry.body, token=entry.token)
+        mailer.send_email(
+            to_email=str(entry.email),
+            subject=str(entry.subject or ""),
+            body=str(entry.body or ""),
+            token=str(entry.token) if entry.token else None,
+        )
     except Exception as send_err:
         entry.status = "failed"
         entry.send_error = str(send_err)[:500]
@@ -372,10 +377,10 @@ def bulk_approve_and_send_entries(
             entry.body = curr_b
             tasks_to_send.append({
                 "id": entry.id,
-                "email": entry.email,
+                "email": str(entry.email or ""),
                 "subject": curr_s,
                 "body": curr_b,
-                "token": entry.token,
+                "token": str(entry.token) if entry.token else None,
             })
 
         db.commit()
@@ -394,13 +399,13 @@ def bulk_approve_and_send_entries(
     # Phase 2: Concurrent Worker Dispatch (Only Microsoft Graph Network calls!)
     mailer = get_mailer()
 
-    def _worker_send(task):
+    def _worker_send(task: Dict[str, Any]) -> Tuple[Any, Any, bool, Optional[str]]:
         try:
             mailer.send_email(
-                to_email=task["email"],
-                subject=task["subject"],
-                body=task["body"],
-                token=task["token"],
+                to_email=str(task.get("email") or ""),
+                subject=str(task.get("subject") or ""),
+                body=str(task.get("body") or ""),
+                token=task.get("token"),
             )
             return (task["id"], task["email"], True, None)
         except Exception as e:
