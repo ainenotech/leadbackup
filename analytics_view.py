@@ -371,7 +371,7 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                     del st.query_params["feature"]
                 st.rerun()
 
-        components.html(
+        st.html(
             f"""
             <script>
             setTimeout(() => {{
@@ -386,8 +386,7 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
             }}, 300);
             </script>
             """,
-            height=0,
-            width=0,
+            unsafe_allow_javascript=True,
         )
 
     # Dynamically derive peak send time from real telemetry heatmap

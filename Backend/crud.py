@@ -315,26 +315,29 @@ def purge_orphan_rejected_drafts(db: Session) -> int:
 
 def bulk_approve_and_send_entries(
     entry_ids: List[str],
-    template_id: int = 1,
-    max_workers: int = 5,
+    template_id: Optional[int] = None,
+    max_workers: int = 2,
+    force_resend: bool = False,
     progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
 ) -> dict:
     """Dispatches multiple drafts concurrently with connection-pooled Microsoft Graph calls,
-    isolated main-thread SQLite updates, and single-pass lead sheet synchronization.
+    isolated main-thread database updates, and single-pass lead sheet synchronization.
+    Preserves reviewed draft subjects and bodies rather than forcefully overwriting them.
     """
     if not entry_ids:
-        return {"approved_count": 0, "skipped_count": 0, "error_details": []}
+        return {"approved_count": 0, "skipped_count": 0, "failed_count": 0, "error_details": []}
 
     booking_url = os.getenv(
         "BOOKING_FORM_URL",
         "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
     )
 
+    import time
     from Backend.db import SessionLocal
     from Email.draft_options import get_draft_template_option
     from services.template_service import interpolate_lead_placeholders
 
-    # Phase 1: Pre-flight check & draft preparation on Main Thread (SQLite safe)
+    # Phase 1: Pre-flight check & draft preparation on Main Thread (Thread-safe)
     db = SessionLocal()
     tasks_to_send = []
     skipped_count = 0
@@ -346,32 +349,33 @@ def bulk_approve_and_send_entries(
     try:
         entries = db.query(CampaignLog).filter(CampaignLog.id.in_(entry_ids)).all()
         if not entries:
-            return {"approved_count": 0, "skipped_count": 0, "error_details": ["No matching entries found."]}
+            return {"approved_count": 0, "skipped_count": 0, "failed_count": 0, "error_details": ["No matching entries found."]}
 
         entry_map = {e.id: e for e in entries}
 
-        # Query emails and templates that have already been sent to prevent sending the same template twice
+        # Query emails and templates that have already been sent to prevent sending the same template twice (unless force_resend is True)
         all_emails = [e.email.strip().lower() for e in entries if e.email]
-        already_sent_rows = (
-            db.query(CampaignLog.email, CampaignLog.template_id, CampaignLog.template_name)
-            .filter(
-                func.lower(CampaignLog.email).in_(all_emails),
-                CampaignLog.status == "sent",
-            )
-            .all()
-        )
         sent_template_set = set()
-        for r in already_sent_rows:
-            em = r[0].strip().lower()
-            if r[1]:
-                sent_template_set.add((em, str(r[1]).strip().lower()))
-            if r[2]:
-                sent_template_set.add((em, str(r[2]).strip().lower()))
+        if not force_resend:
+            already_sent_rows = (
+                db.query(CampaignLog.email, CampaignLog.template_id, CampaignLog.template_name)
+                .filter(
+                    func.lower(CampaignLog.email).in_(all_emails),
+                    CampaignLog.status == "sent",
+                )
+                .all()
+            )
+            for r in already_sent_rows:
+                em = r[0].strip().lower()
+                if r[1]:
+                    sent_template_set.add((em, str(r[1]).strip().lower()))
+                if r[2]:
+                    sent_template_set.add((em, str(r[2]).strip().lower()))
 
         seen_in_batch = set()
         for eid in entry_ids:
             entry = entry_map.get(eid)
-            if not entry:
+            if not entry or not entry.email:
                 continue
 
             cleaned_email = entry.email.strip().lower()
@@ -379,9 +383,9 @@ def bulk_approve_and_send_entries(
             batch_key = (cleaned_email, tid_key)
 
             # Check if this exact template was already sent to this email or duplicated in current batch
-            if (cleaned_email, tid_key) in sent_template_set or batch_key in seen_in_batch:
+            if not force_resend and ((cleaned_email, tid_key) in sent_template_set or (tid_key and batch_key in seen_in_batch)):
                 entry.status = "skipped_duplicate"
-                entry.send_error = f"Skipped: Template '{entry.template_name or tid_key}' already sent to {entry.email}"
+                entry.send_error = f"Skipped: Template '{entry.template_name or tid_key or 'outreach'}' already sent to {entry.email}"
                 skipped_count += 1
                 lead_sheet_updates[cleaned_email] = {"status": "skipped_duplicate"}
                 completed_counter += 1
@@ -392,12 +396,21 @@ def bulk_approve_and_send_entries(
                         pass
                 continue
 
-            seen_in_batch.add(batch_key)
+            if tid_key:
+                seen_in_batch.add(batch_key)
 
-            # Compute personalized template content
-            curr_s, curr_b = get_draft_template_option(
-                template_id, entry.name, entry.company, booking_url
-            )
+            # PRESERVE DRAFT CONTENT: Use reviewed draft subject and body if available!
+            has_existing_content = bool(entry.subject and entry.subject.strip() and entry.body and entry.body.strip())
+            if has_existing_content:
+                curr_s = entry.subject.strip()
+                curr_b = entry.body.strip()
+            else:
+                # Fallback only when draft subject or body is completely empty
+                fallback_opt = template_id if template_id in (1, 2, 3) else 1
+                curr_s, curr_b = get_draft_template_option(
+                    fallback_opt, entry.name, entry.company, booking_url
+                )
+
             curr_s = curr_s.replace("\ufffd", "-").replace("—", "-").strip()
 
             c_name = str(entry.name).strip() if entry.name and str(entry.name).strip().lower() not in ("nan", "none", "") else ""
@@ -407,9 +420,9 @@ def bulk_approve_and_send_entries(
             subj_comp = comp_name if comp_name != "your team" else "Your Business"
 
             try:
-                if curr_s:
+                if curr_s and ("{first_name}" in curr_s or "{company_name}" in curr_s):
                     curr_s = interpolate_lead_placeholders(curr_s, first_name=first_name, company_name=subj_comp)
-                if curr_b:
+                if curr_b and ("{first_name}" in curr_b or "{company_name}" in curr_b):
                     curr_b = interpolate_lead_placeholders(curr_b, first_name=first_name, company_name=comp_name)
             except Exception:
                 pass
@@ -447,13 +460,15 @@ def bulk_approve_and_send_entries(
                 bulk_update_lead_sheet_status(lead_sheet_updates)
             except Exception:
                 pass
-        return {"approved_count": 0, "skipped_count": skipped_count, "error_details": error_details}
+        return {"approved_count": 0, "skipped_count": skipped_count, "failed_count": 0, "error_details": error_details}
 
-    # Phase 2: Concurrent Worker Dispatch (Only Microsoft Graph Network calls!)
+    # Phase 2: Controlled Worker Dispatch (Only Microsoft Graph Network calls!)
     mailer = get_mailer()
 
     def _worker_send(task: Dict[str, Any]) -> Tuple[Any, Any, bool, Optional[str]]:
         try:
+            # Space out requests slightly (300ms) to respect Exchange Online burst rates
+            time.sleep(0.3)
             mailer.send_email(
                 to_email=str(task.get("email") or ""),
                 subject=str(task.get("subject") or ""),
@@ -465,7 +480,8 @@ def bulk_approve_and_send_entries(
             return (task["id"], task["email"], False, str(e))
 
     send_results = []
-    worker_limit = max(1, min(max_workers, len(tasks_to_send)))
+    # Maximum 3 concurrent workers to respect Exchange Online single-mailbox connection limits
+    worker_limit = max(1, min(max_workers, len(tasks_to_send), 3))
     with ThreadPoolExecutor(max_workers=worker_limit) as executor:
         future_map = {executor.submit(_worker_send, t): t for t in tasks_to_send}
         for future in as_completed(future_map):
@@ -523,6 +539,7 @@ def bulk_approve_and_send_entries(
     return {
         "approved_count": approved_count,
         "skipped_count": skipped_count,
+        "failed_count": len(error_details),
         "error_details": error_details,
     }
 

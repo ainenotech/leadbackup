@@ -6,11 +6,11 @@ from datetime import datetime
 import json as _json
 import os
 import re
+from typing import Any, Dict, List, Optional
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 from functools import lru_cache
@@ -133,7 +133,7 @@ except Exception:
 # Auto-expand sidebar if it was collapsed from a previous session
 if "sidebar_checked" not in st.session_state:
     st.session_state.sidebar_checked = True
-    components.html(
+    st.html(
         """
         <script>
         function expandIfCollapsed() {
@@ -150,8 +150,7 @@ if "sidebar_checked" not in st.session_state:
         setTimeout(expandIfCollapsed, 600);
         </script>
         """,
-        height=0,
-        width=0,
+        unsafe_allow_javascript=True,
     )
 
 # ─────────────────────────────────────────────────────────────
@@ -1707,14 +1706,14 @@ def confirm_approve_send_dialog(entry_id: str, email: str, subject: str, body: s
     with st.expander("👁️ Preview Message & Links", expanded=True):
         preview_modal = body if (body or "").strip().startswith(("<div", "<table", "<html", "<body")) else (body or "").replace(chr(10), '<br>')
         preview_modal = clean_natural_email_body(preview_modal)
-        # Use components.html for pixel-perfect rendering of rich HTML email templates
+        # Use st.iframe for pixel-perfect rendering of rich HTML email templates
         # (st.markdown strips most HTML tags/styles, causing broken preview with excessive whitespace)
         wrapped_preview = f"""
         <div style="background: #ffffff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.6; color: #1E293B; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
             {preview_modal}
         </div>
         """
-        components.html(wrapped_preview, height=480, scrolling=True)
+        st.iframe(wrapped_preview, height=480)
 
     st.markdown("<br>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
@@ -1738,49 +1737,52 @@ def confirm_approve_send_dialog(entry_id: str, email: str, subject: str, body: s
 
 
 @st.dialog("Confirm Bulk Email Dispatch")
-def confirm_approve_all_dialog(drafts_data, template_id: int = 1):
+def confirm_approve_all_dialog(drafts_data, template_id: Optional[int] = None):
     count = len(drafts_data)
-    template_info = {
-        1: ("Primary Template", "⭐", "Forward-Deployed Engineers & Tech Solutions"),
-        2: ("Option 2 (Returning Client)", "🤝", "Personal Check-in & Complimentary Consultation"),
-        3: ("Option 3 (Free AI & IT Audit)", "🔍", "Complimentary AI & IT Diagnostic Roadmap"),
-    }
-    t_name, t_icon, t_desc = template_info.get(template_id, ("Primary Template", "⭐", "Forward-Deployed Engineers"))
+    
+    # Identify unique templates among the pending drafts
+    tpl_names = list({d.get("template_name") or "Reviewed Outreach Draft" for d in drafts_data if d.get("template_name")})
+    tpl_summary_str = ", ".join(tpl_names[:2]) if tpl_names else "Reviewed Outreach Templates"
+    if len(tpl_names) > 2:
+        tpl_summary_str += f" (+{len(tpl_names)-2} more)"
 
     st.markdown(
         f"""
         <div style="margin-bottom: 12px;">
             <p style="font-size: 15px; margin-bottom: 6px; color: #0F172A;">
-                Are you sure you want to approve and send all <strong style="color: #2563EB;">{count}</strong> pending email drafts with <strong>{t_name}</strong>?
+                Are you sure you want to approve and send all <strong style="color: #2563EB;">{count}</strong> pending email drafts?
             </p>
             <div style="background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13.5px; color: #1E40AF;">
-                {t_icon} <strong>{t_name} Applied:</strong> All {count} emails will be formatted with <strong>{t_desc}</strong>, personalized with each recipient's name, company, and Microsoft Bookings consultation link.
+                ✨ <strong>Reviewed Content Preserved:</strong> All {count} emails will be dispatched using the exact subject lines and personalized message bodies reviewed in Email Review Studio.
             </div>
             <p style="font-size: 13px; color: #64748B; margin: 0;">
-                Dispatched securely in parallel via Microsoft Graph. Duplicate leads are safely skipped to protect sender reputation.
+                Dispatched reliably via Microsoft Graph with rate throttling and automatic retry protection.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    force_send = st.checkbox(
+        "Bypass duplicate protection (force send to all leads, even if previously sent)",
+        value=False,
+        key="dlg_chk_force_resend",
+        help="Check this if you are re-sending or testing leads that were already marked sent in previous campaigns.",
+    )
+
     with st.expander(f"📋 Review Recipients & Active Subjects ({count})", expanded=False):
-        booking_url = os.getenv(
-            "BOOKING_FORM_URL",
-            "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
-        )
         for d in drafts_data:
-            s, _ = get_draft_template_option(template_id, d.get("name"), d.get("company"), booking_url)
-            s_clean = s.replace("\ufffd", "-").replace("—", "-").strip()
-            st.write(f"- **{d['email']}** ({d.get('name') or 'Lead'}, {d.get('company') or 'N/A'}) — *{s_clean}*")
+            s_clean = (d.get("subject") or "Outreach Invitation").replace("\ufffd", "-").replace("—", "-").strip()
+            t_label = d.get("template_name") or "Draft"
+            st.write(f"- **{d.get('email')}** ({d.get('name') or 'Lead'}, {d.get('company') or 'N/A'}) — *{s_clean}* `[{t_label}]`")
 
     st.markdown("<br>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        if st.button(f"🚀 Send All {count} Emails ({t_name})", type="primary", use_container_width=True, key="dlg_confirm_send_all"):
+        if st.button(f"🚀 Send All {count} Emails", type="primary", use_container_width=True, key="dlg_confirm_send_all"):
             progress_bar = st.progress(0.0)
             status_label = st.empty()
-            status_label.markdown(f"⚡ **Preparing high-speed dispatch for {count} recipients...**")
+            status_label.markdown(f"⚡ **Preparing high-reliability dispatch for {count} recipients...**")
 
             def _update_progress(completed_cnt, total_cnt, email_str, status_type):
                 pct = min(1.0, completed_cnt / max(1, total_cnt))
@@ -1792,30 +1794,34 @@ def confirm_approve_all_dialog(drafts_data, template_id: int = 1):
                 else:
                     status_label.markdown(f"⚠️ **[{completed_cnt}/{total_cnt}]** Failed: `{email_str}`")
 
-            res = bulk_approve_and_send_entries(
-                entry_ids=[d["id"] for d in drafts_data],
-                template_id=template_id,
-                max_workers=5,
-                progress_callback=_update_progress,
-            )
-
-            approved_count = res.get("approved_count", 0)
-            skipped_count = res.get("skipped_count", 0)
-            error_details = res.get("error_details", [])
-
-            progress_bar.progress(1.0)
-            msg = f"🎉 Approved & sent {approved_count} emails with {t_name} successfully!"
-            if skipped_count > 0:
-                msg += f" (Skipped {skipped_count} duplicate/already sent)"
-            if error_details:
-                msg += f" (Encountered {len(error_details)} errors: {'; '.join(error_details[:2])})"
-            st.session_state["send_success_banner"] = msg
-            st.cache_data.clear()
             try:
-                load_campaign_logs.clear()
-            except Exception:
-                pass
-            st.rerun()
+                res = bulk_approve_and_send_entries(
+                    entry_ids=[d["id"] for d in drafts_data],
+                    template_id=template_id,
+                    max_workers=2,
+                    force_resend=force_send,
+                    progress_callback=_update_progress,
+                )
+
+                approved_count = res.get("approved_count", 0)
+                skipped_count = res.get("skipped_count", 0)
+                error_details = res.get("error_details", [])
+
+                progress_bar.progress(1.0)
+                msg = f"🎉 Successfully dispatched {approved_count} of {count} emails!"
+                if skipped_count > 0:
+                    msg += f" (Skipped {skipped_count} duplicate/already sent. Enable 'Bypass duplicate protection' to force send.)"
+                if error_details:
+                    msg += f" (Encountered {len(error_details)} errors: {'; '.join(error_details[:2])})"
+                st.session_state["send_success_banner"] = msg
+                st.cache_data.clear()
+                try:
+                    load_campaign_logs.clear()
+                except Exception:
+                    pass
+                st.rerun()
+            except Exception as e:
+                st.error(f"Dispatch error: {e}")
 
     with c2:
         if st.button("Cancel", use_container_width=True, key="dlg_cancel_all_btn"):
@@ -2250,7 +2256,7 @@ def render_email_review(df: pd.DataFrame) -> None:
 </body>
 </html>"""
 
-    components.html(preview_html_payload, height=650, scrolling=True)
+    st.iframe(preview_html_payload, height=650)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2339,13 +2345,13 @@ def render_email_review(df: pd.DataFrame) -> None:
     bulk_col1, bulk_col2 = st.columns([2.8, 1.4])
     with bulk_col1:
         if st.button(
-            f"⭐ Bulk Approve & Send Remaining ({pending_count} Leads)",
+            f"🚀 Bulk Approve & Send All ({pending_count} Leads)",
             key="bulk_send_opt1",
             type="primary",
             use_container_width=True,
-            help="Approve and send all remaining drafts formatted with Primary Template",
+            help="Approve and send all remaining drafts using their reviewed templates & customized messaging",
         ):
-            confirm_approve_all_dialog(drafts.to_dict("records"), template_id=1)
+            confirm_approve_all_dialog(drafts.to_dict("records"))
 
     with bulk_col2:
         if st.button(
@@ -2356,49 +2362,8 @@ def render_email_review(df: pd.DataFrame) -> None:
         ):
             confirm_reject_all_dialog(drafts.to_dict("records"))
 
-    # Quick Switch Template Option for All Pending Drafts
-    with st.expander(f"🔄 Switch / Re-apply Different Template for All {pending_count} Drafts", expanded=False):
-        st.markdown(
-            "<p style='font-size: 13px; color: #64748B; margin-bottom: 8px;'>Uploaded with the wrong template? Choose the correct template variant below to instantly re-generate all pending drafts without re-uploading.</p>",
-            unsafe_allow_html=True,
-        )
-        all_avail_tpls = load_all_templates()
-        sw_map = {f"{t['name']} [{t.get('category', 'Outreach')}]": t for t in all_avail_tpls}
-        c_sw1, c_sw2 = st.columns([2.5, 1])
-        with c_sw1:
-            sel_sw_label = st.selectbox("Select Target Template Variant:", options=list(sw_map.keys()), key="sw_bulk_tpl_select")
-            target_sw_tpl = sw_map[sel_sw_label]
-        with c_sw2:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("✨ Apply to All Drafts", type="secondary", use_container_width=True, key="btn_apply_tpl_all"):
-                db_sw = SessionLocal()
-                try:
-                    for d_row in drafts.to_dict("records"):
-                        lead_data = {
-                            "name": d_row.get("name"),
-                            "company": d_row.get("company"),
-                            "email": d_row.get("email"),
-                        }
-                        n_subj, n_body = render_template(target_sw_tpl, lead_data=lead_data, booking_url=booking_url)
-                        update_draft_content(
-                            db_sw,
-                            d_row["id"],
-                            subject=n_subj,
-                            body=n_body,
-                            template_id=target_sw_tpl["id"],
-                            template_name=target_sw_tpl["name"],
-                        )
-                    db_sw.close()
-                    st.cache_data.clear()
-                    try:
-                        load_campaign_logs.clear()
-                    except Exception:
-                        pass
-                    st.session_state["send_success_banner"] = f"✅ Successfully updated all {pending_count} drafts to '{target_sw_tpl['name']}'!"
-                    st.rerun()
-                except Exception as ex:
-                    db_sw.close()
-                    st.error(f"Failed to update drafts: {ex}")
+
+
 
 
 
@@ -3417,22 +3382,11 @@ def render_replies(df: pd.DataFrame) -> None:
                 st.info("`booked_leads.xlsx` will be created automatically upon the first consultation form submission.")
 
 # ─────────────────────────────────────────────────────────────
-# MAIN ROUTER (Real-Time Live Sync Engine)
+# MAIN ROUTER
 # ─────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 
-interval_map = {
-    "⚡ Real-Time (5s)": "5s",
-    "🚀 Fast (15s)": "15s",
-    "⏱️ Standard (30s)": "30s",
-    "🕐 1 Min": "60s",
-    "⏸️ Paused": None,
-}
-sync_choice = st.session_state.get("live_sync_choice", "⏱️ Standard (30s)")
-sync_interval = interval_map.get(sync_choice, "30s")
-
-@st.fragment(run_every=sync_interval)
-def render_live_telemetry_view(page_name: str):
+def render_main_view(page_name: str):
     rows = load_campaign_logs()
     df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
     if page_name == "overview":
@@ -3447,9 +3401,9 @@ def render_live_telemetry_view(page_name: str):
         render_template_hub(df_logs)
     elif page_name == "email":
         render_email_review(df_logs)
+    elif page_name == "upload":
+        render_upload()
 
-if page in ["overview", "analytics", "replies", "leads", "templates", "email"]:
-    render_live_telemetry_view(page)
-elif page == "upload":
-    render_upload()
+render_main_view(page)
+
 

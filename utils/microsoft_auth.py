@@ -7,6 +7,7 @@ mailbox without any per-user interactive sign-in.
 """
 
 import os
+import threading
 import time
 from typing import Optional
 
@@ -34,6 +35,7 @@ MS_SENDER_EMAIL = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
 _app: Optional["msal.ConfidentialClientApplication"] = None
 _cached_token: Optional[str] = None
 _cached_expiry: float = 0.0
+_token_lock = threading.Lock()
 
 
 def _get_app() -> "msal.ConfidentialClientApplication":
@@ -60,22 +62,23 @@ def get_graph_token() -> str:
     in-process until shortly before it expires."""
     global _cached_token, _cached_expiry
 
-    if _cached_token and time.time() < _cached_expiry - 60:
+    with _token_lock:
+        if _cached_token and time.time() < _cached_expiry - 60:
+            return _cached_token
+
+        app = _get_app()
+        result = app.acquire_token_silent(GRAPH_SCOPE, account=None)
+        if not result:
+            result = app.acquire_token_for_client(scopes=GRAPH_SCOPE)
+
+        if not result or "access_token" not in result:
+            error = (result or {}).get("error", "unknown_error")
+            description = (result or {}).get("error_description", "no details returned")
+            raise RuntimeError(f"Failed to acquire Microsoft Graph token: {error}: {description}")
+
+        _cached_token = result["access_token"]
+        _cached_expiry = time.time() + int(result.get("expires_in", 3600))
         return _cached_token
-
-    app = _get_app()
-    result = app.acquire_token_silent(GRAPH_SCOPE, account=None)
-    if not result:
-        result = app.acquire_token_for_client(scopes=GRAPH_SCOPE)
-
-    if not result or "access_token" not in result:
-        error = (result or {}).get("error", "unknown_error")
-        description = (result or {}).get("error_description", "no details returned")
-        raise RuntimeError(f"Failed to acquire Microsoft Graph token: {error}: {description}")
-
-    _cached_token = result["access_token"]
-    _cached_expiry = time.time() + int(result.get("expires_in", 3600))
-    return _cached_token
 
 
 def get_graph_headers() -> dict:

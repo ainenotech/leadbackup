@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from typing import Optional
 
 import requests
@@ -21,10 +22,11 @@ def _get_shared_session() -> requests.Session:
     if _shared_session is None:
         s = requests.Session()
         retries = Retry(
-            total=2,
-            backoff_factor=0.5,
-            status_forcelist=[502, 503, 504],
+            total=3,
+            backoff_factor=1.0,
+            status_forcelist=[429, 500, 502, 503, 504],
             raise_on_status=False,
+            respect_retry_after_header=True,
         )
         adapter = HTTPAdapter(pool_connections=10, pool_maxsize=25, max_retries=retries)
         s.mount("https://", adapter)
@@ -200,15 +202,29 @@ class OutlookMailer(Mailer):
         }
 
         session = _get_shared_session()
-        resp = session.post(
-            f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/sendMail",
-            headers=get_graph_headers(),
-            json=payload,
-            timeout=30,
-        )
-        if resp.status_code >= 300:
+        resp = None
+        for attempt in range(2):
+            resp = session.post(
+                f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/sendMail",
+                headers=get_graph_headers(),
+                json=payload,
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                retry_after_val = resp.headers.get("Retry-After", "2")
+                try:
+                    sleep_time = min(float(retry_after_val), 5.0)
+                except (ValueError, TypeError):
+                    sleep_time = 2.0
+                time.sleep(sleep_time)
+                continue
+            break
+
+        if resp is None or resp.status_code >= 300:
+            err_text = resp.text if resp is not None else "No response received"
+            err_code = resp.status_code if resp is not None else "N/A"
             raise RuntimeError(
-                f"Microsoft Graph sendMail failed ({resp.status_code}): {resp.text}"
+                f"Microsoft Graph sendMail failed ({err_code}): {err_text}"
             )
 
         # Graph's /sendMail returns 202 Accepted with an empty body (no

@@ -620,7 +620,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
 
             # Responsive Email Preview Frame
             st.markdown('<div class="email-preview-frame">', unsafe_allow_html=True)
-            components.html(interp_html, height=740, scrolling=True)
+            st.iframe(interp_html, height=740)
             st.markdown("</div>", unsafe_allow_html=True)
 
             # Inspect & Edit HTML Code Drawer
