@@ -2261,9 +2261,9 @@ def render_email_review(df: pd.DataFrame) -> None:
             "🚀 Approve & Send",
             type="primary",
             key=f"app_{row['id']}",
-            disabled=is_already_sent,
+            disabled=already_sent_this_exact_template,
             use_container_width=True,
-            help="Send email to this recipient via Microsoft Graph",
+            help="⚠️ Duplicate: this template was already sent to this lead" if already_sent_this_exact_template else "Send email to this recipient via Microsoft Graph",
         ):
             from services.template_service import interpolate_lead_placeholders
             c_name = str(row.get("name", "")).strip() if row.get("name") and str(row.get("name")).strip().lower() not in ("nan", "none", "") else ""
