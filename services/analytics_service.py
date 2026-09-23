@@ -152,7 +152,8 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
     leads_records: List[Dict[str, Any]] = []
 
     if df_logs is not None and not df_logs.empty:
-        for idx, row in df_logs.iterrows():
+        valid_df_logs = df_logs[~df_logs["status"].astype(str).str.lower().isin(["rejected", "cancelled", "failed"])]
+        for idx, row in valid_df_logs.iterrows():
             email = str(row.get("email") or f"lead_{idx}@example.com").strip()
             name = str(row.get("name") or "").strip()
             if not name or name.lower() in ["none", "nan"]:

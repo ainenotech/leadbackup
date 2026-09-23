@@ -689,7 +689,9 @@ def render_overview(df: pd.DataFrame) -> None:
         "Live Campaign",
     )
 
-    if df.empty:
+    valid_df = df[~df["status"].astype(str).str.lower().isin(["rejected", "cancelled", "failed"])].copy() if not df.empty else pd.DataFrame()
+
+    if valid_df.empty:
         total_leads = 0
         drafted_leads = 0
         sent_leads = 0
@@ -702,12 +704,17 @@ def render_overview(df: pd.DataFrame) -> None:
         form_pct = 0
         booked_pct = 0
     else:
-        total_leads = len(df)
-        drafted_leads = int((df["status"] == "drafted").sum())
-        sent_leads = int((df["status"] == "sent").sum())
-        replied_leads = int(df["reply_received_at"].notna().sum())
-        forms_filled = int(df["form_filled_at"].notna().sum())
-        scheduled_leads = int(df["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent"]).sum())
+        # Calculate funnel metrics by UNIQUE lead (email), ensuring multi-template touches to one user do not double count
+        clean_email = valid_df["email"].astype(str).str.strip().str.lower()
+        valid_df["clean_email"] = clean_email
+        valid_has_email = valid_df[valid_df["clean_email"] != ""]
+
+        total_leads = valid_has_email["clean_email"].nunique() if not valid_has_email.empty else len(valid_df)
+        sent_leads = valid_has_email[valid_has_email["status"] == "sent"]["clean_email"].nunique()
+        drafted_leads = valid_has_email[valid_has_email["status"].isin(["drafted", "pending", "draft"])]["clean_email"].nunique()
+        replied_leads = valid_has_email[valid_has_email["reply_received_at"].notna()]["clean_email"].nunique()
+        forms_filled = valid_has_email[valid_has_email["form_filled_at"].notna()]["clean_email"].nunique()
+        scheduled_leads = valid_has_email[valid_has_email["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed"])]["clean_email"].nunique()
 
         draft_pct = round((drafted_leads / total_leads * 100) if total_leads else 0)
         sent_pct = round((sent_leads / total_leads * 100) if total_leads else 0)
@@ -997,7 +1004,7 @@ def render_overview(df: pd.DataFrame) -> None:
                 """,
                 unsafe_allow_html=True,
             )
-            status_counts = df["status"].value_counts().reset_index()
+            status_counts = valid_df["status"].value_counts().reset_index()
             status_counts.columns = ["Status", "Count"]
             st.dataframe(
                 status_counts,
@@ -1117,10 +1124,10 @@ def render_upload() -> None:
                 )
             with col_opt2:
                 force_override = st.checkbox(
-                    f"🧪 Testing Override: Force draft all {len(raw_df)} row(s) in sheet (bypass duplicate filter)",
+                    f"📨 Multi-Template Outreach: Draft '{chosen_tpl_obj['name']}' for all {len(raw_df)} row(s) (including {len(skipped_sent_df)} previously contacted)",
                     value=True if new_leads_df.empty and skipped_drafted_df.empty and not raw_df.empty else False,
                     key="chk_force_test_override",
-                    help="Allows generating drafts even if this email was already contacted during earlier tests."
+                    help="Allows generating follow-up drafts with this template even if this email was previously contacted with another template."
                 )
 
             if force_override:
@@ -1209,12 +1216,13 @@ def render_upload() -> None:
                                 booking_url=tracking_link,
                             )
 
-                            # Check if active draft already exists in DB for this email
+                            # Check if un-sent draft already exists in DB for this email
                             existing_draft = (
                                 db.query(CampaignLog)
                                 .filter(
                                     func.lower(CampaignLog.email) == email.lower(),
-                                    CampaignLog.status.in_(["drafted", "pending", "draft"]),
+                                    CampaignLog.status.in_(["drafted", "pending", "draft", "rejected"]),
+                                    CampaignLog.email_sent_at.is_(None),
                                 )
                                 .first()
                             )
@@ -1228,6 +1236,8 @@ def render_upload() -> None:
                                     template_id=chosen_tpl_obj["id"],
                                     template_name=chosen_tpl_obj["name"],
                                 )
+                                existing_draft.status = "drafted"
+                                db.commit()
                             else:
                                 create_pending_entry(
                                     db,
@@ -1358,61 +1368,263 @@ def render_upload() -> None:
 def render_leads(df: pd.DataFrame) -> None:
     render_top_banner(
         "Campaign Leads Directory",
-        "Browse, filter, and inspect leads recorded in your database.",
+        "Browse, filter, and inspect leads recorded in your database, including multi-template outreach history.",
         "Master Directory",
     )
 
     if df.empty:
-        st.info("No leads found. Upload a dataset in 'Upload & Draft' to get started.")
+        st.info("No leads found. Upload a dataset in 'Upload & Draft' or 'Template Review & Hub (Tab 3)' to get started.")
         return
 
-    col1, col2, col3 = st.columns([1, 1, 1.5])
-    with col1:
-        campaign_filter = st.selectbox(
-            "Filter by Campaign",
-            ["All"] + sorted(df["campaign"].unique().tolist()),
-            key="leads_camp_filter",
-        )
-    with col2:
-        status_filter = st.selectbox(
-            "Filter by Status",
-            ["All"] + sorted(df["status"].unique().tolist()),
-            key="leads_stat_filter",
-        )
-    with col3:
-        search_query = st.text_input("Search by Name, Email or Company", placeholder="Type to search...", key="leads_search")
+    # Filter out un-sent rejected or cancelled drafts
+    active_df = df[~df["status"].astype(str).str.lower().isin(["rejected", "cancelled", "failed"])].copy()
+    if active_df.empty:
+        active_df = df.copy()
 
-    filtered = df.copy()
-    if campaign_filter != "All":
-        filtered = filtered[filtered["campaign"] == campaign_filter]
-    if status_filter != "All":
-        filtered = filtered[filtered["status"] == status_filter]
+    # Pre-aggregate by Unique Lead (email) to track multiple templates per lead
+    unique_leads_data = []
+    for email_key, group in active_df.groupby(active_df["email"].astype(str).str.strip().str.lower()):
+        if not email_key or email_key in ["none", "nan", ""]:
+            continue
+
+        names = [str(n).strip() for n in group["name"].dropna() if str(n).strip().lower() not in ["none", "nan", ""]]
+        best_name = names[0] if names else "Lead"
+        companies = [str(c).strip() for c in group["company"].dropna() if str(c).strip().lower() not in ["none", "nan", ""]]
+        best_company = companies[0] if companies else "N/A"
+
+        # Collect unique templates sent or drafted for this lead
+        tpl_names_sent = []
+        for _, r in group.iterrows():
+            t_name = str(r.get("template_name") or "").strip()
+            if not t_name or t_name.lower() in ["none", "nan"]:
+                subj = str(r.get("subject") or "").lower()
+                if "velocity" in subj or "forward deployed" in subj:
+                    t_name = "Template 1: Forward Deployed AI Engineers"
+                elif "voice" in subj or "calling" in subj:
+                    t_name = "Template 2: Autonomous Voice Agents"
+                elif "agentic" in subj or "llm" in subj:
+                    t_name = "Template 3: Custom Agentic Workflows"
+                elif "automation" in subj or "erp" in subj:
+                    t_name = "Template 4: Business Process Automation"
+                elif "workbench" in subj or "offshore" in subj:
+                    t_name = "Template 5: Dedicated Offshore AI Workbench"
+                elif "modernization" in subj or "internal" in subj:
+                    t_name = "Template 6: Legacy Modernization"
+                else:
+                    t_name = "Custom Template"
+            if t_name and t_name not in tpl_names_sent:
+                tpl_names_sent.append(t_name)
+
+        templates_str = ", ".join(tpl_names_sent) if tpl_names_sent else "Standard Template"
+
+        # Determine highest progression status
+        stat_priority = ["confirmed", "meeting_scheduled", "scheduled", "form_filled", "replied", "sent", "drafted", "pending", "draft", "new"]
+        lead_statuses = [str(s).lower() for s in group["status"].dropna()]
+        highest_status = "new"
+        for sp in stat_priority:
+            if sp in lead_statuses:
+                highest_status = sp
+                break
+
+        send_count = int((group["status"].isin(["sent", "meeting_scheduled"])).sum())
+        total_touches = len(group)
+
+        # Engagement aggregates
+        has_opened = bool((group["opened"].fillna(False) == True).any()) if "opened" in group.columns else False
+        has_clicked = bool((group["clicked_link"].fillna(False) == True).any()) if "clicked_link" in group.columns else False
+        has_replied = bool(group["reply_received_at"].notna().any()) if "reply_received_at" in group.columns else False
+        has_booked = bool(group["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed"]).any()) if "booking_status" in group.columns else False
+
+        last_contact = group["email_sent_at"].dropna().max() if not group["email_sent_at"].dropna().empty else group["created_at"].dropna().max()
+
+        unique_leads_data.append({
+            "email": email_key,
+            "name": best_name,
+            "company": best_company,
+            "templates_used": templates_str,
+            "template_count": len(tpl_names_sent),
+            "send_count": send_count,
+            "total_touches": total_touches,
+            "status": highest_status,
+            "has_opened": has_opened,
+            "has_clicked": has_clicked,
+            "has_replied": has_replied,
+            "has_booked": has_booked,
+            "last_contact": last_contact,
+            "campaign": group["campaign"].iloc[0] if "campaign" in group.columns else "default",
+            "lead_id": group["lead_id"].iloc[0] if "lead_id" in group.columns else "",
+        })
+
+    df_unique = pd.DataFrame(unique_leads_data)
+
+    # ── Top KPI Bar ──
+    total_unique_leads = len(df_unique)
+    total_emails_sent = int((active_df["status"] == "sent").sum())
+    multi_template_leads = int((df_unique["template_count"] > 1).sum()) if not df_unique.empty else 0
+    avg_touches = round(total_emails_sent / max(1, total_unique_leads), 1)
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-top-bar kpi-bar-blue"></div>
+                <div class="kpi-header"><span class="kpi-label">Unique Leads</span><span style="font-size: 18px;">👥</span></div>
+                <div class="kpi-value">{total_unique_leads}</div>
+                <div class="kpi-micro"><span class="kpi-pill kpi-pill-blue">100% Unique</span><span>in campaign database</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with k2:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-top-bar kpi-bar-teal"></div>
+                <div class="kpi-header"><span class="kpi-label">Dispatched Emails</span><span style="font-size: 18px;">🚀</span></div>
+                <div class="kpi-value">{total_emails_sent}</div>
+                <div class="kpi-micro"><span class="kpi-pill kpi-pill-teal">Sent</span><span>across all variants</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with k3:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-top-bar kpi-bar-purple"></div>
+                <div class="kpi-header"><span class="kpi-label">Multi-Template Contacts</span><span style="font-size: 18px;">📑</span></div>
+                <div class="kpi-value">{multi_template_leads}</div>
+                <div class="kpi-micro"><span class="kpi-pill" style="background: #F3E8FF; color: #7C3AED;">Multi-Touch</span><span>received 2+ variants</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with k4:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-top-bar kpi-bar-amber"></div>
+                <div class="kpi-header"><span class="kpi-label">Avg Touches / Lead</span><span style="font-size: 18px;">🎯</span></div>
+                <div class="kpi-value">{avg_touches}x</div>
+                <div class="kpi-micro"><span class="kpi-pill kpi-pill-amber">Outreach Depth</span><span>emails per lead</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+
+    # ── Filter Controls ──
+    c_f1, c_f2, c_f3 = st.columns([1, 1, 1.6])
+    with c_f1:
+        stat_opts = ["All"] + sorted(df_unique["status"].unique().tolist()) if not df_unique.empty else ["All"]
+        filter_status = st.selectbox("Filter by Status", stat_opts, key="leads_stat_filter")
+    with c_f2:
+        touch_opts = ["All Touchpoints", "Single Template (1)", "Multiple Templates (2+)"]
+        filter_touch = st.selectbox("Outreach Depth", touch_opts, key="leads_touch_filter")
+    with c_f3:
+        search_query = st.text_input("🔍 Search Lead by Name, Email, Company or Template", placeholder="Type to search...", key="leads_search")
+
+    filtered_unique = df_unique.copy()
+    if filter_status != "All":
+        filtered_unique = filtered_unique[filtered_unique["status"] == filter_status]
+    if filter_touch == "Single Template (1)":
+        filtered_unique = filtered_unique[filtered_unique["template_count"] <= 1]
+    elif filter_touch == "Multiple Templates (2+)":
+        filtered_unique = filtered_unique[filtered_unique["template_count"] > 1]
     if search_query:
-        sq = search_query.lower()
-        filtered = filtered[
-            filtered["email"].str.lower().str.contains(sq)
-            | filtered["name"].fillna("").str.lower().str.contains(sq)
-            | filtered["company"].fillna("").str.lower().str.contains(sq)
+        sq = search_query.strip().lower()
+        filtered_unique = filtered_unique[
+            filtered_unique["email"].str.lower().str.contains(sq)
+            | filtered_unique["name"].str.lower().str.contains(sq)
+            | filtered_unique["company"].str.lower().str.contains(sq)
+            | filtered_unique["templates_used"].str.lower().str.contains(sq)
         ]
 
-    st.markdown(f"<p style='color: #64748B; font-size: 13.5px; font-weight: 500;'>Displaying <strong>{len(filtered)}</strong> matching lead(s)</p>", unsafe_allow_html=True)
-    
-    display_cols = [c for c in ["lead_id", "email", "name", "company", "status", "subject", "booking_status", "created_at"] if c in filtered.columns]
-    st.dataframe(
-        filtered[display_cols],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "lead_id": "Lead ID",
-            "email": "Email Address",
-            "name": "Full Name",
-            "company": "Company",
-            "status": "Outreach Status",
-            "subject": "Email Subject",
-            "booking_status": "Booking Status",
-            "created_at": "Created",
-        },
-    )
+    # ── Tabs: Unique Leads vs All Logs ──
+    tab_unique, tab_logs = st.tabs([
+        f"👥 Unique Leads & Templates History ({len(filtered_unique)})",
+        f"📨 All Outreach Records ({len(active_df)})",
+    ])
+
+    with tab_unique:
+        st.markdown(
+            f"<p style='color: #64748B; font-size: 13px; font-weight: 500; margin-bottom: 8px;'>Showing <strong>{len(filtered_unique)}</strong> unique lead(s) with full template usage history.</p>",
+            unsafe_allow_html=True,
+        )
+
+        display_cols = ["email", "name", "company", "templates_used", "send_count", "status", "last_contact"]
+        st.dataframe(
+            filtered_unique[display_cols],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "email": st.column_config.TextColumn("Recipient Email", width="medium"),
+                "name": st.column_config.TextColumn("Contact Name", width="small"),
+                "company": st.column_config.TextColumn("Company", width="medium"),
+                "templates_used": st.column_config.TextColumn("Templates Used", width="large", help="All email template variants sent to this lead"),
+                "send_count": st.column_config.NumberColumn("Emails Sent", width="small", format="%d"),
+                "status": st.column_config.TextColumn("Outreach Status", width="small"),
+                "last_contact": st.column_config.DatetimeColumn("Last Outreach", width="medium", format="YYYY-MM-DD HH:mm"),
+            },
+        )
+
+        # Interactive Lead Outreach Inspector
+        if not filtered_unique.empty:
+            with st.expander("🔍 Inspect Full Template History for a Specific Lead", expanded=False):
+                inspect_email = st.selectbox(
+                    "Choose Lead to Inspect History:",
+                    options=filtered_unique["email"].tolist(),
+                    format_func=lambda em: f"{em} ({filtered_unique[filtered_unique['email'] == em]['name'].iloc[0]})",
+                    key="sel_inspect_lead_history",
+                )
+                if inspect_email:
+                    lead_entries = active_df[active_df["email"].astype(str).str.strip().str.lower() == inspect_email.lower()].sort_values(by="created_at", ascending=False)
+                    st.markdown(f"##### Outreach Timeline for `{inspect_email}` ({len(lead_entries)} Event(s))")
+                    for _, entry_row in lead_entries.iterrows():
+                        t_lbl = entry_row.get("template_name") or "Template"
+                        st.markdown(
+                            f"""
+                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <strong style="color: #0F172A; font-size: 14px;">📑 {t_lbl}</strong>
+                                    <span class="badge badge-{'sent' if entry_row['status'] == 'sent' else 'drafted'}">{str(entry_row['status']).upper()}</span>
+                                </div>
+                                <div style="font-size: 12.5px; color: #475569; margin-bottom: 4px;">
+                                    <strong>Subject:</strong> {entry_row.get('subject') or 'No subject'}
+                                </div>
+                                <div style="font-size: 11.5px; color: #64748B; display: flex; gap: 14px;">
+                                    <span>Sent: {entry_row.get('email_sent_at') or 'Not yet dispatched'}</span>
+                                    <span>Opened: {'✓ Yes' if entry_row.get('opened') else '✕ No'}</span>
+                                    <span>Clicked: {'✓ Yes' if entry_row.get('clicked_link') else '✕ No'}</span>
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+    with tab_logs:
+        st.markdown(
+            f"<p style='color: #64748B; font-size: 13px; font-weight: 500; margin-bottom: 8px;'>Raw chronological log of all {len(active_df)} outreach entries.</p>",
+            unsafe_allow_html=True,
+        )
+        log_cols = [c for c in ["lead_id", "email", "name", "company", "template_name", "status", "subject", "email_sent_at"] if c in active_df.columns]
+        st.dataframe(
+            active_df[log_cols],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "lead_id": "Lead ID",
+                "email": "Email Address",
+                "name": "Full Name",
+                "company": "Company",
+                "template_name": "Template Used",
+                "status": "Status",
+                "subject": "Email Subject",
+                "email_sent_at": "Sent At",
+            },
+        )
 
 
 LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
@@ -1760,25 +1972,42 @@ def render_email_review(df: pd.DataFrame) -> None:
         matched = drafts.iloc[:1]
     row = matched.iloc[0]
 
-    # Instant in-memory duplicate check to eliminate 1.5s network roundtrip latency
-    is_already_sent = False
+    # Multi-template detection: check what templates have already been sent to this recipient
+    target_em = str(row["email"]).strip().lower()
+    current_tpl_id = str(row.get("template_id") or "").strip().lower()
+    current_tpl_name = str(row.get("template_name") or "Selected Template").strip()
+
+    prev_sent_records = []
+    already_sent_this_exact_template = False
     if not df.empty and "email" in df.columns and "status" in df.columns:
-        target_em = str(row["email"]).strip().lower()
         matched_sent = df[
             (df["email"].astype(str).str.strip().str.lower() == target_em)
             & (df["status"].astype(str).str.lower() == "sent")
+            & (df["id"] != row["id"])
         ]
-        is_already_sent = not matched_sent.empty
+        if not matched_sent.empty:
+            for _, s_row in matched_sent.iterrows():
+                prev_sent_records.append(str(s_row.get("template_name") or "Template"))
+                if current_tpl_id and str(s_row.get("template_id") or "").strip().lower() == current_tpl_id:
+                    already_sent_this_exact_template = True
+                elif current_tpl_name.lower() in str(s_row.get("template_name") or "").lower():
+                    already_sent_this_exact_template = True
 
-    if is_already_sent:
-        st.error(
-            f"⚠️ **Duplicate Protection Alert**: An outreach email was already sent to `{row['email']}`! "
-            "Dispatch is blocked to safeguard sender reputation."
+    if already_sent_this_exact_template:
+        st.warning(
+            f"⚠️ **Duplicate Template Warning**: Template '{current_tpl_name}' was already sent to `{row['email']}`! "
+            "Dispatching this draft will send another copy of the same template."
+        )
+    elif prev_sent_records:
+        st.info(
+            f"ℹ️ **Multi-Template Outreach**: This lead previously received: **{', '.join(set(prev_sent_records))}**. "
+            f"You are now reviewing follow-up outreach with **'{current_tpl_name}'**."
         )
 
     # Lead Metadata Info Cards
     c1, c2 = st.columns(2)
     with c1:
+        history_str = f"Received {len(prev_sent_records)} prior outreach ({', '.join(set(prev_sent_records))})" if prev_sent_records else "First outreach (fresh lead)"
         st.markdown(
             f"""
             <div class="premium-card">
@@ -1788,7 +2017,9 @@ def render_email_review(df: pd.DataFrame) -> None:
                 </div>
                 <div class="card-text"><strong>Full Name:</strong> {row['name'] or 'N/A'}</div>
                 <div class="card-text"><strong>Company:</strong> {row['company'] or 'N/A'}</div>
-                <div class="card-text-light">Lead Identifier: <code>{row['lead_id']}</code></div>
+                <div class="card-text-light" style="margin-top: 5px; color: #4338CA;">
+                    <strong>History:</strong> {history_str}
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -2017,9 +2248,53 @@ def render_email_review(df: pd.DataFrame) -> None:
             f"✕ Reject All Drafts ({pending_count})",
             key="bulk_reject_all_opt",
             use_container_width=True,
-            help="Reject all remaining pending drafts without sending emails",
+            help="Reject and delete all remaining pending drafts without sending emails",
         ):
             confirm_reject_all_dialog(drafts.to_dict("records"))
+
+    # Quick Switch Template Option for All Pending Drafts
+    with st.expander(f"🔄 Switch / Re-apply Different Template for All {pending_count} Drafts", expanded=False):
+        st.markdown(
+            "<p style='font-size: 13px; color: #64748B; margin-bottom: 8px;'>Uploaded with the wrong template? Choose the correct template variant below to instantly re-generate all pending drafts without re-uploading.</p>",
+            unsafe_allow_html=True,
+        )
+        all_avail_tpls = load_all_templates()
+        sw_map = {f"{t['name']} [{t.get('category', 'Outreach')}]": t for t in all_avail_tpls}
+        c_sw1, c_sw2 = st.columns([2.5, 1])
+        with c_sw1:
+            sel_sw_label = st.selectbox("Select Target Template Variant:", options=list(sw_map.keys()), key="sw_bulk_tpl_select")
+            target_sw_tpl = sw_map[sel_sw_label]
+        with c_sw2:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("✨ Apply to All Drafts", type="secondary", use_container_width=True, key="btn_apply_tpl_all"):
+                db_sw = SessionLocal()
+                try:
+                    for d_row in drafts.to_dict("records"):
+                        lead_data = {
+                            "name": d_row.get("name"),
+                            "company": d_row.get("company"),
+                            "email": d_row.get("email"),
+                        }
+                        n_subj, n_body = render_template(target_sw_tpl, lead_data=lead_data, booking_url=booking_url)
+                        update_draft_content(
+                            db_sw,
+                            d_row["id"],
+                            subject=n_subj,
+                            body=n_body,
+                            template_id=target_sw_tpl["id"],
+                            template_name=target_sw_tpl["name"],
+                        )
+                    db_sw.close()
+                    st.cache_data.clear()
+                    try:
+                        load_campaign_logs.clear()
+                    except Exception:
+                        pass
+                    st.session_state["send_success_banner"] = f"✅ Successfully updated all {pending_count} drafts to '{target_sw_tpl['name']}'!"
+                    st.rerun()
+                except Exception as ex:
+                    db_sw.close()
+                    st.error(f"Failed to update drafts: {ex}")
 
 
 
