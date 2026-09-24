@@ -270,11 +270,17 @@ def render_master_db(df_logs: pd.DataFrame) -> None:
     if enriched_df.empty and not df_logs.empty:
         enriched_list = []
         for _, row in df_logs.iterrows():
+            st_val = str(row.get("status") or "").strip().lower()
+            sent_at = row.get("email_sent_at")
+            if not (st_val in {"sent", "replied", "delivered", "form_submitted", "scheduled", "meeting_booked", "booked", "opted_out"} or (pd.notna(sent_at) and sent_at)):
+                continue
             row_dict = row.to_dict()
             temp_info = categorize_lead_temperature(row_dict)
             row_dict.update(temp_info)
             enriched_list.append(row_dict)
         enriched_df = pd.DataFrame(enriched_list)
+        if not enriched_df.empty and "email" in enriched_df.columns:
+            enriched_df = enriched_df.drop_duplicates(subset=["email"], keep="first")
 
     # ── Header ──
     st.markdown(

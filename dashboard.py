@@ -1,6 +1,7 @@
 import utils.dns_patch  # Fast fallback DNS resolver for Microsoft Graph & login APIs
 import base64
 import html
+import time
 from datetime import datetime
 import json as _json
 import os
@@ -82,9 +83,7 @@ import template_hub_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from services.template_service import load_all_templates, get_template_by_id, render_template
-import importlib
 import utils.theme
-importlib.reload(utils.theme)
 from utils.theme import (
     get_current_theme,
     is_dark_mode,
@@ -93,8 +92,15 @@ from utils.theme import (
     get_complete_theme_css,
 )
 import analytics_view
-importlib.reload(analytics_view)
 from analytics_view import render_analytics
+import master_db_view
+from master_db_view import render_master_db
+
+if os.getenv("DASHBOARD_DEV_RELOAD", "").lower() in {"1", "true", "yes"}:
+    import importlib
+    importlib.reload(utils.theme)
+    importlib.reload(analytics_view)
+    importlib.reload(master_db_view)
 
 @st.cache_resource(show_spinner=False)
 def ensure_database_ready() -> bool:
@@ -321,6 +327,7 @@ def sync_external_sources_once() -> dict:
 NAV_ITEMS = {
     "overview": {"icon": "📊", "label": "Pipeline Overview"},
     "analytics": {"icon": "📈", "label": "Analytics"},
+    "master_db": {"icon": "🗄️", "label": "Master DB"},
     "templates": {"icon": "📑", "label": "Template Review & Hub"},
     "upload": {"icon": "📤", "label": "Upload & Draft"},
     "leads": {"icon": "📋", "label": "Leads Directory"},
@@ -2910,7 +2917,11 @@ def render_live_telemetry_view(page_name: str):
     elif page_name == "email":
         render_email_review(df_logs)
 
-if page in ["overview", "analytics", "replies", "leads", "templates", "email"]:
+if page == "master_db":
+    rows = load_campaign_logs()
+    df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
+    render_master_db(df_logs)
+elif page in ["overview", "analytics", "replies", "leads", "templates", "email"]:
     render_live_telemetry_view(page)
 elif page == "upload":
     render_upload()

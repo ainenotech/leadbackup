@@ -9,9 +9,9 @@ import plotly.graph_objects as go
 
 
 def get_current_theme() -> str:
-    """Returns 'dark' or 'light' based on session state, default is 'dark'."""
+    """Returns 'dark' or 'light' based on session state, default is 'light'."""
     if "app_theme" not in st.session_state:
-        st.session_state.app_theme = "dark"
+        st.session_state.app_theme = "light"
     return st.session_state.app_theme
 
 
