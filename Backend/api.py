@@ -438,11 +438,11 @@ def api_export_analytics_pdf():
                 "clicked_link": r.clicked_link or False,
                 "click_count": r.click_count or 0,
                 "clicked_urls": r.clicked_urls or "",
-                "sent_at": r.sent_at,
+                "sent_at": r.email_sent_at,
                 "reply_received_at": r.reply_received_at,
                 "reply_body": r.reply_body or "",
                 "reply_intent": r.reply_intent or "",
-                "sentiment": r.sentiment or "",
+                "sentiment": r.reply_intent or "",
                 "engagement_score": r.engagement_score or 0.0,
             }
             for r in rows
@@ -493,11 +493,11 @@ def api_export_analytics_excel():
                 "clicked_link": r.clicked_link or False,
                 "click_count": r.click_count or 0,
                 "clicked_urls": r.clicked_urls or "",
-                "sent_at": r.sent_at,
+                "sent_at": r.email_sent_at,
                 "reply_received_at": r.reply_received_at,
                 "reply_body": r.reply_body or "",
                 "reply_intent": r.reply_intent or "",
-                "sentiment": r.sentiment or "",
+                "sentiment": r.reply_intent or "",
                 "engagement_score": r.engagement_score or 0.0,
             }
             for r in rows
