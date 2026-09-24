@@ -2452,8 +2452,10 @@ def clean_html(html_str: str) -> str:
 # PAGE 5: REPLIES & BOOKINGS
 # ─────────────────────────────────────────────────────────────
 def format_reply_intent(intent_raw: str) -> tuple[str, str]:
-    raw = (intent_raw or "question").lower().strip()
-    if "interest" in raw and "not" not in raw:
+    raw = (intent_raw or "positive_acknowledgement").lower().strip()
+    if "positive" in raw or "ack" in raw or "courtesy" in raw:
+        return "🤝 Positive Reply", "badge-sent"
+    elif "interest" in raw and "not" not in raw:
         return "🎯 Interested", "badge-sent"
     elif "meeting" in raw:
         return "🗓️ Meeting Request", "badge-scheduled"
@@ -2755,7 +2757,7 @@ def render_replies(df: pd.DataFrame) -> None:
                     key="reply_search_filter",
                 )
             with rc_col2:
-                intent_filter_opts = ["All Intents", "Interested", "Question / Inquiry", "Meeting Request", "Reschedule", "Opted Out"]
+                intent_filter_opts = ["All Intents", "Positive Reply", "Interested", "Question / Inquiry", "Meeting Request", "Reschedule", "Opted Out"]
                 intent_sel = st.selectbox(
                     "Filter by Intent",
                     intent_filter_opts,
@@ -2773,6 +2775,7 @@ def render_replies(df: pd.DataFrame) -> None:
 
             if intent_sel != "All Intents":
                 intent_map = {
+                    "Positive Reply": "positive_acknowledgement",
                     "Interested": "interested",
                     "Question / Inquiry": "question",
                     "Meeting Request": "meeting_request",

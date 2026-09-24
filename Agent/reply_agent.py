@@ -81,28 +81,32 @@ REPLY_SYSTEM_PROMPT = """You are an AI Communications Executive representing:
 Sender: Tirth Patel, Founder & CEO
 Company: Nenotechnology (Aineno Innovation Pvt. Ltd.), Ahmedabad, Gujarat (www.nenotechnology.com)
 
-Your job is to craft a warm, professional, high-converting, and accurate email reply to a customer or lead who replied to our outreach.
+Your mission is to craft an enthusiastic, warm, professional, high-converting, and 100% POSITIVE email reply to a customer or executive lead who replied to our outreach.
 
-CRITICAL GROUNDING & STRICT REAL-DATA RULES:
-1. STRICT REAL DATA ONLY: NEVER invent, assume, or hallucinate dummy names, placeholder companies, or fictional teams (such as 'ABCD', 'ABCD Team', 'Acme', 'XYZ Corp', etc.).
-2. PERSONALIZATION:
-   - If the lead's verified real name is provided (e.g. 'Mann' or 'Alex'), address them as 'Hi Mann,' or 'Hi Alex,'.
-   - If the lead's name is not provided or unknown, use 'Hi there,' or 'Hello,'.
-   - NEVER use an email address as a person's name (e.g. NEVER say 'Hi user@domain.com,').
-   - NEVER fabricate or assume a company name if one is not verified.
-3. GROUND IN ATTACHED KNOWLEDGE BASE: Use ONLY verified facts from the attached Knowledge Base documents (including neno_technology_knowledge_base.pdf, company FAQs, and user-attached documentation) provided in the retrieved context below to answer their questions accurately. 
-   - If they ask about custom websites, portfolio sites, web platforms, or UI/UX: explain our full-stack engineering capabilities, clean modular frontend/backend architectures, high performance, responsive design, and bespoke showcase experiences.
-   - If they ask about Forward-Deployed Engineering (FDE), explain how our engineers embed directly with their team, build production-grade agentic AI/systems, and accelerate time-to-market.
-   - If they ask about voice agents, custom AI, CRM/ERP, or enterprise automation, provide the specific capabilities detailed in the knowledge base.
-   - Do NOT invent fake pricing, fake certifications, or make unrealistic promises outside the knowledge base.
-4. STRICTLY NO PLACEHOLDERS: NEVER include square brackets like "[Customer Name]", "[insert details]", "[Your Name]", etc.
-5. TONE: Warm, responsive, consultative, and executive. Avoid robotic language or generic fluff.
+CORE PRINCIPLE: MAXIMUM POSITIVITY & VALUE-FIRST ENGAGEMENT
+1. ALWAYS POSITIVE & WELCOMING: Every email reply must be optimistic, helpful, and forward-looking. We treat EVERY reply as an opportunity to build a high-trust executive relationship.
+2. ABSOLUTELY NO NEGATIVE OR UNPROMPTED OPT-OUT LANGUAGE:
+   - NEVER say "you have been removed from our list", "I have processed your removal", "you will not receive any further emails", or similar negative self-defeating language UNLESS the customer explicitly demanded "unsubscribe" or "remove me".
+   - If a customer says "Thanks", "Thank you", "Sounds good", "Noted", "Appreciate it", or sends a short courtesy message: Treat this as a WARM, POSITIVE TOUCHPOINT! Thank them enthusiastically, acknowledge their time, and keep the door wide open for future collaboration.
+3. GROUND IN ATTACHED KNOWLEDGE BASE:
+   - Use verified facts from the attached Nenotechnology Knowledge Base (neno_technology_knowledge_base.md) to highlight our capabilities:
+     * Production-grade Autonomous AI & Agentic Systems
+     * Custom AI Solution Development & Voice Agents
+     * Modernizing legacy systems, internal portals, and enterprise workflows
+     * Forward-Deployed Engineering (FDE) where our engineers embed directly with their team to ship fast
+     * Enterprise CRM/ERP integrations & intelligent automation
+   - Tie these capabilities naturally to the customer's company and the context of our outreach topic.
+4. PERSONALIZATION & REAL-DATA RULES:
+   - If the lead's verified real name is provided (e.g. 'Michael' or 'Alex'), address them warmly as 'Hi Michael,' or 'Hi Alex,'.
+   - NEVER invent dummy companies (e.g. 'ABCD', 'Acme'). Use their verified company name or speak generally to their team.
+   - NEVER use square brackets or placeholders like "[Customer Name]" or "[Company]".
+5. TONE:
+   - Visionary, consultative, founder-to-founder, respectful, and energetic.
+   - Low-pressure yet compelling: show genuine interest in helping their business succeed.
 6. CALL TO ACTION:
-   - Encourage them to schedule a short consultation call to discuss their exact project requirements.
-   - Direct them to our official Microsoft Bookings consultation portal:
-     <a href="{booking_url}" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Schedule a Consultation Call</a>
+   - Always offer a friendly, zero-pressure invitation to connect or hop on a short consultation call:
+     <p style="margin: 16px 0;"><a href="{booking_url}" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Schedule a Consultation Call Here</a></p>
 7. SIGN-OFF BLOCK:
-   End with the exact executive sign-off:
    Warm regards,
    Tirth Patel
    Founder & CEO,
@@ -111,19 +115,35 @@ CRITICAL GROUNDING & STRICT REAL-DATA RULES:
    sales@nenotechnology.com | +91 7863852024
    www.nenotechnology.com
 
-SPECIAL CASES:
-- If the customer says "not interested", "unsubscribe", or asks to be removed, reply politely acknowledging their request, assure them they are removed from future outreach, wish them success, and DO NOT push any meeting or sales pitch.
+HANDLING DIFFERENT INTENTS POSITIVELY:
+- positive_acknowledgement (e.g. customer replied "Thanks", "Thank you", "Sounds good", "Noted", "Cheers"):
+  Reply warmly: Thank them for getting back to you, say it's wonderful to connect, briefly share how Nenotechnology partners with innovative leaders (connecting back to the outreach theme like AI agents or portal modernization from the knowledge base), and let them know that whenever they or their team are looking to explore modernizing systems or accelerating AI, you'd love to share insights or jump on a quick 15-minute chat.
+- question:
+  Provide a crisp, authoritative, knowledge-grounded answer based on our knowledge base, followed by a warm invitation to discuss their specific architecture on a consultation call.
+- interested:
+  Express high excitement to partner with them, highlight how we can immediately support their initiatives, and invite them directly to select a convenient time on the booking calendar.
+- meeting_request:
+  Confirm enthusiastically and provide the direct booking link to finalize the time slot.
+- reschedule:
+  Graciously accommodate their schedule and provide the calendar link to pick a new slot.
+- not_interested (ONLY if explicitly demanded "unsubscribe" or "remove me"):
+  Acknowledge politely in one brief line wishing them success, with NO sales pitch and NO booking link.
 """
 
 
 CLASSIFIER_PROMPT = """Analyze the incoming customer email and classify the intent into exactly one category:
+- positive_acknowledgement (the customer gives a polite acknowledgement, thank you, "thanks", "got it", "noted", "appreciate it", "sounds good", or short courteous reply)
 - question (the customer is asking about capabilities, services, tech stack, FDE, voice AI, pricing, process, or company details)
-- interested (the customer expresses general interest in connecting, learning more, or discussing their project)
+- interested (the customer expresses general interest in connecting, learning more, seeing demos, or discussing a project)
 - meeting_request (the customer explicitly wants to book a call, meet, or see a demo)
 - reschedule (the customer wants to reschedule an existing appointment or proposed time)
-- not_interested (the customer declines, asks to unsubscribe, says no, or requests to be removed)
+- not_interested (the customer EXPLICITLY and unequivocally demands to unsubscribe, stop emailing, or be removed from the outreach list)
 
-Respond with ONLY the category keyword (question, interested, meeting_request, reschedule, or not_interested). Do not include any other text."""
+CRITICAL RULES:
+1. A short reply like "Thanks", "Thank you", "Sounds good", "Noted", "Ok", or similar courtesy IS A POSITIVE ACKNOWLEDGEMENT (positive_acknowledgement). NEVER classify it as not_interested!
+2. ONLY classify as not_interested if the customer explicitly uses unsubscribe or removal words (e.g. "unsubscribe", "stop emailing me", "remove me").
+
+Respond with ONLY the category keyword (positive_acknowledgement, question, interested, meeting_request, reschedule, or not_interested). Do not include any other text."""
 
 
 import html
@@ -171,18 +191,34 @@ def clean_inbound_message(raw_body: str) -> str:
 def classify_reply_intent(customer_text: str) -> str:
     """Classifies the customer's reply into one of the known intent categories."""
     if not customer_text or len(customer_text.strip()) == 0:
-        return "question"
+        return "positive_acknowledgement"
 
     lower = customer_text.lower().strip()
-    # Fast regex heuristics for immediate opt-out detection (ONLY on customer's actual text)
-    if any(phrase in lower for phrase in ["unsubscribe", "remove me", "stop emailing", "not interested", "no thanks", "take me off", "leave me alone"]):
+
+    # 1. Strict Opt-Out check: ONLY explicit commands
+    # NEVER treat "no thanks" or "thanks" as opt-out!
+    explicit_optout_phrases = [
+        "unsubscribe", "remove me", "stop emailing", "take me off",
+        "leave me alone", "do not email", "don't email", "delete my email",
+        "please remove", "spam", "dont want", "don't want", "not interested",
+        "dont like", "don't like", "stop sending"
+    ]
+    if any(phrase in lower for phrase in explicit_optout_phrases):
         return "not_interested"
 
-    if any(phrase in lower for phrase in ["schedule a call", "book a call", "book a meeting", "let's meet", "calendar", "free at", "available at"]):
+    # 2. Fast check for meeting requests
+    if any(phrase in lower for phrase in ["schedule a call", "book a call", "book a meeting", "let's meet", "calendar", "free at", "available at", "send invite", "send booking"]):
         return "meeting_request"
 
-    if any(phrase in lower for phrase in ["reschedule", "change time", "another time", "postpone"]):
+    # 3. Fast check for rescheduling
+    if any(phrase in lower for phrase in ["reschedule", "change time", "another time", "postpone", "can't make it"]):
         return "reschedule"
+
+    # 4. Fast check for positive courtesy / acknowledgement ("thanks", "thank you", "sounds good", etc.)
+    words = lower.split()
+    if len(words) <= 15:
+        if any(term in lower for term in ["thanks", "thank you", "thx", "appreciate it", "got it", "noted", "sounds good", "great", "cheers", "good to connect", "perfect"]):
+            return "positive_acknowledgement"
 
     try:
         llm = get_llm()
@@ -190,14 +226,14 @@ def classify_reply_intent(customer_text: str) -> str:
             SystemMessage(content=CLASSIFIER_PROMPT),
             HumanMessage(content=f"Customer email:\n\"\"\"{customer_text}\"\"\"")
         ])
-        content = resp.content.strip().lower() if isinstance(resp.content, str) else "question"
-        for candidate in ["not_interested", "meeting_request", "reschedule", "interested", "question"]:
+        content = resp.content.strip().lower() if isinstance(resp.content, str) else "positive_acknowledgement"
+        for candidate in ["positive_acknowledgement", "not_interested", "meeting_request", "reschedule", "interested", "question"]:
             if candidate in content:
                 return candidate
     except Exception as e:
         print(f"[Notice] Fallback classifier used: {e}")
 
-    return "question"
+    return "positive_acknowledgement"
 
 
 def process_incoming_reply(
@@ -211,9 +247,9 @@ def process_incoming_reply(
 ) -> Dict[str, Any]:
     """Main orchestration function:
     1. Cleans the customer's message body.
-    2. Classifies intent.
+    2. Classifies intent (treating courtesy replies as positive acknowledgements).
     3. Retrieves top relevant knowledge base chunks from neno_technology_knowledge_base.md.
-    4. Composes an AI answer grounded in the retrieved context.
+    4. Composes a warm, positive AI answer grounded in the retrieved context.
     """
     cleaned_body = clean_inbound_message(raw_body or "")
     if not cleaned_body and raw_body:
@@ -226,12 +262,12 @@ def process_incoming_reply(
         "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
     )
 
-    # If opt-out, provide an immediate polite de-escalation response
+    # If explicit opt-out, provide a brief, polite de-escalation response WITHOUT meeting booking links
     if intent == "not_interested":
         polite_optout = (
             f"Hi {from_name or 'there'},\n\n"
-            f"Thank you for letting us know. I have updated our records, and you will not receive any further emails from us regarding this sequence.\n\n"
-            f"We appreciate your time and wish you and your team continued success.\n\n"
+            f"Understood. Thank you for letting us know, and I have updated our records accordingly.\n\n"
+            f"Wishing you and your team continued success.\n\n"
             f"Warm regards,\n"
             f"Tirth Patel\n"
             f"Founder & CEO,\n"
@@ -248,10 +284,14 @@ def process_incoming_reply(
         }
 
     # Query knowledge base for relevant context
+    # If customer body is brief (e.g. "Thanks"), supplement query with subject + core Nenotechnology capabilities
     query_text = f"{subject or ''} {cleaned_body}".strip()
+    if len(cleaned_body.split()) <= 6:
+        query_text = f"{subject or ''} Nenotechnology AI systems agentic workflows portal modernizing engineering capabilities".strip()
+
     context_chunks = []
     try:
-        context_chunks = retrieve_relevant_chunks(db, query=query_text, top_k=4, min_score=0.40)
+        context_chunks = retrieve_relevant_chunks(db, query=query_text, top_k=4, min_score=0.35)
     except Exception as e:
         print(f"[Warning] RAG retrieval error: {e}")
 
@@ -260,7 +300,7 @@ def process_incoming_reply(
     for i, c in enumerate(context_chunks, 1):
         formatted_chunks.append(f"--- Context Chunk {i} [{c.get('title', 'KB')}] (Relevance: {c.get('score', 0)}) ---\n{c.get('content', '')}")
 
-    context_str = "\n\n".join(formatted_chunks) if formatted_chunks else "No specific knowledge chunks retrieved. Answer based on core Nenotechnology capabilities (production AI, voice agents, autonomous software systems, enterprise automation)."
+    context_str = "\n\n".join(formatted_chunks) if formatted_chunks else "Nenotechnology is an Agentic AI engineering company specializing in production AI systems, voice agents, legacy application & internal portal modernization, enterprise automation, and Forward-Deployed Engineering (FDE)."
 
     system_prompt = REPLY_SYSTEM_PROMPT.format(booking_url=booking_url)
 
@@ -280,14 +320,20 @@ def process_incoming_reply(
         f"Incoming Subject: {subject or 'Inquiry'}",
         f"Customer's Inbound Message:\n\"\"\"\n{cleaned_body}\n\"\"\"",
         f"Detected Intent: {intent}",
-        f"\n=== RETRIEVED KNOWLEDGE BASE CONTEXT (VERIFIED PDF FACTS) ===\n{context_str}\n==========================================",
+        f"\n=== RETRIEVED KNOWLEDGE BASE CONTEXT (VERIFIED FACTS) ===\n{context_str}\n==========================================",
     ]
 
     if custom_instructions:
         user_prompt_lines.append(f"Additional Instructions: {custom_instructions}")
 
     user_prompt_lines.append(
-        "\nDraft the email response now. Address their query thoroughly using the verified knowledge base facts above. NEVER invent placeholder company names (e.g. 'ABCD', 'Acme'). Include the consultation link and executive sign-off."
+        "\nDraft an enthusiastic, warm, positive, high-converting founder email response now. "
+        "If the customer gave a short courtesy response like 'Thanks' or 'Thank you': "
+        "1. Thank them warmly for connecting. "
+        "2. Mention how Nenotechnology partners with forward-thinking teams like theirs to help modernize internal portals, deploy autonomous AI systems, or accelerate engineering roadmaps. "
+        "3. Provide a friendly, zero-pressure invitation to connect or hop on a brief consultation call when the time is right. "
+        "CRITICAL: NEVER use negative phrases like 'removed from our list', 'processed your removal', or 'opted out'. Keep the message 100% positive, helpful, and relationship-building. "
+        "Include the consultation link and executive sign-off."
     )
 
     user_prompt = "\n".join(user_prompt_lines)
@@ -300,6 +346,34 @@ def process_incoming_reply(
 
     response_text = extract_text_from_ai_message(resp.content)
 
+    # Safety Guard: Strip any stray accidental negative opt-out phrasing if intent is not opt-out
+    if intent != "not_interested":
+        negative_indicators = [
+            "removed from our outreach list",
+            "removed from our list",
+            "will not receive any further marketing",
+            "will not receive any further sales",
+            "processed your request, and you have been removed",
+        ]
+        if any(neg in response_text.lower() for neg in negative_indicators):
+            # Fallback to an elegant positive executive response grounded in knowledge base
+            target_lead_name = clean_name or "there"
+            target_company_phrase = f"you and the {clean_company} team" if clean_company else "you and your team"
+            response_text = (
+                f"Hi {target_lead_name},\n\n"
+                f"Thanks for getting back to me! Wonderful to connect with you.\n\n"
+                f"At Nenotechnology, we partner with innovative teams to modernize legacy systems, build high-performance internal portals, and deploy production-grade agentic AI solutions.\n\n"
+                f"No pressure at all—whenever the timing is right for {target_company_phrase} to explore streamlining internal workflows or accelerating your engineering roadmap, I'd love to jump on a brief 15-minute chat to share how we can support you.\n\n"
+                f'<p style="margin: 16px 0;"><a href="{booking_url}" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Schedule a Consultation Call Here</a></p>\n\n'
+                f"Wishing you continued success!\n\n"
+                f"Warm regards,\n"
+                f"Tirth Patel\n"
+                f"Founder & CEO,\n"
+                f"Nenotechnology (Aineno Innovation Pvt. Ltd.)\n"
+                f"Ahmedabad, Gujarat\n"
+                f"sales@nenotechnology.com | +91 7863852024\n"
+                f"www.nenotechnology.com"
+            )
 
     # Ensure booking link is present if not already embedded
     if "bookings.cloud.microsoft" not in response_text and intent != "not_interested":
