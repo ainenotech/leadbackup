@@ -11,6 +11,11 @@ TEMPLATES_JSON_PATH = os.path.join(TEMPLATES_DATA_DIR, "templates.json")
 DEFAULT_LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
 DEFAULT_LOGO_DARK_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-dark.png"
 DEFAULT_LINKEDIN_URL = "https://www.linkedin.com/in/tirth-patel-nenotechnology/"
+DEFAULT_MOHIT_LINKEDIN_URL = os.getenv("MOHIT_LINKEDIN_URL", "https://www.linkedin.com/company/nenotechnology/")
+DEFAULT_PORTFOLIO_URL = os.getenv("PORTFOLIO_URL", "https://www.nenotechnology.com/")
+DEFAULT_TWITTER_URL = os.getenv("TWITTER_URL", "https://x.com/nenotechnology")
+DEFAULT_INSTAGRAM_URL = os.getenv("INSTAGRAM_URL", "https://www.instagram.com/nenotechnology")
+DEFAULT_FACEBOOK_URL = os.getenv("FACEBOOK_URL", "https://www.facebook.com/nenotechnology")
 DEFAULT_BOOKING_URL = os.getenv(
     "BOOKING_FORM_URL",
     "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
@@ -31,14 +36,33 @@ def _build_responsive_template_html(
     closing_html: str,
     accent_color: str = "#1A5CFF",
     website_callout_html: str = "",
+    signature_html: str = "",
+    footer_address_html: str = "",
 ) -> str:
     """Generates a pixel-perfect, fully responsive HTML email template
     featuring an executive dark navy top header banner with centered light logo,
-    callout question box, bullets, dedicated website visit section, and complete Tirth Patel signature.
+    callout question box, bullets, dedicated website visit section, and customizable signature.
     """
+    if not footer_address_html:
+        footer_address_html = "Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India"
     if not website_callout_html:
         website_callout_html = f"""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid {accent_color};border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
             🌐 <strong>Explore our work:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent_color};font-weight:600;text-decoration:underline;">Nenotechnology</a> to explore our complete suite of AI solutions, client case studies, and live production demos.
+          </div>"""
+
+    if not signature_html:
+        signature_html = f"""<div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Warm regards,</div>
+            <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">Tirth Patel</div>
+            <div style="font-size:12.5px;color:#334155;margin-top:1px;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
+            <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
+            <div style="font-size:11.5px;color:#94a3b8;margin-top:1px;">Ahmedabad, Gujarat, India</div>
+            <div class="sig-links" style="font-size:12px;margin-top:6px;">
+              <a href="mailto:sales@nenotechnology.com" style="color:{accent_color};text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="tel:+917863852024" style="color:{accent_color};text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
+              <a href="https://www.nenotechnology.com" target="_blank" style="color:{accent_color};text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
+              <a href="LINKEDIN_URL" target="_blank" style="color:{accent_color};text-decoration:none;">LinkedIn</a>
+            </div>
           </div>"""
 
     return f"""<!DOCTYPE html>
@@ -154,19 +178,7 @@ def _build_responsive_template_html(
           </p>
 
           <!-- Signature -->
-          <div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Warm regards,</div>
-            <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">Tirth Patel</div>
-            <div style="font-size:12.5px;color:#334155;margin-top:1px;">Founder &amp; CEO, Nenotechnology (Aineno Innovation Pvt. Ltd.)</div>
-            <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">TEDx Speaker &bull; 300,000+ Followers &bull; Co-founder, Gujarat AI Society &amp; Agentic Bharat</div>
-            <div style="font-size:11.5px;color:#94a3b8;margin-top:1px;">Ahmedabad, Gujarat, India</div>
-            <div class="sig-links" style="font-size:12px;margin-top:6px;">
-              <a href="mailto:sales@nenotechnology.com" style="color:{accent_color};text-decoration:none;">sales@nenotechnology.com</a> &nbsp;|&nbsp;
-              <a href="tel:+917863852024" style="color:{accent_color};text-decoration:none;">+91 7863852024</a> &nbsp;|&nbsp;
-              <a href="https://www.nenotechnology.com" target="_blank" style="color:{accent_color};text-decoration:none;">www.nenotechnology.com</a> &nbsp;|&nbsp;
-              <a href="LINKEDIN_URL" target="_blank" style="color:{accent_color};text-decoration:none;">LinkedIn</a>
-            </div>
-          </div>
+          {signature_html}
 
         </td>
       </tr>
@@ -176,7 +188,7 @@ def _build_responsive_template_html(
     <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:100%;margin-top:10px;">
       <tr>
         <td style="font-size:11px;line-height:1.45;color:#94a3b8;text-align:center;padding:6px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-          Aineno Innovation Pvt. Ltd. &middot; Ahmedabad, Gujarat, India<br>
+          {footer_address_html}<br>
           Stay updated with our latest AI insights &amp; research &middot; <a href="SUBSCRIBE_LINK" style="color:#94a3b8;text-decoration:underline;">Subscribe</a>
         </td>
       </tr>
@@ -483,6 +495,85 @@ RAW_TEMPLATE_8 = """<!DOCTYPE html>
 </html>"""
 
 
+def _build_mohit_signature_html(accent_color: str = "#0284C7") -> str:
+    """Builds clean executive signature block for Mohit Patel (Neno Technology) without mobile number or social links."""
+    return f"""<div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Warm regards,</div>
+            <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">Mohit Patel</div>
+            <div style="font-size:12.5px;color:#334155;margin-top:2px;">Neno Technology</div>
+            <div style="font-size:12px;margin-top:4px;">
+              <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent_color};text-decoration:none;">https://www.nenotechnology.com/</a>
+            </div>
+            <div style="font-size:12px;color:#64748b;margin-top:3px;">3838 Andrew Johnson Hwy, Limestone, TN 37681</div>
+          </div>"""
+
+
+# ─────────────────────────────────────────────────────────────
+# MOHIT OUTREACH TEMPLATES (TEMPLATES 9, 10, 11)
+# Derived from Tirth Patel Templates 3, 4, 7 for Mohit (mohit@nenotechnology.us)
+# ─────────────────────────────────────────────────────────────
+
+RAW_TEMPLATE_9 = _build_responsive_template_html(
+    title="Ship AI projects faster at {{Company}}, without the hiring wait",
+    preheader="Senior AI and LLM engineers ready on bench to build your agentic workflows and custom features.",
+    intro_html="I'm Mohit Patel from <strong>Neno Technology</strong>. We provide vetted AI &amp; LLM engineering squads who help tech teams build and ship production agentic workflows, RAG systems, and custom AI features in weeks.",
+    callout_html="Have an AI feature, RAG pipeline, or custom agent backlog waiting to be built at {{Company}}? Let's spend 20 minutes reviewing the technical architecture and delivery timeline.",
+    cta_text="Schedule an AI Architecture Call",
+    section_heading="Engineering Capabilities on Demand",
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Autonomous Agentic Workflows.</strong> Multi-agent systems built with LangGraph, LlamaIndex, and custom tool integrations that execute complex multi-step reasoning autonomously.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Enterprise RAG &amp; Hybrid Search.</strong> Highly accurate knowledge retrieval pipelines with semantic re-ranking, token-cost optimization, and strict anti-hallucination guardrails.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Bench Ready Next Week.</strong> Senior Python, TypeScript, FastAPI, and Next.js engineers who connect to your GitHub repo and Jira on day one &mdash; no recruiting lag.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Predictable Monthly Sprints.</strong> Fixed monthly pricing per engineer with transparent weekly deliverables and zero long-term vendor lock-in.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #0284C7;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Explore our AI architectures:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#0284C7;font-weight:600;text-decoration:underline;">Neno Technology</a> to see our LangGraph multi-agent builds, enterprise RAG pipelines, and technical blueprints.
+          </div>""",
+    closing_html="Whether you need an end-to-end AI product built from scratch or an extra engineer to clear your backlog, our squad delivers fast, production-grade code.",
+    accent_color="#0284C7",
+    signature_html=_build_mohit_signature_html("#0284C7"),
+    footer_address_html="Neno Technology &middot; 3838 Andrew Johnson Hwy, Limestone, TN 37681",
+)
+
+RAW_TEMPLATE_10 = _build_responsive_template_html(
+    title="Automating repetitive manual operations at {{Company}}",
+    preheader="Stop spending 15-20 hours every week manually copying data between email, spreadsheets, and CRM tools.",
+    intro_html="I'm Mohit Patel from <strong>Neno Technology</strong>. We build unified automation pipelines that eliminate 15 to 20 hours every week of manual data transfer between emails, spreadsheets, WhatsApp, and CRMs.",
+    callout_html="Where is {{Company}} losing the most hours each week to repetitive copy-paste work? Let's take 20 minutes to pinpoint high-impact automation quick wins.",
+    cta_text="Review Automation Opportunities",
+    section_heading="What We Automate For Your Business",
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Cross-Platform Pipeline Sync.</strong> Connect your CRM, email inboxes, WhatsApp Business API, accounting platforms, and databases into zero-touch automated workflows.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Automated Document &amp; Invoice Parsing.</strong> Extract structured data from supplier invoices, client contracts, and receipts automatically with 99.8% precision.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Zero Manual Entry Errors.</strong> Replace fragile human data copying with automated schema validation, webhook alerts, and error failover logging.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Fast 7-14 Day Turnaround.</strong> Most operational bottlenecks can be fully automated within 1 to 2 weeks without disrupting your day-to-day business.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #059669;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Explore our automation workflows:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#059669;font-weight:600;text-decoration:underline;">Neno Technology</a> to review how we automate ERP, CRM, invoice parsing, and cross-platform business operations.
+          </div>""",
+    closing_html="We free your top talent from low-value repetitive tasks so they can spend their energy speaking to clients and driving revenue.",
+    accent_color="#059669",
+    signature_html=_build_mohit_signature_html("#059669"),
+    footer_address_html="Neno Technology &middot; 3838 Andrew Johnson Hwy, Limestone, TN 37681",
+)
+
+RAW_TEMPLATE_11 = _build_responsive_template_html(
+    title="Cutting overhead at {{Company}} with AI - Strategic consultation",
+    preheader="Strategic advisory on pinpointing high-ROI AI opportunities and scaling margins.",
+    intro_html="I'm Mohit Patel from <strong>Neno Technology</strong>. We help business owners and leadership teams cut operational overhead and unlock new efficiency through purpose-built AI solutions &mdash; offering candid, practical advice on where AI creates real profit.",
+    callout_html="No sales pitch, no slides. Would you be open to a 20-minute chat about the top 2 bottlenecks holding back {{Company}}'s margins?",
+    cta_text="Book a Strategy Consultation",
+    section_heading="What We Focus on During Our Call",
+    bullets_html="""<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Unvarnished Strategic Advice.</strong> Direct guidance from our senior AI &amp; engineering leadership on what AI can realistically solve today versus what is just marketing hype.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Tailored ROI Roadmap.</strong> Identify the specific 20% of repetitive workflows that will generate 80% of your operational savings.</p>
+<p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Hands-On Implementation Squad.</strong> If there's a mutual fit, we provide the exact engineering team to execute the roadmap end-to-end.</p>
+<p style="margin:0;"><strong style="color:#0f172a;">Strict Confidentiality &amp; Full IP Ownership.</strong> 100% of all intellectual property, custom models, code, and automations belong entirely to {{Company}}.</p>""",
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #0D9488;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Learn more about Neno Technology:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#0D9488;font-weight:600;text-decoration:underline;">Neno Technology</a> to review our company story, AI advisory frameworks, and real-world client deployments.
+          </div>""",
+    closing_html="If you want a straight, honest perspective on AI for {{Company}}, let's connect.",
+    accent_color="#0D9488",
+    signature_html=_build_mohit_signature_html("#0D9488"),
+    footer_address_html="Neno Technology &middot; 3838 Andrew Johnson Hwy, Limestone, TN 37681",
+)
+
+
 # Built-in Core Template Catalog (8 Distinct Templates)
 BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
     {
@@ -573,6 +664,45 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "accent_color": "#A08A5C",
         "badge": "Warm Editorial",
         "logo_url": DEFAULT_LOGO_URL,
+    },
+    {
+        "id": "tpl_mohit_agentic_workflows",
+        "name": "Template 9: Custom Agentic Workflows & LLM Engineering (Mohit)",
+        "subject": "Ship AI projects faster at {{Company}}, without the hiring wait",
+        "category": "Mohit Outreach",
+        "description": "On behalf of Mohit Patel (mohit@nenotechnology.us): Pitch for tech companies & agencies needing senior squads for LangGraph/RAG pipelines.",
+        "html_content": RAW_TEMPLATE_9,
+        "style": "sky_technical",
+        "accent_color": "#0284C7",
+        "badge": "Mohit Outreach",
+        "sender_name": "Mohit Patel",
+        "sender_email": "mohit@nenotechnology.us",
+    },
+    {
+        "id": "tpl_mohit_business_automation",
+        "name": "Template 10: Business Process & ERP/CRM Automation (Mohit)",
+        "subject": "Automating repetitive manual operations at {{Company}}",
+        "category": "Mohit Outreach",
+        "description": "On behalf of Mohit Patel (mohit@nenotechnology.us): Operational pitch aimed at businesses losing 15-20 hrs/week on manual copy-paste.",
+        "html_content": RAW_TEMPLATE_10,
+        "style": "emerald_enterprise",
+        "accent_color": "#059669",
+        "badge": "Mohit Outreach",
+        "sender_name": "Mohit Patel",
+        "sender_email": "mohit@nenotechnology.us",
+    },
+    {
+        "id": "tpl_mohit_strategic_advisory",
+        "name": "Template 11: Strategic AI Advisory & Overhead Reduction (Mohit)",
+        "subject": "Cutting overhead at {{Company}} with AI - Strategic consultation",
+        "category": "Mohit Outreach",
+        "description": "On behalf of Mohit Patel (mohit@nenotechnology.us): Advisory consultation focusing on margin expansion, ROI roadmaps, and cutting operational fat.",
+        "html_content": RAW_TEMPLATE_11,
+        "style": "teal_executive",
+        "accent_color": "#0D9488",
+        "badge": "Mohit Outreach",
+        "sender_name": "Mohit Patel",
+        "sender_email": "mohit@nenotechnology.us",
     },
 ]
 
@@ -707,6 +837,10 @@ def render_template(
     booking_url: Optional[str] = None,
     logo_url: Optional[str] = None,
     linkedin_url: Optional[str] = None,
+    portfolio_url: Optional[str] = None,
+    twitter_url: Optional[str] = None,
+    instagram_url: Optional[str] = None,
+    facebook_url: Optional[str] = None,
     lead_data: Optional[Dict[str, Any]] = None,
     **kwargs: Any,
 ) -> Tuple[str, str]:
@@ -749,8 +883,14 @@ def render_template(
 
     b_link = (booking_url or tracking_link or DEFAULT_BOOKING_URL).strip()
     l_url = (logo_url or tpl.get("logo_url") or DEFAULT_LOGO_URL).strip()
-    li_url = (linkedin_url or DEFAULT_LINKEDIN_URL).strip()
-    sub_link = f"mailto:sales@nenotechnology.com?subject=Subscribe%20to%20AI%20Updates%20-%20{company_name}"
+    li_url = (linkedin_url or tpl.get("linkedin_url") or DEFAULT_LINKEDIN_URL).strip()
+    port_url = (portfolio_url or tpl.get("portfolio_url") or DEFAULT_PORTFOLIO_URL).strip()
+    tw_url = (twitter_url or tpl.get("twitter_url") or DEFAULT_TWITTER_URL).strip()
+    ig_url = (instagram_url or tpl.get("instagram_url") or DEFAULT_INSTAGRAM_URL).strip()
+    fb_url = (facebook_url or tpl.get("facebook_url") or DEFAULT_FACEBOOK_URL).strip()
+
+    sender_mail = tpl.get("sender_email") or "sales@nenotechnology.com"
+    sub_link = f"mailto:{sender_mail}?subject=Subscribe%20to%20AI%20Updates%20-%20{company_name}"
 
     # Subject Interpolation
     raw_subj = tpl.get("subject", "Quick idea for {{Company}}")
@@ -763,6 +903,10 @@ def render_template(
     html = html.replace("LOGO_URL", l_url)
     html = html.replace("BOOKING_LINK", b_link)
     html = html.replace("LINKEDIN_URL", li_url)
+    html = html.replace("PORTFOLIO_URL", port_url)
+    html = html.replace("TWITTER_URL", tw_url)
+    html = html.replace("INSTAGRAM_URL", ig_url)
+    html = html.replace("FACEBOOK_URL", fb_url)
     html = html.replace("SUBSCRIBE_LINK", sub_link)
     html = html.replace("UNSUBSCRIBE_LINK", sub_link)
 
@@ -814,8 +958,29 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
                 "tpl_editorial_letter": "tpl_founder_strategy",
             }
             return legacy_map.get(t_str, t_str)
+        # Infer from template_id if it's Mohit
+        t_id_str = str(tid or "").lower()
+        if "mohit" in t_id_str or "tpl_mohit" in t_id_str:
+            if "agentic" in t_id_str or "9" in t_id_str:
+                return "tpl_mohit_agentic_workflows"
+            elif "automation" in t_id_str or "10" in t_id_str:
+                return "tpl_mohit_business_automation"
+            elif "advisory" in t_id_str or "overhead" in t_id_str or "strategic" in t_id_str or "11" in t_id_str:
+                return "tpl_mohit_strategic_advisory"
+
         # Infer from subject
         subj = str(row.get("subject") or "").lower()
+        row_body = str(row.get("body") or "").lower()
+        is_mohit = "mohit" in subj or "mohit" in row_body or "mohit@nenotechnology.us" in row_body
+
+        if is_mohit:
+            if "agentic" in subj or "hiring wait" in subj or "llm" in subj:
+                return "tpl_mohit_agentic_workflows"
+            elif "automating" in subj or "operations" in subj or "erp" in subj or "repetitive" in subj:
+                return "tpl_mohit_business_automation"
+            elif "overhead" in subj or "strategic" in subj or "consultation" in subj:
+                return "tpl_mohit_strategic_advisory"
+
         if "quick idea" in subj or "velocity" in subj or "forward deployed" in subj:
             return "tpl_fde_velocity"
         elif "voice" in subj or "calling" in subj or "inbound" in subj:

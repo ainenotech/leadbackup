@@ -1405,19 +1405,17 @@ def render_leads(df: pd.DataFrame) -> None:
                 elif "voice" in subj or "calling" in subj:
                     t_name = "Template 2: Autonomous Voice Agents"
                 elif "agentic" in subj or "llm" in subj:
-                    t_name = "Template 3: Custom Agentic Workflows"
-                elif "automation" in subj or "erp" in subj:
-                    t_name = "Template 4: Business Process Automation"
+                    t_name = "Template 9: Custom Agentic Workflows (Mohit)" if ("mohit" in subj or "mohit" in str(r.get("body") or "").lower()) else "Template 3: Custom Agentic Workflows"
+                elif "automation" in subj or "erp" in subj or "repetitive" in subj:
+                    t_name = "Template 10: Business Process Automation (Mohit)" if ("mohit" in subj or "mohit" in str(r.get("body") or "").lower()) else "Template 4: Business Process Automation"
                 elif "workbench" in subj or "offshore" in subj:
                     t_name = "Template 5: Dedicated Offshore AI Workbench"
                 elif "modernization" in subj or "internal" in subj:
                     t_name = "Template 6: Legacy Modernization"
-                elif "strategy" in subj or "margin" in subj:
-                    t_name = "Template 7: Founder-to-Founder AI Strategy"
                 elif "note" in subj or "manage recruiters" in subj or "founder-to-founder note" in subj:
                     t_name = "Template 8: A Founder-to-Founder Note"
-                elif "founder" in subj:
-                    t_name = "Template 7: Founder-to-Founder AI Strategy"
+                elif "strategy" in subj or "margin" in subj or "founder" in subj or "overhead" in subj:
+                    t_name = "Template 11: Strategic AI Advisory (Mohit)" if ("mohit" in subj or "mohit" in str(r.get("body") or "").lower()) else "Template 7: Founder-to-Founder AI Strategy"
                 else:
                     t_name = "Custom Template"
             if t_name and t_name not in tpl_names_sent:
@@ -2103,12 +2101,12 @@ def render_email_review(df: pd.DataFrame) -> None:
 
     with col_tpl:
         chosen_tpl_id = st.selectbox(
-            "🎯 Select Email Template (7 Available)",
+            f"🎯 Select Email Template ({len(tpl_ids)} Available)",
             options=tpl_ids,
             index=default_idx,
             format_func=lambda tid: tpl_by_id[tid]["name"],
             key=f"sel_tpl_{row['id']}",
-            help="Choose any of the 7 high-converting executive outreach templates.",
+            help=f"Choose any of the {len(tpl_ids)} high-converting executive outreach templates.",
         )
         chosen_tpl = tpl_by_id[chosen_tpl_id]
 
@@ -2225,6 +2223,8 @@ def render_email_review(df: pd.DataFrame) -> None:
     sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
 
     # Outlook Client Header
+    from_display_name = chosen_tpl.get("sender_name") or "AINeotechnology Team"
+    from_display_email = chosen_tpl.get("sender_email") or sender_email
     st.markdown(
         f"""
         <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top-left-radius: 10px; border-top-right-radius: 10px; padding: 12px 16px; border-bottom: 1px solid #CBD5E1;">
@@ -2235,7 +2235,7 @@ def render_email_review(df: pd.DataFrame) -> None:
                 <span style="font-size: 11.5px; color: #64748B; margin-left: 8px; font-weight: 500;">Outlook / Webmail Client View</span>
             </div>
             <div style="font-size: 12.5px; color: #475569; display: flex; flex-direction: column; gap: 3px;">
-                <div><strong style="color: #1E293B;">From:</strong> AINeotechnology Team &lt;{sender_email}&gt;</div>
+                <div><strong style="color: #1E293B;">From:</strong> {from_display_name} &lt;{from_display_email}&gt;</div>
                 <div><strong style="color: #1E293B;">To:</strong> {row['name'] or 'Lead'} &lt;{row['email']}&gt;</div>
                 <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin-top: 3px;">{edit_subject}</div>
             </div>

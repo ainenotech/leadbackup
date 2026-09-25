@@ -428,10 +428,10 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                 with st.form("form_add_custom_template"):
                     st.markdown("##### New Outreach Template")
                     new_id = st.text_input("Unique ID", value=f"tpl_custom_{uuid.uuid4().hex[:6]}")
-                    new_name = st.text_input("Template Name", placeholder="e.g. Template 8: Executive Video Audit")
+                    new_name = st.text_input("Template Name", placeholder="e.g. Template 12: Executive Video Audit")
                     new_cat = st.selectbox(
                         "Category",
-                        ["Executive & Velocity", "Voice & Inbound AI", "Technical Capabilities", "Operational Automation", "Team Augmentation", "Software Modernization", "Founder & Advisory", "Custom"],
+                        ["Executive & Velocity", "Voice & Inbound AI", "Technical Capabilities", "Operational Automation", "Team Augmentation", "Software Modernization", "Founder & Advisory", "Mohit Outreach", "Custom"],
                     )
                     new_subj = st.text_input("Subject Line Pattern", value="Quick question for {{Company}}")
                     new_desc = st.text_area("Description / Value Proposition", value="Custom tailored outreach template for specialized lead batches.", height=80)
@@ -513,7 +513,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                         {html.escape(interp_subject)}
                     </div>
                     <div style="display: flex; gap: 20px; font-size: 12.5px; color: #475569; border-top: 1px solid #F1F5F9; padding-top: 8px; flex-wrap: wrap;">
-                        <div><strong style="color: #334155;">From:</strong> Tirth Patel &lt;support@nenotechnology.com&gt;</div>
+                        <div><strong style="color: #334155;">From:</strong> {html.escape(current_tpl.get('sender_name', 'Tirth Patel'))} &lt;{html.escape(current_tpl.get('sender_email', 'support@nenotechnology.com'))}&gt;</div>
                         <div><strong style="color: #334155;">To:</strong> Alex &lt;contact@acmehealth.com.au&gt;</div>
                     </div>
                 </div>
