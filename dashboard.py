@@ -86,9 +86,11 @@ from Agent.reply_agent import process_incoming_reply
 import services.template_service
 from services.template_service import load_all_templates, render_template
 import template_hub_view
+import master_db_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from knowledge_base_view import render_knowledge_base_hub
+from master_db_view import render_master_db
 import utils.theme
 from utils.theme import (
     get_current_theme,
@@ -315,6 +317,7 @@ def sync_external_sources_once() -> dict:
 # ─────────────────────────────────────────────────────────────
 NAV_ITEMS = {
     "overview": {"icon": "📊", "label": "Pipeline Overview"},
+    "master_db": {"icon": "🗄️", "label": "MasterDB"},
     "analytics": {"icon": "📈", "label": "Analytics"},
     "templates": {"icon": "📑", "label": "Template Review & Hub"},
     "upload": {"icon": "📤", "label": "Upload & Draft"},
@@ -3402,6 +3405,8 @@ def render_main_view(page_name: str):
     df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
     if page_name == "overview":
         render_overview(df_logs)
+    elif page_name == "master_db":
+        render_master_db(df_logs)
     elif page_name == "analytics":
         render_analytics(df_logs)
     elif page_name == "replies":

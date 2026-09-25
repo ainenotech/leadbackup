@@ -231,6 +231,13 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
     except Exception as e:
         print(f"Warning: Could not sync status to leads sheet: {e}")
 
+    # Synchronize to Master DB
+    try:
+        from services.master_db_service import sync_campaign_entry_to_master_db
+        sync_campaign_entry_to_master_db(db, entry)
+    except Exception as e:
+        print(f"Warning: Could not sync to Master DB: {e}")
+
     return entry
 
 
@@ -525,6 +532,17 @@ def bulk_approve_and_send_entries(
                 lead_sheet_updates[clean_em] = {"status": "failed"}
 
         db.commit()
+
+        # Synchronize successfully sent entries to Master DB
+        try:
+            from services.master_db_service import sync_campaign_entry_to_master_db
+            for entry_id, email, success, err in send_results:
+                if success:
+                    ent = emap.get(entry_id)
+                    if ent:
+                        sync_campaign_entry_to_master_db(db, ent)
+        except Exception as _sync_err:
+            print(f"[bulk dispatch notice] Master DB sync note: {_sync_err}")
     finally:
         db.close()
 

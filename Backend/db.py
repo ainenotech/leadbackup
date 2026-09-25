@@ -69,6 +69,7 @@ def init_db():
 
     from sqlalchemy import inspect, text
     import Backend.models  # Ensure all model tables are registered on Base
+    import Backend.master_db_models  # Ensure Master DB tables are registered on Base
 
     new_cols = [
         ("phone", "VARCHAR"),
@@ -120,5 +121,28 @@ def init_db():
                             conn.rollback()
     except Exception as e:
         print(f"[init_db notice] DB initialization/check note: {e}")
+
+    # ── Master DB tables ──
+    # create_all is safe: it only creates tables that do not yet exist.
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"[init_db notice] Master DB table creation note: {e}")
+
+    # Add master_lead_id FK column to campaign_log (nullable, non-breaking)
+    try:
+        from sqlalchemy import inspect as _insp, text as _txt
+        _inspector = _insp(engine)
+        if "campaign_log" in _inspector.get_table_names():
+            _existing = {c["name"] for c in _inspector.get_columns("campaign_log")}
+            if "master_lead_id" not in _existing:
+                with engine.connect() as conn:
+                    try:
+                        conn.execute(_txt("ALTER TABLE campaign_log ADD COLUMN master_lead_id VARCHAR;"))
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+    except Exception as e:
+        print(f"[init_db notice] master_lead_id migration note: {e}")
 
     _DB_INITIALIZED = True
