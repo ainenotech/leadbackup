@@ -13,6 +13,7 @@ DEFAULT_LOGO_DARK_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790
 DEFAULT_LINKEDIN_URL = "https://www.linkedin.com/in/tirth-patel-nenotechnology/"
 DEFAULT_MOHIT_LINKEDIN_URL = os.getenv("MOHIT_LINKEDIN_URL", "https://www.linkedin.com/company/nenotechnology/")
 DEFAULT_PORTFOLIO_URL = os.getenv("PORTFOLIO_URL", "https://www.nenotechnology.com/")
+DEFAULT_MOHIT_PORTFOLIO_URL = os.getenv("MOHIT_PORTFOLIO_URL", "https://www.nenotechnology.us/")
 DEFAULT_TWITTER_URL = os.getenv("TWITTER_URL", "https://x.com/nenotechnology")
 DEFAULT_INSTAGRAM_URL = os.getenv("INSTAGRAM_URL", "https://www.instagram.com/nenotechnology")
 DEFAULT_FACEBOOK_URL = os.getenv("FACEBOOK_URL", "https://www.facebook.com/nenotechnology")
@@ -38,6 +39,7 @@ def _build_responsive_template_html(
     website_callout_html: str = "",
     signature_html: str = "",
     footer_address_html: str = "",
+    website_url: str = "https://www.nenotechnology.com/",
 ) -> str:
     """Generates a pixel-perfect, fully responsive HTML email template
     featuring an executive dark navy top header banner with centered light logo,
@@ -127,7 +129,7 @@ def _build_responsive_template_html(
       <!-- Top Header Banner (Dark Navy #071a2d with Centered Light Logo) -->
       <tr>
         <td align="center" style="background-color:#071a2d;padding:20px 24px 18px 24px;text-align:center;border-top-left-radius:12px;border-top-right-radius:12px;border-bottom:3px solid {accent_color};">
-          <a href="https://www.nenotechnology.com/" target="_blank" style="text-decoration:none;display:inline-block;">
+          <a href="{website_url}" target="_blank" style="text-decoration:none;display:inline-block;">
             <img src="LOGO_URL" alt="Neno Technology" width="168" height="43" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;width:168px;height:auto;max-height:45px;" />
           </a>
         </td>
@@ -495,14 +497,15 @@ RAW_TEMPLATE_8 = """<!DOCTYPE html>
 </html>"""
 
 
-def _build_mohit_signature_html(accent_color: str = "#0284C7") -> str:
-    """Builds clean executive signature block for Mohit Patel (Neno Technology) without mobile number or social links."""
+def _build_mohit_signature_html(accent_color: str = "#0284C7", website_url: str = "https://www.nenotechnology.us/") -> str:
+    """Builds clean executive signature block for Mohit Patel (Neno Technology) with email and website."""
     return f"""<div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Warm regards,</div>
+            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Best regards,</div>
             <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">Mohit Patel</div>
             <div style="font-size:12.5px;color:#334155;margin-top:2px;">Neno Technology</div>
             <div style="font-size:12px;margin-top:4px;">
-              <a href="https://www.nenotechnology.com/" target="_blank" style="color:{accent_color};text-decoration:none;">https://www.nenotechnology.com/</a>
+              <a href="mailto:mohit@nenotechnology.us" style="color:{accent_color};text-decoration:none;font-weight:500;">mohit@nenotechnology.us</a> &nbsp;|&nbsp;
+              <a href="{website_url}" target="_blank" style="color:{accent_color};text-decoration:none;">{website_url}</a>
             </div>
             <div style="font-size:12px;color:#64748b;margin-top:3px;">3838 Andrew Johnson Hwy, Limestone, TN 37681</div>
           </div>"""
@@ -525,11 +528,12 @@ RAW_TEMPLATE_9 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Bench Ready Next Week.</strong> Senior Python, TypeScript, FastAPI, and Next.js engineers who connect to your GitHub repo and Jira on day one &mdash; no recruiting lag.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Predictable Monthly Sprints.</strong> Fixed monthly pricing per engineer with transparent weekly deliverables and zero long-term vendor lock-in.</p>""",
     website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #0284C7;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
-            🌐 <strong>Explore our AI architectures:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#0284C7;font-weight:600;text-decoration:underline;">Neno Technology</a> to see our LangGraph multi-agent builds, enterprise RAG pipelines, and technical blueprints.
+            🌐 <strong>Explore our AI architectures:</strong> Please visit our website at <a href="https://www.nenotechnology.us/" target="_blank" style="color:#0284C7;font-weight:600;text-decoration:underline;">Neno Technology</a> to see our LangGraph multi-agent builds, enterprise RAG pipelines, and technical blueprints.
           </div>""",
     closing_html="Whether you need an end-to-end AI product built from scratch or an extra engineer to clear your backlog, our squad delivers fast, production-grade code.",
     accent_color="#0284C7",
-    signature_html=_build_mohit_signature_html("#0284C7"),
+    website_url="https://www.nenotechnology.us/",
+    signature_html=_build_mohit_signature_html("#0284C7", "https://www.nenotechnology.us/"),
     footer_address_html="Neno Technology &middot; 3838 Andrew Johnson Hwy, Limestone, TN 37681",
 )
 
@@ -545,11 +549,12 @@ RAW_TEMPLATE_10 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Zero Manual Entry Errors.</strong> Replace fragile human data copying with automated schema validation, webhook alerts, and error failover logging.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Fast 7-14 Day Turnaround.</strong> Most operational bottlenecks can be fully automated within 1 to 2 weeks without disrupting your day-to-day business.</p>""",
     website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #059669;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
-            🌐 <strong>Explore our automation workflows:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#059669;font-weight:600;text-decoration:underline;">Neno Technology</a> to review how we automate ERP, CRM, invoice parsing, and cross-platform business operations.
+            🌐 <strong>Explore our automation workflows:</strong> Please visit our website at <a href="https://www.nenotechnology.us/" target="_blank" style="color:#059669;font-weight:600;text-decoration:underline;">Neno Technology</a> to review how we automate ERP, CRM, invoice parsing, and cross-platform business operations.
           </div>""",
     closing_html="We free your top talent from low-value repetitive tasks so they can spend their energy speaking to clients and driving revenue.",
     accent_color="#059669",
-    signature_html=_build_mohit_signature_html("#059669"),
+    website_url="https://www.nenotechnology.us/",
+    signature_html=_build_mohit_signature_html("#059669", "https://www.nenotechnology.us/"),
     footer_address_html="Neno Technology &middot; 3838 Andrew Johnson Hwy, Limestone, TN 37681",
 )
 
@@ -565,11 +570,12 @@ RAW_TEMPLATE_11 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Hands-On Implementation Squad.</strong> If there's a mutual fit, we provide the exact engineering team to execute the roadmap end-to-end.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Strict Confidentiality &amp; Full IP Ownership.</strong> 100% of all intellectual property, custom models, code, and automations belong entirely to {{Company}}.</p>""",
     website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #0D9488;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
-            🌐 <strong>Learn more about Neno Technology:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#0D9488;font-weight:600;text-decoration:underline;">Neno Technology</a> to review our company story, AI advisory frameworks, and real-world client deployments.
+            🌐 <strong>Learn more about Neno Technology:</strong> Please visit our website at <a href="https://www.nenotechnology.us/" target="_blank" style="color:#0D9488;font-weight:600;text-decoration:underline;">Neno Technology</a> to review our company story, AI advisory frameworks, and real-world client deployments.
           </div>""",
     closing_html="If you want a straight, honest perspective on AI for {{Company}}, let's connect.",
     accent_color="#0D9488",
-    signature_html=_build_mohit_signature_html("#0D9488"),
+    website_url="https://www.nenotechnology.us/",
+    signature_html=_build_mohit_signature_html("#0D9488", "https://www.nenotechnology.us/"),
     footer_address_html="Neno Technology &middot; 3838 Andrew Johnson Hwy, Limestone, TN 37681",
 )
 
@@ -677,6 +683,8 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "badge": "Mohit Outreach",
         "sender_name": "Mohit Patel",
         "sender_email": "mohit@nenotechnology.us",
+        "portfolio_url": "https://www.nenotechnology.us/",
+        "website_url": "https://www.nenotechnology.us/",
     },
     {
         "id": "tpl_mohit_business_automation",
@@ -690,6 +698,8 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "badge": "Mohit Outreach",
         "sender_name": "Mohit Patel",
         "sender_email": "mohit@nenotechnology.us",
+        "portfolio_url": "https://www.nenotechnology.us/",
+        "website_url": "https://www.nenotechnology.us/",
     },
     {
         "id": "tpl_mohit_strategic_advisory",
@@ -703,6 +713,8 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "badge": "Mohit Outreach",
         "sender_name": "Mohit Patel",
         "sender_email": "mohit@nenotechnology.us",
+        "portfolio_url": "https://www.nenotechnology.us/",
+        "website_url": "https://www.nenotechnology.us/",
     },
 ]
 
@@ -884,7 +896,10 @@ def render_template(
     b_link = (booking_url or tracking_link or DEFAULT_BOOKING_URL).strip()
     l_url = (logo_url or tpl.get("logo_url") or DEFAULT_LOGO_URL).strip()
     li_url = (linkedin_url or tpl.get("linkedin_url") or DEFAULT_LINKEDIN_URL).strip()
-    port_url = (portfolio_url or tpl.get("portfolio_url") or DEFAULT_PORTFOLIO_URL).strip()
+    sender_mail = tpl.get("sender_email") or "sales@nenotechnology.com"
+    is_mohit = "mohit" in str(tpl.get("id", "")).lower() or "mohit" in sender_mail.lower()
+    default_port = DEFAULT_MOHIT_PORTFOLIO_URL if is_mohit else DEFAULT_PORTFOLIO_URL
+    port_url = (portfolio_url or tpl.get("portfolio_url") or default_port).strip()
     tw_url = (twitter_url or tpl.get("twitter_url") or DEFAULT_TWITTER_URL).strip()
     ig_url = (instagram_url or tpl.get("instagram_url") or DEFAULT_INSTAGRAM_URL).strip()
     fb_url = (facebook_url or tpl.get("facebook_url") or DEFAULT_FACEBOOK_URL).strip()
