@@ -23,6 +23,10 @@ msal
 psycopg2-binary
 numpy
 
+# Universal document parsing (Knowledge Base ingestion: PDF, DOCX)
+pypdf
+python-docx
+
 # Google Sheets API (live sync of Google Form responses)
 google-api-python-client
 google-auth

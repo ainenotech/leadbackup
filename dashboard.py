@@ -89,6 +89,7 @@ import template_hub_view
 import master_db_view
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
+from knowledge_base_view import render_knowledge_base_hub
 from master_db_view import render_master_db
 import utils.theme
 from utils.theme import (
@@ -323,6 +324,7 @@ NAV_ITEMS = {
     "leads": {"icon": "📋", "label": "Leads Directory"},
     "email": {"icon": "✉️", "label": "Email Review Studio"},
     "replies": {"icon": "💬", "label": "Replies & Bookings"},
+    "knowledge_base": {"icon": "📚", "label": "Knowledge Base Hub"},
 }
 
 if "page" in st.query_params and st.query_params["page"] in NAV_ITEMS:
@@ -3417,6 +3419,8 @@ def render_main_view(page_name: str):
         render_email_review(df_logs)
     elif page_name == "upload":
         render_upload()
+    elif page_name == "knowledge_base":
+        render_knowledge_base_hub()
 
 render_main_view(page)
 
