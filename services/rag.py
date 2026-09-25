@@ -185,9 +185,20 @@ def clear_all_knowledge_documents(db: Session) -> int:
 
 
 def extract_text_from_file(file_or_path, filename: str) -> str:
-    """Extracts raw text content from a file path or file-like buffer (PDF, Markdown, TXT)."""
+    """Extracts raw text content from a file path or file-like buffer.
+
+    Supported formats:
+    - PDF  (.pdf)           – page-by-page text via pypdf
+    - Word (.docx)          – paragraphs + table cells via python-docx
+    - Excel (.xlsx, .xls)   – sheet-by-sheet rows via pandas/openpyxl
+    - CSV  (.csv)           – tabular rows via pandas
+    - JSON (.json)          – pretty-printed key/value text
+    - Markdown / Text       – raw UTF-8 text (.md, .txt, and everything else)
+    """
     import io
     ext = os.path.splitext(filename)[1].lower()
+
+    # ── PDF ──
     if ext == ".pdf":
         from pypdf import PdfReader
         if isinstance(file_or_path, (str, os.PathLike)):
@@ -205,20 +216,114 @@ def extract_text_from_file(file_or_path, filename: str) -> str:
             if t:
                 pages_text.append(t.strip())
         return "\n\n".join(pages_text)
-    else:
-        if isinstance(file_or_path, (str, os.PathLike)) and os.path.exists(file_or_path):
-            with open(file_or_path, "r", encoding="utf-8", errors="replace") as f:
-                return f.read()
+
+    # ── DOCX (Word) ──
+    if ext == ".docx":
+        try:
+            from docx import Document as DocxDocument
+        except ImportError:
+            raise ImportError("python-docx is required for .docx files. Install it with: pip install python-docx")
+
+        if isinstance(file_or_path, bytes):
+            doc = DocxDocument(io.BytesIO(file_or_path))
         elif hasattr(file_or_path, "read"):
-            data = file_or_path.read()
-            if isinstance(data, bytes):
-                return data.decode("utf-8", errors="replace")
-            return str(data)
-        elif isinstance(file_or_path, bytes):
-            return file_or_path.decode("utf-8", errors="replace")
-        elif isinstance(file_or_path, str):
-            return file_or_path
+            doc = DocxDocument(file_or_path)
+        else:
+            doc = DocxDocument(file_or_path)
+
+        parts = []
+        # Extract paragraphs
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text:
+                parts.append(text)
+        # Extract table data
+        for table in doc.tables:
+            table_rows = []
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells]
+                table_rows.append(" | ".join(cells))
+            if table_rows:
+                parts.append("\n".join(table_rows))
+        return "\n\n".join(parts)
+
+    # ── CSV ──
+    if ext == ".csv":
+        import pandas as pd
+        if isinstance(file_or_path, bytes):
+            df = pd.read_csv(io.BytesIO(file_or_path))
+        elif hasattr(file_or_path, "read"):
+            df = pd.read_csv(file_or_path)
+        elif isinstance(file_or_path, (str, os.PathLike)):
+            df = pd.read_csv(file_or_path)
+        else:
+            return str(file_or_path)
+        return _dataframe_to_text(df, filename)
+
+    # ── Excel (XLSX / XLS) ──
+    if ext in (".xlsx", ".xls"):
+        import pandas as pd
+        if isinstance(file_or_path, bytes):
+            xls = pd.ExcelFile(io.BytesIO(file_or_path))
+        elif hasattr(file_or_path, "read"):
+            xls = pd.ExcelFile(file_or_path)
+        elif isinstance(file_or_path, (str, os.PathLike)):
+            xls = pd.ExcelFile(file_or_path)
+        else:
+            return str(file_or_path)
+
+        all_text = []
+        for sheet_name in xls.sheet_names:
+            df = xls.parse(sheet_name)
+            all_text.append(f"--- Sheet: {sheet_name} ---")
+            all_text.append(_dataframe_to_text(df, filename))
+        return "\n\n".join(all_text)
+
+    # ── JSON ──
+    if ext == ".json":
+        import json as _json
+        raw = _read_raw_text(file_or_path)
+        try:
+            data = _json.loads(raw)
+            return _json.dumps(data, indent=2, ensure_ascii=False)
+        except Exception:
+            return raw
+
+    # ── Markdown / Plain Text / Fallback ──
+    return _read_raw_text(file_or_path)
+
+
+def _read_raw_text(file_or_path) -> str:
+    """Helper to read raw UTF-8 text from a path, buffer, or bytes object."""
+    if isinstance(file_or_path, (str, os.PathLike)) and os.path.exists(str(file_or_path)):
+        with open(file_or_path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    elif hasattr(file_or_path, "read"):
+        data = file_or_path.read()
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return str(data)
+    elif isinstance(file_or_path, bytes):
+        return file_or_path.decode("utf-8", errors="replace")
+    elif isinstance(file_or_path, str):
+        return file_or_path
+    return ""
+
+
+def _dataframe_to_text(df, filename: str = "") -> str:
+    """Converts a pandas DataFrame into a readable text block suitable for
+    chunking and embedding. Each row becomes a labeled line using its column
+    headers so the retrieval engine can match on column names and values."""
+    if df.empty:
         return ""
+    lines = []
+    headers = list(df.columns)
+    lines.append("Columns: " + ", ".join(str(h) for h in headers))
+    for idx, row in df.iterrows():
+        parts = [f"{col}: {row[col]}" for col in headers if str(row[col]).strip() and str(row[col]).lower() != "nan"]
+        if parts:
+            lines.append(f"Row {idx + 1}: " + " | ".join(parts))
+    return "\n".join(lines)
 
 
 def ingest_file_content(
@@ -228,7 +333,8 @@ def ingest_file_content(
     title: Optional[str] = None,
     category: Optional[str] = None,
 ) -> int:
-    """Extracts text from a file (PDF/MD/TXT), chunks, embeds and saves to KnowledgeDocument.
+    """Extracts text from a file (PDF/DOCX/CSV/XLSX/JSON/MD/TXT), chunks,
+    embeds and saves to KnowledgeDocument.
     Replaces any existing document with the same title to avoid duplicate chunks.
     """
     text = extract_text_from_file(file_bytes_or_content, filename)
@@ -236,14 +342,28 @@ def ingest_file_content(
         return 0
 
     doc_title = title or os.path.splitext(filename)[0].replace("_", " ").replace("-", " ").title()
-    if filename.lower().endswith(".pdf") and not doc_title.endswith("(PDF)"):
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == ".pdf" and not doc_title.endswith("(PDF)"):
         doc_title = f"{doc_title} (PDF)"
+    elif ext == ".docx" and not doc_title.endswith("(Word)"):
+        doc_title = f"{doc_title} (Word)"
 
     # Remove existing chunks for this title to avoid duplicate accumulation
     delete_document(db, doc_title)
 
-    cat = category or ("PDF Knowledge Base" if filename.lower().endswith(".pdf") else "Documentation")
-    return add_document(db, title=doc_title, content=text, category=cat)
+    # Auto-detect category from file extension if not specified
+    if not category:
+        ext_categories = {
+            ".pdf": "PDF Knowledge Base",
+            ".docx": "Word Document",
+            ".csv": "Spreadsheet Data",
+            ".xlsx": "Spreadsheet Data",
+            ".xls": "Spreadsheet Data",
+            ".json": "Structured Data",
+        }
+        category = ext_categories.get(ext, "Documentation")
+
+    return add_document(db, title=doc_title, content=text, category=category)
 
 
 def get_knowledge_base_summary(db: Session) -> dict:
