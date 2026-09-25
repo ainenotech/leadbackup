@@ -1089,7 +1089,7 @@ def render_upload() -> None:
 
             # Summary Metrics
             st.markdown("<br>", unsafe_allow_html=True)
-            m1, m2, m3, m4 = st.columns(4)
+            m1, m2, m3, m4 = st.columns(4, border=True)
             m1.metric("Total in Uploaded Sheet", len(raw_df))
             m2.metric("Skipped (Already Sent)", len(skipped_sent_df))
             m3.metric("Pending in Review", len(skipped_drafted_df))
@@ -1101,63 +1101,54 @@ def render_upload() -> None:
             all_available_tpls = load_all_templates()
             tpl_map = {f"{t['name']} [{t.get('category', 'Outreach')}]": t for t in all_available_tpls}
 
-            st.markdown("##### 📑 Step 2: Choose Template & Generate Drafts for Email Review")
-            col_tpl_sel, col_tpl_meta = st.columns([3, 2])
-            with col_tpl_sel:
-                selected_tpl_label = st.selectbox(
-                    "Choose outreach template to personalize for this sheet:",
-                    options=list(tpl_map.keys()),
-                    index=0,
-                    key="upload_sheet_template_selector",
-                    help="Assigns this specific high-converting template design to every lead in this sheet for A/B analytics tracking."
-                )
-                chosen_tpl_obj = tpl_map[selected_tpl_label]
+            with st.container(border=True):
+                st.markdown("##### 📑 Step 2: Choose Template & Generate Drafts for Email Review")
+                col_tpl_sel, col_tpl_meta = st.columns([3, 2], vertical_alignment="bottom")
+                with col_tpl_sel:
+                    selected_tpl_label = st.selectbox(
+                        "Choose outreach template to personalize for this sheet:",
+                        options=list(tpl_map.keys()),
+                        index=0,
+                        key="upload_sheet_template_selector",
+                        help="Assigns this specific template design to every lead in this sheet."
+                    )
+                    chosen_tpl_obj = tpl_map[selected_tpl_label]
 
-            with col_tpl_meta:
-                st.caption(f"**Selected Design:** {chosen_tpl_obj['name']}")
-                st.caption(f"**Subject:** `{chosen_tpl_obj.get('subject_pattern', 'Customized per lead')}`")
+                with col_tpl_meta:
+                    tpl_subj = chosen_tpl_obj.get("subject") or chosen_tpl_obj.get("subject_pattern") or "Customized per lead"
+                    st.caption(f"📧 **Subject:** `{tpl_subj}`")
 
-            # Smart lead targeting: handle fresh leads, pending leads re-draft, or testing override
-            col_opt1, col_opt2 = st.columns(2)
-            with col_opt1:
-                include_drafted = st.checkbox(
-                    f"🔄 Re-apply '{chosen_tpl_obj['name']}' to {len(skipped_drafted_df)} pending lead(s) awaiting review",
-                    value=True if new_leads_df.empty and not skipped_drafted_df.empty else False,
-                    key="chk_include_drafted",
-                    help="Updates existing drafts in the review queue with this newly selected template."
-                )
-            with col_opt2:
-                force_override = st.checkbox(
-                    f"📨 Multi-Template Outreach: Draft '{chosen_tpl_obj['name']}' for all {len(raw_df)} row(s) (including {len(skipped_sent_df)} previously contacted)",
-                    value=True if new_leads_df.empty and skipped_drafted_df.empty and not raw_df.empty else False,
-                    key="chk_force_test_override",
-                    help="Allows generating follow-up drafts with this template even if this email was previously contacted with another template."
-                )
-
-            if force_override:
-                target_df = raw_df.copy()
-            elif include_drafted and not skipped_drafted_df.empty:
+                # Smart target selection: auto-prioritize new leads, else existing/uploaded leads
                 if not new_leads_df.empty:
-                    target_df = pd.concat([new_leads_df, skipped_drafted_df], ignore_index=True).drop_duplicates(subset=["email"])
-                else:
+                    target_df = new_leads_df.copy()
+                elif not skipped_drafted_df.empty:
                     target_df = skipped_drafted_df.copy()
-            else:
-                target_df = new_leads_df.copy()
+                else:
+                    target_df = raw_df.copy()
 
-            target_count = len(target_df)
+                target_count = len(target_df)
 
-            # Action Buttons
-            btn_col1, btn_col2 = st.columns([1.6, 1.4])
-            with btn_col1:
-                can_generate = target_count > 0
-                btn_label = f"🚀 Generate AI Drafts & Open Email Review ({target_count} Leads)" if can_generate else "⚠️ No leads ready to draft (use checkboxes above)"
-                if st.button(
-                    btn_label,
-                    type="primary",
-                    disabled=not can_generate,
-                    key="gen_drafts_new",
-                    help="Generate personalized outreach emails using the chosen template and transition immediately to Email Review Studio."
-                ):
+                btn_col1, btn_col2 = st.columns([1.6, 1.4])
+                with btn_col1:
+                    can_generate = target_count > 0
+                    lead_word = "Lead" if target_count == 1 else "Leads"
+                    btn_label = f"🚀 Generate AI Drafts & Open Email Review ({target_count} {lead_word})" if can_generate else "⚠️ No leads ready to draft"
+                    start_draft_generation = st.button(
+                        btn_label,
+                        type="primary",
+                        disabled=not can_generate,
+                        key="gen_drafts_new",
+                        help="Generate personalized outreach emails using the chosen template and transition immediately to Email Review Studio."
+                    )
+                with btn_col2:
+                    active_drafts_count = len(drafted_emails) if 'drafted_emails' in locals() else 0
+                    btn_rev_label = f"👉 Open Email Review Studio ({active_drafts_count} Drafts)" if active_drafts_count > 0 else "👉 Open Email Review Studio"
+                    if st.button(btn_rev_label, key="goto_email_review", type="secondary"):
+                        st.session_state.active_page = "email"
+                        st.query_params["page"] = "email"
+                        st.rerun()
+
+            if start_draft_generation:
                     campaign_name = os.getenv("CAMPAIGN_NAME", "default_campaign")
                     progress_bar = st.progress(0.0, text=f"Generating personalized drafts with '{chosen_tpl_obj['name']}'...")
                     db = SessionLocal()
@@ -1292,13 +1283,6 @@ def render_upload() -> None:
                         for err_msg in failed_errors:
                             st.error(f"❌ Failed: {err_msg}")
 
-            with btn_col2:
-                active_drafts_count = len(drafted_emails) if 'drafted_emails' in locals() else 0
-                btn_rev_label = f"👉 Open Email Review Studio ({active_drafts_count} Drafts)" if active_drafts_count > 0 else "👉 Open Email Review Studio"
-                if st.button(btn_rev_label, key="goto_email_review", type="secondary"):
-                    st.session_state.active_page = "email"
-                    st.query_params["page"] = "email"
-                    st.rerun()
 
             st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1320,7 +1304,7 @@ def render_upload() -> None:
                     if not skipped_drafted_df.empty:
                         st.info(f"⏳ **{len(skipped_drafted_df)} lead(s)** from this sheet currently have active drafts awaiting your review in the Email Review Studio.")
                     else:
-                        st.info("✅ All leads in this sheet have already received emails. Check 'Testing Override' above if you wish to draft test messages anyway.")
+                        st.info("ℹ️ All leads in this sheet have already received emails. Click 'Generate AI Drafts' above to draft outreach with this template.")
 
 
             with tab_skipped:
