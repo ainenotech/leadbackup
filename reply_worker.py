@@ -739,6 +739,15 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 except Exception as ex:
                     print(f"[Warning] Could not log reply to customer_replies.xlsx: {ex}")
 
+                # Sync to Master DB
+                try:
+                    from services.master_db_service import sync_campaign_entry_to_master_db
+                    target_ent = lead if lead else (new_entry if 'new_entry' in locals() else None)
+                    if target_ent:
+                        sync_campaign_entry_to_master_db(db, target_ent)
+                except Exception as _m_err:
+                    print(f"[Warning] Could not sync reply to Master DB: {_m_err}")
+
                 results["details"].append({
                     "email": sender_addr,
                     "name": effective_name,

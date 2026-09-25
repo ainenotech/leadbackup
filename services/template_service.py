@@ -313,11 +313,11 @@ RAW_TEMPLATE_7 = _build_responsive_template_html(
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Tailored ROI Roadmap.</strong> Identify the specific 20% of repetitive workflows that will generate 80% of your operational savings.</p>
 <p style="margin:0 0 6px 0;"><strong style="color:#0f172a;">Hands-On Implementation Squad.</strong> If there's a mutual fit, we provide the exact engineering team to execute the roadmap end-to-end.</p>
 <p style="margin:0;"><strong style="color:#0f172a;">Strict Confidentiality &amp; Full IP Ownership.</strong> 100% of all intellectual property, custom models, code, and automations belong entirely to {{Company}}.</p>""",
-    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #DC2626;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
-            🌐 <strong>Learn more about Nenotechnology:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#DC2626;font-weight:600;text-decoration:underline;">Nenotechnology</a> to review our founder story, AI advisory frameworks, and real-world client deployments.
+    website_callout_html="""<div style="margin:18px 0 16px 0;padding:12px 18px;background-color:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #0D9488;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:#334155;">
+            🌐 <strong>Learn more about Nenotechnology:</strong> Please visit our website at <a href="https://www.nenotechnology.com/" target="_blank" style="color:#0D9488;font-weight:600;text-decoration:underline;">Nenotechnology</a> to review our founder story, AI advisory frameworks, and real-world client deployments.
           </div>""",
     closing_html="I only take 3 advisory calls a week to ensure high impact. If you want a straight, honest perspective on AI for {{Company}}, let's connect.",
-    accent_color="#DC2626",
+    accent_color="#0D9488",
 )
 
 RAW_TEMPLATE_8 = """<!DOCTYPE html>
@@ -558,8 +558,8 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "category": "Founder & Advisory",
         "description": "Candid founder-to-founder advisory consultation focusing on margin expansion, ROI roadmaps, and cutting operational fat.",
         "html_content": RAW_TEMPLATE_7,
-        "style": "crimson_direct",
-        "accent_color": "#DC2626",
+        "style": "teal_executive",
+        "accent_color": "#0D9488",
         "badge": "Executive Direct",
     },
     {
