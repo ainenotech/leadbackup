@@ -513,7 +513,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                         {html.escape(interp_subject)}
                     </div>
                     <div style="display: flex; gap: 20px; font-size: 12.5px; color: #475569; border-top: 1px solid #F1F5F9; padding-top: 8px; flex-wrap: wrap;">
-                        <div><strong style="color: #334155;">From:</strong> {html.escape(current_tpl.get('sender_name', 'Tirth Patel'))} &lt;{html.escape(current_tpl.get('sender_email', 'support@nenotechnology.com'))}&gt;</div>
+                        <div><strong style="color: #334155;">From:</strong> {html.escape(current_tpl.get('sender_name') or ('Mohit Patel' if 'mohit' in (current_tpl.get('sender_email') or os.getenv('MS_SENDER_EMAIL', '')).lower() else 'Tirth Patel'))} &lt;{html.escape(current_tpl.get('sender_email') or os.getenv('MS_SENDER_EMAIL', 'mohit@nenotechnology.us'))}&gt;</div>
                         <div><strong style="color: #334155;">To:</strong> Alex &lt;contact@acmehealth.com.au&gt;</div>
                     </div>
                 </div>

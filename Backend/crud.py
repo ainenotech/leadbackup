@@ -210,6 +210,19 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
             entry.body,
         )
 
+    sender_to_use = None
+    current_tid = getattr(entry, "template_id", None)
+    if current_tid:
+        try:
+            from services.template_service import get_template_by_id
+            tpl = get_template_by_id(str(current_tid))
+            if tpl and tpl.get("sender_email"):
+                sender_to_use = tpl["sender_email"]
+        except Exception:
+            pass
+    if not sender_to_use:
+        sender_to_use = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+
     mailer = get_mailer()
     try:
         mailer.send_email(
@@ -217,6 +230,7 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
             subject=str(entry.subject or ""),
             body=str(entry.body or ""),
             token=str(entry.token) if entry.token else None,
+            sender_email=sender_to_use,
         )
     except Exception as send_err:
         entry.status = "failed"
@@ -459,6 +473,19 @@ def bulk_approve_and_send_entries(
                     curr_b,
                 )
 
+            task_sender = None
+            t_id = getattr(entry, "template_id", None)
+            if t_id:
+                try:
+                    from services.template_service import get_template_by_id
+                    tpl = get_template_by_id(str(t_id))
+                    if tpl and tpl.get("sender_email"):
+                        task_sender = tpl["sender_email"]
+                except Exception:
+                    pass
+            if not task_sender:
+                task_sender = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+
             entry.subject = curr_s
             entry.body = curr_b
             tasks_to_send.append({
@@ -467,6 +494,7 @@ def bulk_approve_and_send_entries(
                 "subject": curr_s,
                 "body": curr_b,
                 "token": str(entry.token) if entry.token else None,
+                "sender_email": task_sender,
             })
 
         db.commit()
@@ -494,6 +522,7 @@ def bulk_approve_and_send_entries(
                 subject=str(task.get("subject") or ""),
                 body=str(task.get("body") or ""),
                 token=task.get("token"),
+                sender_email=task.get("sender_email"),
             )
             return (task["id"], task["email"], True, None)
         except Exception as e:

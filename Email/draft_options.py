@@ -91,7 +91,7 @@ def get_draft_template_option(
         booking_url = default_booking
     else:
         booking_url = cta_url.strip()
-    sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+    sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
     contact_email = os.getenv("CONTACT_EMAIL", "sales@nenotechnology.com")
     contact_phone = os.getenv("CONTACT_PHONE", "7863852024")
 

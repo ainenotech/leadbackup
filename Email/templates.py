@@ -81,7 +81,7 @@ def build_confirmation_email(
     if company and str(company).strip().lower() not in ("nan", "none", "") and company not in topic:
         topic = f"{topic} ({company.strip()})"
 
-    sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+    sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
     contact_email = os.getenv("CONTACT_EMAIL", "sales@nenotechnology.com")
     contact_phone = os.getenv("CONTACT_PHONE", "7863852024")
     accent = "#2563eb"
@@ -134,7 +134,7 @@ def build_rescheduled_email(
     if company and str(company).strip().lower() not in ("nan", "none", "") and company not in topic:
         topic = f"{topic} ({company.strip()})"
 
-    sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+    sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
     contact_email = os.getenv("CONTACT_EMAIL", "sales@nenotechnology.com")
     contact_phone = os.getenv("CONTACT_PHONE", "7863852024")
     accent = "#f59e0b"

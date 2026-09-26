@@ -57,6 +57,7 @@ GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 SYSTEM_SENDERS = [
     "copy@nenotechnology.com",
     "support@nenotechnology.com",
+    "mohit@nenotechnology.us",
     "no-reply@microsoft.com",
     "noreply@microsoft.com",
     "mailer-daemon@googlemail.com",
@@ -170,6 +171,7 @@ def _send_graph_reply(
     subject: str,
     body_html: str,
     body_text: Optional[str] = None,
+    sender_email: Optional[str] = None,
 ) -> bool:
     """Dispatches the reply email using Microsoft Graph.
     Attempts thread reply first, then falls back to sendMail via OutlookMailer.
@@ -177,9 +179,10 @@ def _send_graph_reply(
     and the quoted primary message.
     """
     headers = get_graph_headers()
+    target_mailbox = sender_email or os.getenv("MS_SENDER_EMAIL") or MS_SENDER_EMAIL or "mohit@nenotechnology.us"
 
     # 1. Attempt Graph direct thread reply
-    reply_url = f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/messages/{message_id}/reply"
+    reply_url = f"{GRAPH_BASE}/users/{target_mailbox}/messages/{message_id}/reply"
     payload = {"comment": body_html}
 
     try:
@@ -197,6 +200,7 @@ def _send_graph_reply(
             to_email=to_email,
             subject=_format_reply_subject(subject),
             body=body_html,
+            sender_email=target_mailbox,
         )
         return True
     except Exception as e:
@@ -275,12 +279,13 @@ def record_message_processed(db, message_id: str, sender_email: str = "", subjec
             pass
 
 
-def _mark_message_read(message_id: str, db=None, sender_email: str = "", subject: str = "", status: str = "processed") -> bool:
+def _mark_message_read(message_id: str, db=None, sender_email: str = "", subject: str = "", status: str = "processed", mailbox: Optional[str] = None) -> bool:
     """Marks message as processed locally in DB and attempts Graph PATCH."""
     if db is not None:
         record_message_processed(db, message_id, sender_email, subject, status)
     headers = get_graph_headers()
-    url = f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/messages/{message_id}"
+    target_mailbox = mailbox or os.getenv("MS_SENDER_EMAIL") or MS_SENDER_EMAIL or "mohit@nenotechnology.us"
+    url = f"{GRAPH_BASE}/users/{target_mailbox}/messages/{message_id}"
     try:
         resp = requests.patch(url, headers=headers, json={"isRead": True}, timeout=15)
         return resp.status_code in [200, 204]
@@ -374,8 +379,9 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
         # We rely on is_message_already_processed() and DB reply state to skip old emails,
         # ensuring customer replies are never missed even if viewed in Outlook!
         top_limit = 40 if sync_existing else 30
+        target_mailbox = os.getenv("MS_SENDER_EMAIL") or MS_SENDER_EMAIL or "mohit@nenotechnology.us"
         inbox_url = (
-            f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/mailFolders/inbox/messages"
+            f"{GRAPH_BASE}/users/{target_mailbox}/mailFolders/inbox/messages"
             f"?$orderby=receivedDateTime desc&$top={top_limit}"
         )
 
@@ -521,7 +527,8 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 not sender_addr
                 or sender_addr in SYSTEM_SENDERS
                 or sender_addr == MS_SENDER_EMAIL.lower()
-                or (sender_addr.endswith("@nenotechnology.com") and not is_campaign_lead)
+                or sender_addr == os.getenv("MS_SENDER_EMAIL", "").lower()
+                or (sender_addr.endswith(("@nenotechnology.com", "@nenotechnology.us")) and not is_campaign_lead)
             ):
                 results["skipped_count"] += 1
                 _mark_message_read(msg_id, db=db, sender_email=sender_addr, subject=subject, status="internal_staff_skipped")
@@ -628,7 +635,14 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 except Exception:
                     fmt_received_date = recv_time
 
-            # Process with AI Reply Agent grounded in neno_technology_knowledge_base.pdf
+            # Determine representative persona (Mohit Patel vs Tirth Patel)
+            reply_sender = target_mailbox
+            if lead and lead.body and ("mohit" in lead.body.lower() or "nenotechnology.us" in lead.body.lower()):
+                reply_sender = "mohit@nenotechnology.us"
+            elif "mohit" in target_mailbox.lower():
+                reply_sender = "mohit@nenotechnology.us"
+
+            # Process with AI Reply Agent grounded in neno_technology_knowledge_base
             try:
                 agent_res = process_incoming_reply(
                     db=db,
@@ -637,6 +651,7 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                     company=company_name,
                     subject=subject,
                     raw_body=body_content,
+                    representative_email=reply_sender,
                 )
             except Exception as e:
                 print(f"[Error] AI reply agent failed for {sender_addr}: {e}")
@@ -658,6 +673,7 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 received_time=fmt_received_date,
                 original_body=primary_mail_body,
                 booking_url=BOOKING_URL,
+                representative_email=reply_sender,
             )
             full_reply_text = build_threaded_reply_plain(
                 ai_response_text=reply_text,
@@ -667,6 +683,7 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 received_time=fmt_received_date,
                 original_body=primary_mail_body,
                 booking_url=BOOKING_URL,
+                representative_email=reply_sender,
             )
 
             # If not yet replied, send the AI response email via Microsoft Graph
@@ -678,6 +695,7 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                     subject=subject,
                     body_html=full_reply_html,
                     body_text=full_reply_text,
+                    sender_email=reply_sender,
                 )
             else:
                 sent_ok = True  # Already dispatched previously
@@ -687,7 +705,7 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 now_utc = datetime.now(timezone.utc)
 
                 # Mark read in Graph & record in local processed list
-                _mark_message_read(msg_id, db=db, sender_email=sender_addr, subject=subject, status="processed")
+                _mark_message_read(msg_id, db=db, sender_email=sender_addr, subject=subject, status="processed", mailbox=target_mailbox)
 
                 # Persist in DB
                 if lead:
@@ -769,7 +787,8 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
 
 def run_monitoring_loop(interval_seconds: int = 30):
     """Runs a continuous background polling loop."""
-    print(f"[Agent] AI Auto-Reply Agent active for mailbox: {MS_SENDER_EMAIL}")
+    active_mailbox = os.getenv("MS_SENDER_EMAIL") or MS_SENDER_EMAIL or "mohit@nenotechnology.us"
+    print(f"[Agent] AI Auto-Reply Agent active for mailbox: {active_mailbox}")
     try:
         from Backend.db import SessionLocal
         from services.rag import get_knowledge_base_summary

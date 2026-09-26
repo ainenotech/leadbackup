@@ -41,7 +41,22 @@ class OutlookMailer(Mailer):
     support@nenotechnology.com) via app-only Graph credentials.
     """
 
-    def send_email(self, to_email: str, subject: str, body: str, token: Optional[str] = None) -> str:
+    def send_email(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        token: Optional[str] = None,
+        sender_email: Optional[str] = None,
+    ) -> str:
+        # Determine effective sender mailbox dynamically on every call
+        effective_sender = (
+            sender_email
+            or os.getenv("MS_SENDER_EMAIL")
+            or MS_SENDER_EMAIL
+            or "mohit@nenotechnology.us"
+        ).strip()
+
         # Resolve token for live open and click tracking
         clean_body = (body or "").strip()
         api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
@@ -104,7 +119,7 @@ class OutlookMailer(Mailer):
             clean_body = re.sub(r'href=["\'](https?://[^"\']+)["\']', _rewrite_link, clean_body)
 
         # Prepare tracking pixel & unsubscribe footer
-        sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+        sender_email = effective_sender
         pixel_img = ""
         if token and api_base_url:
             pixel_url = f"{api_base_url}/api/track/open/{token}"
@@ -206,7 +221,7 @@ class OutlookMailer(Mailer):
         resp = None
         for attempt in range(2):
             resp = session.post(
-                f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/sendMail",
+                f"{GRAPH_BASE}/users/{effective_sender}/sendMail",
                 headers=get_graph_headers(),
                 json=payload,
                 timeout=30,

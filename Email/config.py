@@ -11,7 +11,7 @@ MS_TENANT_ID = os.getenv("MS_TENANT_ID", "")
 MS_CLIENT_ID = os.getenv("MS_CLIENT_ID", "")
 MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET", "")
 
-# The shared company support mailbox emails are sent from / read from
-MS_SENDER_EMAIL = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+# The mailbox emails are sent from / read from
+MS_SENDER_EMAIL = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
 
 GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]

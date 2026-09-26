@@ -28,9 +28,14 @@ MS_AUTHORITY = f"https://login.microsoftonline.com/{MS_TENANT_ID}" if MS_TENANT_
 # consent on the app registration in Azure AD.
 GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 
-# The shared support mailbox that mail is sent from / read from and whose
+# The shared mailbox that mail is sent from / read from and whose
 # calendar is used for scheduling. Can be an email address or object id.
-MS_SENDER_EMAIL = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+MS_SENDER_EMAIL = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+
+
+def get_sender_email() -> str:
+    """Returns the currently configured Microsoft Graph sender email address dynamically."""
+    return os.getenv("MS_SENDER_EMAIL") or MS_SENDER_EMAIL or "mohit@nenotechnology.us"
 
 _app: Optional["msal.ConfidentialClientApplication"] = None
 _cached_token: Optional[str] = None

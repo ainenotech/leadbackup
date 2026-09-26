@@ -23,15 +23,16 @@ class OutlookCalendar:
         mailbox over [start, end]. Returns a list of (start, end) datetimes
         for every busy/tentative/out-of-office block.
         """
+        target_mailbox = os.getenv("MS_SENDER_EMAIL") or MS_SENDER_EMAIL or "mohit@nenotechnology.us"
         payload = {
-            "schedules": [MS_SENDER_EMAIL],
+            "schedules": [target_mailbox],
             "startTime": {"dateTime": start.isoformat(), "timeZone": tz},
             "endTime": {"dateTime": end.isoformat(), "timeZone": tz},
             "availabilityViewInterval": 30,
         }
 
         resp = requests.post(
-            f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/calendar/getSchedule",
+            f"{GRAPH_BASE}/users/{target_mailbox}/calendar/getSchedule",
             headers=get_graph_headers(),
             json=payload,
             timeout=30,
@@ -83,8 +84,9 @@ class OutlookCalendar:
             "onlineMeetingProvider": "teamsForBusiness",
         }
 
+        target_mailbox = os.getenv("MS_SENDER_EMAIL") or MS_SENDER_EMAIL or "mohit@nenotechnology.us"
         resp = requests.post(
-            f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/events",
+            f"{GRAPH_BASE}/users/{target_mailbox}/events",
             headers=get_graph_headers(),
             json=payload,
             timeout=30,

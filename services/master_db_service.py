@@ -21,6 +21,7 @@ from Backend.master_db_models import (
     LeadActivity, AuditLog,
     CHUNK_STATUS_TRANSITIONS,
 )
+from Backend.models import CampaignLog
 
 
 # ─────────────────────────────────────────────────────────────

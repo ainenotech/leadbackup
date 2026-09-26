@@ -24,14 +24,23 @@ def get_image_base64(image_path: str) -> str:
 
 load_dotenv(override=True)
 
+import utils.microsoft_auth
 import Email.outlook_mailer
 import Email
 import Backend.crud
 import Email.draft_options
 
+# Ensure in-memory module constants reflect the updated .env immediately across Streamlit reruns
+_current_sender = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+utils.microsoft_auth.MS_SENDER_EMAIL = _current_sender
+Email.outlook_mailer.MS_SENDER_EMAIL = _current_sender
+if hasattr(Email, "config"):
+    Email.config.MS_SENDER_EMAIL = _current_sender
+
 if os.getenv("DASHBOARD_DEV_RELOAD", "").lower() in {"1", "true", "yes"}:
     import importlib
 
+    importlib.reload(utils.microsoft_auth)
     importlib.reload(Email.outlook_mailer)
     importlib.reload(Email)
     importlib.reload(Backend.crud)
@@ -443,6 +452,8 @@ with st.sidebar:
 
     # ── Live System Health & Render Keep-Alive in Sidebar ──
     api_endpoint = os.getenv("API_BASE_URL", "http://localhost:8000").replace("https://", "").replace("http://", "").split("/")[0] or "localhost:8000"
+    current_outreach_sender = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+    sender_short = current_outreach_sender[:17] + "..." if len(current_outreach_sender) > 19 else current_outreach_sender
     st.markdown(
         f"""
         <div class="sidebar-health-card">
@@ -460,7 +471,7 @@ with st.sidebar:
             </div>
             <div class="sidebar-health-row">
                 <span>Outreach Sender</span>
-                <span style="font-size: 11px; color: #475569;">support@nenotech...</span>
+                <span style="font-size: 11px; color: #475569;" title="{current_outreach_sender}">{sender_short}</span>
             </div>
             <div class="sidebar-health-row">
                 <span>AI Engine</span>
@@ -2201,11 +2212,11 @@ def render_email_review(df: pd.DataFrame) -> None:
 
     # ── Superhuman / Apple Mail Style Live Preview (Pixel-Perfect Without Extra Space) ──
     st.markdown("##### 👁️ Live Email Client Preview")
-    sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+    sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
 
     # Outlook Client Header
-    from_display_name = chosen_tpl.get("sender_name") or "AINeotechnology Team"
     from_display_email = chosen_tpl.get("sender_email") or sender_email
+    from_display_name = chosen_tpl.get("sender_name") or ("Mohit Patel" if "mohit" in from_display_email.lower() else "AINeotechnology Team")
     st.markdown(
         f"""
         <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top-left-radius: 10px; border-top-right-radius: 10px; padding: 12px 16px; border-bottom: 1px solid #CBD5E1;">
@@ -2490,7 +2501,7 @@ def render_replies(df: pd.DataFrame) -> None:
                     {kb_badge_html}
                 </div>
                 <div style="font-size: 13px; color: var(--text-muted); margin-top: 3px; font-family: 'Inter', sans-serif;">
-                    Monitors <code>support@nenotechnology.com</code> inbox · Auto-activates only on customer reply · Answers via RAG vector intelligence
+                    Monitors <code>{os.getenv('MS_SENDER_EMAIL', 'mohit@nenotechnology.us')}</code> inbox · Auto-activates only on customer reply · Answers via RAG vector intelligence
                 </div>
             </div>
         </div>
@@ -2820,7 +2831,7 @@ def render_replies(df: pd.DataFrame) -> None:
                                     <div class="chat-bubble-text">{ai_reply_clean}</div>
                                     <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                         <span class="badge badge-scheduled" style="font-size: 10.5px;">📚 Grounded in Attached RAG Knowledge Base ({kb_chunks} Chunks)</span>
-                                        <span class="badge badge-sent" style="font-size: 10.5px;">✓ Dispatched via Microsoft Graph (support@nenotechnology.com)</span>
+                                        <span class="badge badge-sent" style="font-size: 10.5px;">✓ Dispatched via Microsoft Graph ({os.getenv('MS_SENDER_EMAIL', 'mohit@nenotechnology.us')})</span>
                                     </div>
                                     <div style="margin-top: 12px;">
                                         <a href="https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled" target="_blank"
@@ -2845,7 +2856,7 @@ def render_replies(df: pd.DataFrame) -> None:
                                     <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #CBD5E1; font-size: 12px; color: #64748B; line-height: 1.5;">
                                         <b>From:</b> {item['name']} &lt;{item['email']}&gt;<br>
                                         <b>Sent:</b> {fmt_received}<br>
-                                        <b>To:</b> Support &lt;support@nenotechnology.com&gt;<br>
+                                        <b>To:</b> Team &lt;{os.getenv('MS_SENDER_EMAIL', 'mohit@nenotechnology.us')}&gt;<br>
                                         <b>Subject:</b> Inquiry / Reply
                                     </div>
                                     <div style="border-left: 3px solid #CBD5E1; padding-left: 12px; margin-top: 8px; color: #475569; font-size: 13px; line-height: 1.5;">
