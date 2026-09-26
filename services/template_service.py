@@ -21,6 +21,7 @@ DEFAULT_BOOKING_URL = os.getenv(
     "BOOKING_FORM_URL",
     "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
 )
+DEFAULT_MOHIT_PHONE = os.getenv("MOHIT_PHONE", "+14239003550")
 
 # ─────────────────────────────────────────────────────────────
 # 8 USER-PROVIDED HIGH-CONVERTING HTML TEMPLATES
@@ -497,14 +498,19 @@ RAW_TEMPLATE_8 = """<!DOCTYPE html>
 </html>"""
 
 
-def _build_mohit_signature_html(accent_color: str = "#0284C7", website_url: str = "https://www.nenotechnology.us/") -> str:
-    """Builds clean executive signature block for Mohit Patel (Neno Technology) with email and website."""
+def _build_mohit_signature_html(
+    accent_color: str = "#0284C7",
+    website_url: str = "https://www.nenotechnology.us/",
+    phone_number: str = DEFAULT_MOHIT_PHONE,
+) -> str:
+    """Builds clean executive signature block for Mohit Patel (Neno Technology) with email, phone, and website."""
     return f"""<div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Best regards,</div>
+            <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Warm regards,</div>
             <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">Mohit Patel</div>
             <div style="font-size:12.5px;color:#334155;margin-top:2px;">Neno Technology</div>
-            <div style="font-size:12px;margin-top:4px;">
+            <div class="sig-links" style="font-size:12px;margin-top:4px;">
               <a href="mailto:mohit@nenotechnology.us" style="color:{accent_color};text-decoration:none;font-weight:500;">mohit@nenotechnology.us</a> &nbsp;|&nbsp;
+              <a href="tel:{phone_number}" style="color:{accent_color};text-decoration:none;">{phone_number}</a> &nbsp;|&nbsp;
               <a href="{website_url}" target="_blank" style="color:{accent_color};text-decoration:none;">{website_url}</a>
             </div>
             <div style="font-size:12px;color:#64748b;margin-top:3px;">3838 Andrew Johnson Hwy, Limestone, TN 37681</div>
@@ -683,6 +689,7 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "badge": "Mohit Outreach",
         "sender_name": "Mohit Patel",
         "sender_email": "mohit@nenotechnology.us",
+        "sender_phone": DEFAULT_MOHIT_PHONE,
         "portfolio_url": "https://www.nenotechnology.us/",
         "website_url": "https://www.nenotechnology.us/",
     },
@@ -698,6 +705,7 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "badge": "Mohit Outreach",
         "sender_name": "Mohit Patel",
         "sender_email": "mohit@nenotechnology.us",
+        "sender_phone": DEFAULT_MOHIT_PHONE,
         "portfolio_url": "https://www.nenotechnology.us/",
         "website_url": "https://www.nenotechnology.us/",
     },
@@ -713,6 +721,7 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "badge": "Mohit Outreach",
         "sender_name": "Mohit Patel",
         "sender_email": "mohit@nenotechnology.us",
+        "sender_phone": DEFAULT_MOHIT_PHONE,
         "portfolio_url": "https://www.nenotechnology.us/",
         "website_url": "https://www.nenotechnology.us/",
     },
