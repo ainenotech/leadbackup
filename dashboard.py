@@ -85,12 +85,14 @@ from services.rag import (
 from Agent.reply_agent import process_incoming_reply
 import services.template_service
 from services.template_service import load_all_templates, render_template
+import importlib
 import template_hub_view
 import master_db_view
+importlib.reload(master_db_view)
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from knowledge_base_view import render_knowledge_base_hub
-from master_db_view import render_master_db
+from master_db_view import render_master_db, _render_tab_leads_directory
 import utils.theme
 from utils.theme import (
     get_current_theme,
@@ -1354,15 +1356,8 @@ def render_upload() -> None:
 # PAGE 3: LEADS DIRECTORY
 # ─────────────────────────────────────────────────────────────
 def render_leads(df: pd.DataFrame) -> None:
-    render_top_banner(
-        "Campaign Leads Directory",
-        "Browse, filter, and inspect leads recorded in your database, including multi-template outreach history.",
-        "Master Directory",
-    )
-
-    if df.empty:
-        st.info("No leads found. Upload a dataset in 'Upload & Draft' or 'Template Review & Hub (Tab 3)' to get started.")
-        return
+    _render_tab_leads_directory()
+    return
 
     # Filter out un-sent rejected or cancelled drafts
     active_df = df[~df["status"].astype(str).str.lower().isin(["rejected", "cancelled", "failed"])].copy()

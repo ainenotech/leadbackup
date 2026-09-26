@@ -7,6 +7,7 @@ interactive Plotly charts, and modern micro-components.
 
 import io
 import os
+import re
 import json
 import base64
 from datetime import datetime, timezone
@@ -22,16 +23,75 @@ from Backend.master_db_models import (
     MasterLead, LeadImport, LeadChunk, LeadChunkMember,
     OutreachHistory, LeadActivity, AuditLog,
 )
+from Backend.models import CampaignLog
 from services.master_db_service import (
     generate_import_preview, confirm_import, normalize_email,
     get_dashboard_metrics, get_leads_paginated, get_lead_detail,
     get_all_chunks, get_chunk_leads, assign_template_to_chunk,
     transition_chunk_status, get_all_imports, get_import_detail,
     get_audit_log, get_templates_sent_to_lead, backfill_from_campaign_log,
-    log_audit,
+    get_recent_activities, log_audit,
 )
 from services.template_service import load_all_templates
 from utils.theme import apply_chart_theme, is_dark_mode
+
+
+# ─────────────────────────────────────────────────────────────
+# HIGH-PERFORMANCE IN-MEMORY CACHE (Eliminates Network Lag)
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=25, show_spinner=False)
+def fetch_cached_dashboard_metrics() -> Dict:
+    db = SessionLocal()
+    try:
+        return get_dashboard_metrics(db)
+    finally:
+        db.close()
+
+
+@st.cache_data(ttl=25, show_spinner=False)
+def fetch_cached_chunks() -> List[Dict]:
+    db = SessionLocal()
+    try:
+        return get_all_chunks(db)
+    finally:
+        db.close()
+
+
+@st.cache_data(ttl=25, show_spinner=False)
+def fetch_cached_imports() -> List[Dict]:
+    db = SessionLocal()
+    try:
+        return get_all_imports(db)
+    finally:
+        db.close()
+
+
+@st.cache_data(ttl=25, show_spinner=False)
+def fetch_cached_recent_activities(limit: int = 50) -> List[Dict]:
+    db = SessionLocal()
+    try:
+        return get_recent_activities(db, limit=limit)
+    finally:
+        db.close()
+
+
+@st.cache_data(ttl=25, show_spinner=False)
+def fetch_cached_audit_log(limit: int = 200) -> List[Dict]:
+    db = SessionLocal()
+    try:
+        return get_audit_log(db, limit=limit)
+    finally:
+        db.close()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_cached_lead_detail(lead_id: str) -> Optional[Dict]:
+    db = SessionLocal()
+    try:
+        return get_lead_detail(db, lead_id)
+    finally:
+        db.close()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -88,12 +148,7 @@ def render_status_badge(status_key: str, custom_text: Optional[str] = None) -> s
     label = custom_text or cfg["label"]
     icon = cfg.get("icon", "")
 
-    return f"""
-    <span class="mdb-badge" style="background:{bg};color:{color};border:1px solid {color}35;">
-        <span style="font-size:10px;">{icon}</span>
-        <span>{label}</span>
-    </span>
-    """
+    return f'<span class="mdb-badge" style="background:{bg};color:{color};border:1px solid {color}35;"><span style="font-size:10px;">{icon}</span><span>{label}</span></span>'
 
 
 # ─────────────────────────────────────────────────────────────
@@ -357,9 +412,9 @@ def render_master_db(df_logs: pd.DataFrame = None):
     if "mdb_initial_sync_done" not in st.session_state:
         db_chk = SessionLocal()
         try:
+            unlinked_cnt = db_chk.query(CampaignLog).filter(CampaignLog.master_lead_id.is_(None)).count()
             m_cnt = db_chk.query(MasterLead).count()
-            c_cnt = db_chk.query(LeadChunk).count()
-            if m_cnt == 0 or c_cnt == 0:
+            if m_cnt == 0 or unlinked_cnt > 0:
                 backfill_from_campaign_log(db_chk)
             st.session_state.mdb_initial_sync_done = True
         except Exception as _ex:
@@ -391,6 +446,20 @@ def render_master_db(df_logs: pd.DataFrame = None):
     </div>
     """
     st.markdown(clean_html(banner_html), unsafe_allow_html=True)
+
+    # Quick Live Sync Bar
+    sync_c1, sync_c2 = st.columns([4.2, 1.2])
+    with sync_c2:
+        if st.button("⚡ Live Sync Real Data", key="btn_quick_live_sync", type="primary", use_container_width=True, help="Synchronize real data from campaigns, replies, and Excel sheets into Master DB"):
+            db_sync = SessionLocal()
+            try:
+                with st.spinner("Syncing live telemetry & campaign records..."):
+                    res = backfill_from_campaign_log(db_sync)
+                st.cache_data.clear()
+                st.toast(f"✅ Real data live synced! ({res['linked']} records verified)", icon="⚡")
+                st.rerun()
+            finally:
+                db_sync.close()
 
     # Master DB Sub-navigation
     tabs = st.tabs([
@@ -436,11 +505,7 @@ def render_master_db(df_logs: pd.DataFrame = None):
 def _render_tab_overview():
     """Renders executive KPI metrics, interactive Plotly charts, and system status."""
     is_dark = is_dark_mode()
-    db = SessionLocal()
-    try:
-        metrics = get_dashboard_metrics(db)
-    finally:
-        db.close()
+    metrics = fetch_cached_dashboard_metrics()
 
     total_leads = metrics.get("total_leads", 0)
     new_this_week = metrics.get("new_this_week", 0)
@@ -631,6 +696,7 @@ def _render_tab_overview():
                 try:
                     with st.spinner("Indexing and synchronizing leads into Master DB..."):
                         res = backfill_from_campaign_log(db)
+                    st.cache_data.clear()
                     st.success(f"✅ Sync Complete: **{res['created']}** leads created, **{res['updated']}** updated, **{res['linked']}** logs linked.")
                     st.rerun()
                 except Exception as ex:
@@ -645,132 +711,538 @@ def _render_tab_overview():
 # TAB 2: 👥 LEADS DIRECTORY (CRM View)
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_leads_directory():
-    """Renders search, filters, paginated table, and rich CRM profile inspector."""
-    is_dark = is_dark_mode()
+# ─────────────────────────────────────────────────────────────
+# TAB 2: 👥 LEADS DIRECTORY (CRM View: Hot / Warm / Cold Leads)
+# ─────────────────────────────────────────────────────────────
 
-    st.markdown("""
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <div>
-            <h2 style="margin:0 0 2px 0;font-size:19px;font-weight:700;color:var(--text-primary);letter-spacing:-0.015em;">👥 Enterprise Leads Directory</h2>
-            <p style="margin:0;font-size:13px;color:var(--text-muted);">Search, filter, and inspect leads across the unified master database.</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+def categorize_lead_temperature(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyzes real engagement telemetry and classifies lead into Hot, Warm, or Cold."""
+    opens = int(row.get("opens") or row.get("open_count") or 0)
+    clicks = int(row.get("clicks") or row.get("click_count") or 0)
+    replies = int(row.get("replies") or row.get("total_replies") or 0)
+    reply_body = str(row.get("reply_body") or "").strip()
+    reply_intent = str(row.get("reply_intent") or "").strip().lower()
+    booking_status = str(row.get("booking_status") or "").strip().lower()
+    status_lower = str(row.get("status") or "").strip().lower()
 
-    # Search and Filter Ribbon
-    f_col1, f_col2, f_col3, f_col4 = st.columns([3.2, 1.4, 1.2, 1.0])
-    with f_col1:
-        search_query = st.text_input(
-            "Search",
-            placeholder="🔍 Search by email, name, company, or job title...",
-            key="mdb_search_input",
-            label_visibility="collapsed",
-        )
-    with f_col2:
-        status_opts = ["all", "new", "active", "contacted", "replied", "booked", "unsubscribed", "bounced"]
-        status_filter = st.selectbox(
-            "Status",
-            status_opts,
-            format_func=lambda s: "All Statuses" if s == "all" else STATUS_CONFIG.get(s, {}).get("label", s.title()),
-            key="mdb_status_select",
-            label_visibility="collapsed",
-        )
-    with f_col3:
-        page_size = st.selectbox(
-            "Page Size",
-            [25, 50, 100],
-            index=1,
-            key="mdb_pagesize_select",
-            label_visibility="collapsed",
-        )
+    has_booked = booking_status in ["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed", "booked"]
+    has_replied = bool(
+        replies > 0
+        or (reply_body and reply_body.lower() not in ["none", "nan", "nat", "—", "-"])
+        or status_lower == "replied"
+    )
 
-    def _reset_mdb_filters():
-        st.session_state.mdb_search_input = ""
-        st.session_state.mdb_status_select = "all"
-        st.session_state.mdb_page = 1
+    score = 0.0
+    signals = []
 
-    with f_col4:
-        st.button("Reset", use_container_width=True, key="mdb_reset_filters", on_click=_reset_mdb_filters)
+    # 1. Bookings & Consultations
+    if has_booked:
+        score = 98.0
+        signals.append("📅 Meeting Booked")
 
-    if "mdb_page" not in st.session_state:
-        st.session_state.mdb_page = 1
+    # 2. Customer Replies
+    elif has_replied:
+        score = max(score, 92.0)
+        if reply_intent in ["interested", "positive_acknowledgement"]:
+            signals.append("💬 Replied: High Interest")
+        elif reply_intent == "reschedule":
+            signals.append("💬 Replied: Reschedule Request")
+        elif reply_intent == "question":
+            signals.append("💬 Replied: Asked Details")
+        elif reply_intent == "not_interested":
+            score = 30.0
+            signals.append("💬 Replied: Opt-out")
+        else:
+            signals.append("💬 Replied")
+
+    # 3. Link Clicks (Strong buying interest)
+    if clicks > 0:
+        c_score = 70.0 + min(20.0, clicks * 4.0)
+        score = max(score, c_score)
+        signals.append(f"🖱️ Clicked Link {clicks}x")
+
+    # 4. Email Opens
+    if opens > 0:
+        if score < 70.0:
+            score = max(score, 25.0 + min(35.0, opens * 8.0))
+        signals.append(f"👁️ Opened {opens}x")
+
+    # Cold default
+    if not signals:
+        score = 10.0
+        signals.append("Delivered • Unopened")
+
+    score = min(100.0, max(0.0, score))
+
+    # Accurate Tier Segmentation
+    if has_booked or (has_replied and reply_intent != "not_interested") or (clicks >= 2 or (clicks > 0 and opens >= 2)) or score >= 70.0:
+        tier = "HOT"
+        tier_display = "🔥 Hot"
+    elif opens > 0 or clicks > 0 or has_replied or score >= 25.0:
+        tier = "WARM"
+        tier_display = "⚡ Warm"
+    else:
+        tier = "COLD"
+        tier_display = "❄️ Cold"
+
+    activity_summary = " • ".join(signals)
+
+    return {
+        "tier": tier,
+        "tier_display": tier_display,
+        "score": int(round(score)),
+        "activity_summary": activity_summary,
+    }
+
+
+@st.cache_data(ttl=25, show_spinner=False)
+def load_enriched_master_data() -> pd.DataFrame:
+    """Loads all Master Leads with full telemetry, template assignments, and Excel metadata."""
+    from Backend.db import SessionLocal
+    from Backend.master_db_models import MasterLead, OutreachHistory
+    from Backend.models import CampaignLog
 
     db = SessionLocal()
     try:
-        result = get_leads_paginated(
-            db,
-            page=st.session_state.mdb_page,
-            page_size=page_size,
-            search=search_query if search_query.strip() else None,
-            status_filter=status_filter if status_filter != "all" else None,
-        )
+        leads = db.query(MasterLead).all()
+        oh_rows = db.query(OutreachHistory).order_by(OutreachHistory.created_at.desc()).all()
+        oh_map = {}
+        for oh in oh_rows:
+            if oh.master_lead_id and oh.master_lead_id not in oh_map:
+                oh_map[oh.master_lead_id] = oh
+
+        cl_rows = db.query(CampaignLog).order_by(CampaignLog.created_at.desc()).all()
+        cl_map = {}
+        for cl in cl_rows:
+            em = (cl.email or "").strip().lower()
+            if em and em not in cl_map:
+                cl_map[em] = cl
+
+        # Load leads.xlsx metadata if present
+        leads_meta = {}
+        if os.path.exists("leads.xlsx"):
+            try:
+                df_meta = pd.read_excel("leads.xlsx")
+                for _, r in df_meta.iterrows():
+                    em_raw = r.get("email") or r.get("Email ID") or r.get("emails")
+                    if pd.notna(em_raw):
+                        em = str(em_raw).strip().lower()
+                        if "@" in em and em not in leads_meta:
+                            pos = r.get("Position") or r.get("job_title")
+                            co = r.get("Company Name") or r.get("company")
+                            fn = r.get("Full Name") or r.get("name")
+                            leads_meta[em] = {
+                                "job_title": str(pos).strip() if pd.notna(pos) and str(pos).strip().lower() not in ("nan", "none", "") else "",
+                                "company": str(co).strip() if pd.notna(co) and str(co).strip().lower() not in ("nan", "none", "") else "",
+                                "name": str(fn).strip() if pd.notna(fn) and str(fn).strip().lower() not in ("nan", "none", "") else "",
+                            }
+            except Exception:
+                pass
+
+        data = []
+        for l in leads:
+            em_norm = (l.email_normalized or l.email or "").strip().lower()
+            oh = oh_map.get(l.id)
+            cl = cl_map.get(em_norm)
+            meta = leads_meta.get(em_norm, {})
+
+            tpl_name = (oh.template_name if oh else None) or (cl.template_name if cl else None) or "Template 1: Forward Deployed AI Engineers"
+            tpl_id = (oh.template_id if oh else None) or (cl.template_id if cl else None) or ""
+
+            reply_b = (cl.reply_body if cl else None) or ""
+            reply_int = (cl.reply_intent if cl else None) or (l.intent or "")
+            booking_st = l.booking_status or (cl.booking_status if cl else "") or ""
+            sent_time = l.last_contacted_at or (cl.email_sent_at if cl else None)
+
+            full_n = meta.get("name") or l.full_name or ((l.first_name or "") + " " + (l.last_name or "")).strip() or (cl.name if cl else "") or "—"
+            comp_n = meta.get("company") or l.company or (cl.company if cl else "") or "—"
+            job_t = meta.get("job_title") or l.job_title or "—"
+
+            row_dict = {
+                "id": l.id,
+                "email": l.email,
+                "name": full_n,
+                "company": comp_n,
+                "job_title": job_t,
+                "status": (l.current_status or "new").title(),
+                "template_name": tpl_name,
+                "template_id": tpl_id,
+                "opens": int(l.total_opens or 0),
+                "clicks": int(l.total_clicks or 0),
+                "replies": int(l.total_replies or 0),
+                "booking_status": booking_st,
+                "reply_body": reply_b,
+                "reply_intent": reply_int,
+                "last_contacted_at": sent_time,
+                "created_at": l.created_at,
+            }
+            temp_info = categorize_lead_temperature(row_dict)
+            row_dict.update(temp_info)
+            data.append(row_dict)
     finally:
         db.close()
 
-    leads = result["leads"]
-    total_count = result["total"]
-    total_pages = result["total_pages"]
+    return pd.DataFrame(data) if data else pd.DataFrame()
 
-    # Table Header Metrics
-    st.markdown(f"""
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-subtle);margin-bottom:10px;">
-        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);">
-            Showing <strong style="color:var(--text-primary);">{len(leads)}</strong> of <strong style="color:var(--text-primary);">{total_count:,}</strong> records
-        </span>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);">
-            Page <strong>{st.session_state.mdb_page}</strong> of <strong>{total_pages}</strong>
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
 
-    if leads:
-        table_rows = []
-        for l in leads:
-            name_val = l.get("full_name") or f"{l.get('first_name', '') or ''} {l.get('last_name', '') or ''}".strip() or "—"
-            table_rows.append({
-                "ID": l["id"][:8],
-                "Name": name_val,
-                "Email": l["email"],
-                "Company": l.get("company") or "—",
-                "Job Title": l.get("job_title") or "—",
-                "Status": l.get("current_status", "new").title(),
-                "Sent": l.get("total_emails_sent", 0),
-                "Replies": l.get("total_replies", 0),
-                "Score": round(float(l.get("engagement_score") or 0.0), 1),
-                "Booking": l.get("booking_status") or "—",
-                "Ingested": l.get("created_at")[:10] if l.get("created_at") else "—",
-            })
-        df_view = pd.DataFrame(table_rows)
+def generate_excel_export_bytes(df: pd.DataFrame, sheet_name: str = "Leads") -> bytes:
+    """Generates an executive-formatted .xlsx Excel spreadsheet."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+        worksheet = writer.sheets[sheet_name[:31]]
+        for col in worksheet.columns:
+            max_len = 0
+            for cell in col:
+                val_str = str(cell.value or "")
+                if len(val_str) > max_len:
+                    max_len = len(val_str)
+            col_letter = col[0].column_letter
+            worksheet.column_dimensions[col_letter].width = min(max(max_len + 3, 11), 50)
+    return output.getvalue()
 
-        st.dataframe(
-            df_view,
-            use_container_width=True,
-            hide_index=True,
-            height=400,
-            column_config={
-                "ID": st.column_config.TextColumn("ID", width="small"),
-                "Score": st.column_config.ProgressColumn("Engagement", min_value=0, max_value=100, format="%.0f"),
-                "Sent": st.column_config.NumberColumn("Sent", format="%d"),
-                "Replies": st.column_config.NumberColumn("Replies", format="%d"),
-            }
+
+def build_clean_dataframe(df_source: pd.DataFrame) -> pd.DataFrame:
+    """Builds clean, structured dataframe formatted for display and export."""
+    if df_source.empty:
+        return pd.DataFrame()
+
+    df_out = df_source.copy()
+
+    df_out["opens"] = df_out["opens"].fillna(0).astype(int)
+    df_out["clicks"] = df_out["clicks"].fillna(0).astype(int)
+
+    df_out["reply_preview"] = df_out["reply_body"].apply(
+        lambda x: (str(x)[:95] + "...") if pd.notna(x) and str(x).strip() and str(x).lower() not in ["none", "nan", "—", "-"] else "—"
+    )
+
+    df_out["template"] = df_out["template_name"].apply(
+        lambda x: str(x).split(":")[0] if pd.notna(x) and ":" in str(x) else str(x)
+    )
+
+    def _clean_display(val, default="—"):
+        if val is None or pd.isna(val):
+            return default
+        s = str(val).strip()
+        if s.lower() in ("nan", "none", "nat", "", "—"):
+            return default
+        return s
+
+    df_out["job_title"] = df_out["job_title"].apply(_clean_display)
+    df_out["company"] = df_out["company"].apply(lambda x: _clean_display(x, "Unknown Company"))
+    df_out["name"] = df_out["name"].apply(lambda x: _clean_display(x, "Lead Contact"))
+    df_out["status"] = df_out["status"].apply(lambda x: _clean_display(x, "Sent").capitalize())
+
+    cols_order = [
+        c for c in [
+            "tier_display",
+            "score",
+            "company",
+            "name",
+            "job_title",
+            "email",
+            "template",
+            "opens",
+            "clicks",
+            "activity_summary",
+            "reply_preview",
+            "status",
+        ] if c in df_out.columns
+    ]
+    return df_out[cols_order]
+
+
+def _render_tab_leads_directory():
+    """Renders template-wise lead segmentation into Hot, Warm, and Cold leads with Excel sheet export."""
+    is_dark = is_dark_mode()
+    templates = load_all_templates()
+
+    # Load authentic enriched master lead records
+    enriched_df = load_enriched_master_data()
+
+    if enriched_df.empty:
+        st.info("No leads found in the database. Ingest leads via the **Lead Ingestion & Deduplication** tab.")
+        return
+
+    # ── Top Filter Ribbon ──
+    total_leads_in_db = len(enriched_df)
+    template_choices = {"__all__": f"🌐 All Templates ({total_leads_in_db} leads)"}
+
+    for tpl in templates:
+        t_id = tpl.get("id")
+        t_name = tpl.get("name", t_id)
+        num_match = re.search(r"Template (\d+)", t_name) or re.search(r"(\d+)", t_id)
+        t_num = num_match.group(1) if num_match else ""
+        mask = (
+            (enriched_df["template_id"] == t_id)
+            | (enriched_df["template_name"] == t_name)
+            | (enriched_df["template_name"].str.contains(t_id, na=False, case=False))
+        )
+        if t_num:
+            mask = mask | (enriched_df["template_name"].str.contains(f"Template {t_num}", na=False, case=False))
+        lead_count = int(mask.sum())
+        template_choices[t_id] = f"{t_name} ({lead_count} leads)"
+
+    col_tpl, col_search, col_score = st.columns([2.8, 2.0, 1.2])
+
+    with col_tpl:
+        default_tpl_id = st.query_params.get("template", "__all__")
+        if default_tpl_id not in template_choices:
+            default_tpl_id = "__all__"
+
+        selected_tpl = st.selectbox(
+            "Filter Outreach Template:",
+            options=list(template_choices.keys()),
+            format_func=lambda x: template_choices[x],
+            index=list(template_choices.keys()).index(default_tpl_id),
+            key="mdb_tpl_select",
+        )
+        if selected_tpl != st.query_params.get("template"):
+            st.query_params["template"] = selected_tpl
+
+    with col_search:
+        search_kw = st.text_input(
+            "Search Real Database:",
+            placeholder="Search company, contact name, or email...",
+            key="mdb_search_kw",
+        ).strip().lower()
+
+    with col_score:
+        min_score = st.slider(
+            "Min Lead Score:",
+            min_value=0,
+            max_value=100,
+            value=0,
+            step=5,
+            key="mdb_score_slider",
         )
 
-        # Pagination Bar
-        p_prev, p_info, p_next = st.columns([1.2, 2.6, 1.2])
-        with p_prev:
-            if st.button("← Previous", disabled=st.session_state.mdb_page <= 1, use_container_width=True, key="btn_pg_prev"):
-                st.session_state.mdb_page -= 1
-                st.rerun()
-        with p_info:
-            st.markdown(f"<div style='text-align:center;padding-top:6px;font-size:12px;color:var(--text-muted);font-family:\"JetBrains Mono\";'>Viewing batch {st.session_state.mdb_page} / {total_pages}</div>", unsafe_allow_html=True)
-        with p_next:
-            if st.button("Next →", disabled=st.session_state.mdb_page >= total_pages, use_container_width=True, key="btn_pg_next"):
-                st.session_state.mdb_page += 1
-                st.rerun()
+    # ── Instant Filtering ──
+    filtered_df = enriched_df.copy()
 
-        # ── Sleek Lead Detail Viewer (CRM Profile Inspector) ──
-        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+    if selected_tpl != "__all__":
+        t_obj = next((t for t in templates if t.get("id") == selected_tpl), {})
+        t_name = t_obj.get("name", selected_tpl)
+        num_match = re.search(r"(\d+)", selected_tpl) or re.search(r"Template (\d+)", t_name)
+        t_num = num_match.group(1) if num_match else ""
+
+        mask = (
+            (filtered_df["template_id"] == selected_tpl)
+            | (filtered_df["template_name"] == t_name)
+            | (filtered_df["template_name"].str.contains(selected_tpl, na=False, case=False))
+        )
+        if t_num:
+            mask = mask | (filtered_df["template_name"].str.contains(f"Template {t_num}", na=False, case=False))
+        filtered_df = filtered_df[mask]
+
+    if min_score > 0:
+        filtered_df = filtered_df[filtered_df["score"] >= min_score]
+
+    if search_kw:
+        s_mask = (
+            filtered_df["name"].astype(str).str.lower().str.contains(search_kw)
+            | filtered_df["company"].astype(str).str.lower().str.contains(search_kw)
+            | filtered_df["email"].astype(str).str.lower().str.contains(search_kw)
+            | filtered_df["activity_summary"].astype(str).str.lower().str.contains(search_kw)
+        )
+        if "job_title" in filtered_df.columns:
+            s_mask = s_mask | filtered_df["job_title"].astype(str).str.lower().str.contains(search_kw)
+        filtered_df = filtered_df[s_mask]
+
+    # Segmentation into Tiers
+    hot_df = filtered_df[filtered_df["tier"] == "HOT"].copy()
+    warm_df = filtered_df[filtered_df["tier"] == "WARM"].copy()
+    cold_df = filtered_df[filtered_df["tier"] == "COLD"].copy()
+
+    hot_count = len(hot_df)
+    warm_count = len(warm_df)
+    cold_count = len(cold_df)
+    total_count = len(filtered_df)
+
+    col_config = {
+        "tier_display": st.column_config.TextColumn("Tier", width="small"),
+        "score": st.column_config.ProgressColumn("Lead Score", min_value=0, max_value=100, format="%d", width="small"),
+        "company": st.column_config.TextColumn("Company", width="medium"),
+        "name": st.column_config.TextColumn("Contact Name", width="medium"),
+        "job_title": st.column_config.TextColumn("Role / Title", width="medium"),
+        "email": st.column_config.TextColumn("Email Address", width="medium"),
+        "template": st.column_config.TextColumn("Template", width="small"),
+        "opens": st.column_config.NumberColumn("Opens", width="small"),
+        "clicks": st.column_config.NumberColumn("Clicks", width="small"),
+        "activity_summary": st.column_config.TextColumn("Engagement Signals", width="large"),
+        "reply_preview": st.column_config.TextColumn("Customer Reply Preview", width="large"),
+        "status": st.column_config.TextColumn("Status", width="small"),
+    }
+
+    # ── Tabs: Hot Leads, Warm Leads, Cold Leads, All Leads ──
+    tab_hot, tab_warm, tab_cold, tab_all = st.tabs([
+        f"🔥 Hot Leads ({hot_count})",
+        f"⚡ Warm Leads ({warm_count})",
+        f"❄️ Cold Leads ({cold_count})",
+        f"📋 All Leads ({total_count})",
+    ])
+
+    # 1. TAB: HOT LEADS
+    with tab_hot:
+        if hot_df.empty:
+            st.info("No Hot leads found under the current selection.")
+        else:
+            h_df_sorted = hot_df.sort_values(by=["score", "opens"], ascending=False)
+            h_clean = build_clean_dataframe(h_df_sorted)
+
+            row_top_h1, row_top_h2, row_top_h3 = st.columns([3.0, 1.4, 0.9])
+            with row_top_h1:
+                st.caption(f"Showing **{len(h_clean)}** high-intent leads who replied to emails or clicked engagement links:")
+            with row_top_h2:
+                xlsx_h = generate_excel_export_bytes(h_clean, sheet_name="Hot Leads")
+                st.download_button(
+                    label="📥 Export Hot Leads (Excel)",
+                    data=xlsx_h,
+                    file_name="hot_leads.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_hot_clean_xlsx",
+                    use_container_width=True,
+                )
+            with row_top_h3:
+                csv_h = h_clean.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📄 CSV",
+                    data=csv_h,
+                    file_name="hot_leads.csv",
+                    mime="text/csv",
+                    key="dl_hot_clean_csv",
+                    use_container_width=True,
+                )
+
+            st.dataframe(
+                h_clean,
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+                column_config=col_config,
+            )
+
+    # 2. TAB: WARM LEADS
+    with tab_warm:
+        if warm_df.empty:
+            st.info("No Warm leads found under the current selection.")
+        else:
+            w_df_sorted = warm_df.sort_values(by=["score", "opens"], ascending=False)
+            w_clean = build_clean_dataframe(w_df_sorted)
+
+            row_top_w1, row_top_w2, row_top_w3 = st.columns([3.0, 1.4, 0.9])
+            with row_top_w1:
+                st.caption(f"Showing **{len(w_clean)}** active consideration leads who opened emails or clicked once:")
+            with row_top_w2:
+                xlsx_w = generate_excel_export_bytes(w_clean, sheet_name="Warm Leads")
+                st.download_button(
+                    label="📥 Export Warm Leads (Excel)",
+                    data=xlsx_w,
+                    file_name="warm_leads.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_warm_clean_xlsx",
+                    use_container_width=True,
+                )
+            with row_top_w3:
+                csv_w = w_clean.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📄 CSV",
+                    data=csv_w,
+                    file_name="warm_leads.csv",
+                    mime="text/csv",
+                    key="dl_warm_clean_csv",
+                    use_container_width=True,
+                )
+
+            st.dataframe(
+                w_clean,
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+                column_config=col_config,
+            )
+
+    # 3. TAB: COLD LEADS
+    with tab_cold:
+        if cold_df.empty:
+            st.info("No Cold leads found under the current selection.")
+        else:
+            c_clean = build_clean_dataframe(cold_df)
+
+            row_top_c1, row_top_c2, row_top_c3 = st.columns([3.0, 1.4, 0.9])
+            with row_top_c1:
+                st.caption(f"Showing **{len(c_clean)}** leads awaiting first open or response:")
+            with row_top_c2:
+                xlsx_c = generate_excel_export_bytes(c_clean, sheet_name="Cold Leads")
+                st.download_button(
+                    label="📥 Export Cold Leads (Excel)",
+                    data=xlsx_c,
+                    file_name="cold_leads.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_cold_clean_xlsx",
+                    use_container_width=True,
+                )
+            with row_top_c3:
+                csv_c = c_clean.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📄 CSV",
+                    data=csv_c,
+                    file_name="cold_leads.csv",
+                    mime="text/csv",
+                    key="dl_cold_clean_csv",
+                    use_container_width=True,
+                )
+
+            st.dataframe(
+                c_clean,
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+                column_config=col_config,
+            )
+
+    # 4. TAB: ALL LEADS
+    with tab_all:
+        if filtered_df.empty:
+            st.info("No leads match the current filters.")
+        else:
+            all_clean = build_clean_dataframe(filtered_df)
+
+            row_top_a1, row_top_a2, row_top_a3 = st.columns([3.0, 1.4, 0.9])
+            with row_top_a1:
+                st.caption(f"Showing all **{len(all_clean)}** real database records:")
+            with row_top_a2:
+                xlsx_all = generate_excel_export_bytes(all_clean, sheet_name="All Leads")
+                st.download_button(
+                    label="📥 Export All Leads (Excel)",
+                    data=xlsx_all,
+                    file_name="all_leads_master_db.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_all_clean_xlsx",
+                    use_container_width=True,
+                )
+            with row_top_a3:
+                csv_all = all_clean.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📄 CSV",
+                    data=csv_all,
+                    file_name="all_leads_master_db.csv",
+                    mime="text/csv",
+                    key="dl_all_clean_csv",
+                    use_container_width=True,
+                )
+
+            st.dataframe(
+                all_clean,
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+                column_config=col_config,
+            )
+
+    # ── Sleek Lead Detail Viewer (CRM Profile Inspector) ──
+    if not filtered_df.empty:
+        st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
         st.markdown("""
         <div class="mdb-card-title">
             <span>🔎 Deep CRM Lead Inspection Profile</span>
@@ -778,7 +1250,8 @@ def _render_tab_leads_directory():
         </div>
         """, unsafe_allow_html=True)
 
-        lead_choices = [f"{l['email']}  ({l.get('company') or 'No Company'})" for l in leads]
+        lead_records = filtered_df.to_dict(orient="records")
+        lead_choices = [f"{l['email']}  ({l.get('company') or 'No Company'})" for l in lead_records]
         selected_lead_idx = st.selectbox(
             "Select lead to inspect",
             range(len(lead_choices)),
@@ -788,21 +1261,14 @@ def _render_tab_leads_directory():
         )
 
         if selected_lead_idx is not None:
-            chosen_lead_id = leads[selected_lead_idx]["id"]
+            chosen_lead_id = lead_records[selected_lead_idx]["id"]
             _render_lead_profile_card(chosen_lead_id)
-
-    else:
-        st.info("No leads match your search criteria. Try a different query or upload leads via the **Lead Ingestion & Deduplication** tab.")
 
 
 def _render_lead_profile_card(lead_id: str):
     """Renders an ultra-premium CRM profile card for a single lead."""
     is_dark = is_dark_mode()
-    db = SessionLocal()
-    try:
-        detail = get_lead_detail(db, lead_id)
-    finally:
-        db.close()
+    detail = fetch_cached_lead_detail(lead_id)
 
     if not detail:
         st.warning("Lead record not found.")
@@ -915,23 +1381,17 @@ def _render_lead_profile_card(lead_id: str):
     with c_tl:
         timeline = detail.get("timeline", [])
         if timeline:
-            st.markdown("""
-            <div class="mdb-card">
-                <div class="mdb-card-title">
-                    <span>🕐 Chronological Event Stream</span>
-                </div>
-                <div class="mdb-timeline-wrap">
-            """, unsafe_allow_html=True)
             icon_map = {
                 "lead_imported": "📥", "assigned_to_chunk": "📦", "template_assigned": "🏷️",
                 "email_sent": "📧", "email_opened": "👁️", "link_clicked": "🔗",
                 "reply_received": "💬", "meeting_booked": "🎯", "status_changed": "🔄",
             }
+            ev_items = []
             for ev in timeline[:12]:
                 ev_icon = icon_map.get(ev.get("type"), "•")
                 ev_ts = ev.get("created_at")[:16].replace("T", " ") if ev.get("created_at") else ""
                 desc = ev.get("description") or ev.get("type", "").replace("_", " ").title()
-                st.markdown(f"""
+                ev_items.append(f"""
                 <div class="mdb-timeline-row">
                     <div class="mdb-timeline-dot">{ev_icon}</div>
                     <div class="mdb-timeline-box">
@@ -941,32 +1401,45 @@ def _render_lead_profile_card(lead_id: str):
                         </div>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
-            st.markdown("</div></div>", unsafe_allow_html=True)
+                """)
+            tl_html = f"""
+            <div class="mdb-card">
+                <div class="mdb-card-title">
+                    <span>🕐 Chronological Event Stream</span>
+                </div>
+                <div class="mdb-timeline-wrap">
+                    {''.join(ev_items)}
+                </div>
+            </div>
+            """
+            st.markdown(clean_html(tl_html), unsafe_allow_html=True)
 
     with c_chk:
         chunks = detail.get("chunks", [])
         if chunks:
-            st.markdown("""
-            <div class="mdb-card">
-                <div class="mdb-card-title">
-                    <span>📦 Chunk Memberships</span>
-                </div>
-            """, unsafe_allow_html=True)
+            chunk_items = []
             for ch in chunks:
                 ch_status = render_status_badge(ch.get("status", "READY"))
-                elig_txt = "<span style='color:#10B981;'>● Eligible</span>" if ch.get("eligible") else "<span style='color:#EF4444;'>● Excluded (Dup)</span>"
-                st.markdown(f"""
+                elig_txt = "<span style='color:#10B981;font-weight:600;'>● Eligible</span>" if ch.get("eligible") else "<span style='color:#EF4444;font-weight:600;'>● Excluded (Dup)</span>"
+                chunk_items.append(f"""
                 <div style="padding:10px 0;border-bottom:1px solid var(--border-subtle);font-size:12.5px;">
                     <div style="font-weight:700;color:var(--text-primary);">{ch.get('chunk_name')}</div>
                     <div style="font-size:11.5px;color:var(--text-muted);margin:3px 0;">Template: {ch.get('template_name') or 'Pending'}</div>
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
                         {ch_status}
                         <span style="font-size:11px;">{elig_txt}</span>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+                """)
+            chk_html = f"""
+            <div class="mdb-card">
+                <div class="mdb-card-title">
+                    <span>📦 Chunk Memberships</span>
+                </div>
+                {''.join(chunk_items)}
+            </div>
+            """
+            st.markdown(clean_html(chk_html), unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1153,6 +1626,7 @@ def _render_tab_ingestion():
                     - Chunks Generated: **{res['chunks_created']}** (Size: {res['chunk_size']})
                     """)
                     st.balloons()
+                    st.cache_data.clear()
                     for k in ["mdb_active_preview", "mdb_raw_df", "mdb_file_name", "mdb_file_type",
                               "mdb_chosen_chunk_size", "mdb_chosen_tpl_id", "mdb_chosen_tpl_name"]:
                         if k in st.session_state:
@@ -1174,11 +1648,7 @@ def _render_tab_chunks():
     </div>
     """, unsafe_allow_html=True)
 
-    db = SessionLocal()
-    try:
-        chunks = get_all_chunks(db)
-    finally:
-        db.close()
+    chunks = fetch_cached_chunks()
 
     if not chunks:
         st.info("No chunks created yet. Import leads via the **Lead Ingestion & Deduplication** tab to generate chunks automatically.")
@@ -1305,6 +1775,7 @@ def _render_tab_chunks():
                         st.error(res["error"])
                     else:
                         st.success(f"✅ Template assigned! {res['eligible_leads']} leads eligible, {res['duplicate_template_leads']} duplicates excluded.")
+                        st.cache_data.clear()
                         st.rerun()
 
             # Lifecycle Transition Controls
@@ -1318,6 +1789,7 @@ def _render_tab_chunks():
                             transition_chunk_status(db, chunk_id, "READY")
                         finally:
                             db.close()
+                        st.cache_data.clear()
                         st.rerun()
 
                 elif chunk["processing_status"] == "READY":
@@ -1327,6 +1799,7 @@ def _render_tab_chunks():
                             transition_chunk_status(db, chunk_id, "PROCESSING")
                         finally:
                             db.close()
+                        st.cache_data.clear()
                         st.rerun()
 
             with t_col2:
@@ -1337,6 +1810,7 @@ def _render_tab_chunks():
                             transition_chunk_status(db, chunk_id, "PAUSED")
                         finally:
                             db.close()
+                        st.cache_data.clear()
                         st.rerun()
                     if st.button("✅ Mark Completed", use_container_width=True, key=f"btn_comp_{chunk_id}"):
                         db = SessionLocal()
@@ -1344,6 +1818,7 @@ def _render_tab_chunks():
                             transition_chunk_status(db, chunk_id, "COMPLETED")
                         finally:
                             db.close()
+                        st.cache_data.clear()
                         st.rerun()
 
         # Chunk Leads Inspection
@@ -1385,11 +1860,7 @@ def _render_tab_templates():
     </div>
     """, unsafe_allow_html=True)
 
-    db = SessionLocal()
-    try:
-        chunks = get_all_chunks(db)
-    finally:
-        db.close()
+    chunks = fetch_cached_chunks()
 
     assigned_chunks = [c for c in chunks if c.get("template_name")]
     unassigned_chunks = [c for c in chunks if not c.get("template_name")]
@@ -1473,11 +1944,7 @@ def _render_tab_import_history():
     </div>
     """, unsafe_allow_html=True)
 
-    db = SessionLocal()
-    try:
-        imports = get_all_imports(db)
-    finally:
-        db.close()
+    imports = fetch_cached_imports()
 
     if not imports:
         st.info("No batch imports recorded yet.")
@@ -1551,21 +2018,7 @@ def _render_tab_activity_timeline():
     </div>
     """, unsafe_allow_html=True)
 
-    db = SessionLocal()
-    try:
-        activities = db.query(LeadActivity).order_by(LeadActivity.created_at.desc()).limit(150).all()
-        act_rows = []
-        for a in activities:
-            lead = db.query(MasterLead).filter(MasterLead.id == a.master_lead_id).first()
-            act_rows.append({
-                "type": a.activity_type,
-                "desc": a.description,
-                "email": lead.email if lead else "—",
-                "name": lead.full_name if lead else "—",
-                "ts": a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else "",
-            })
-    finally:
-        db.close()
+    act_rows = fetch_cached_recent_activities(limit=50)
 
     if not act_rows:
         st.info("No activity recorded yet.")
@@ -1608,11 +2061,7 @@ def _render_tab_audit_log():
     </div>
     """, unsafe_allow_html=True)
 
-    db = SessionLocal()
-    try:
-        logs = get_audit_log(db, limit=200)
-    finally:
-        db.close()
+    logs = fetch_cached_audit_log(limit=200)
 
     if not logs:
         st.info("No audit logs recorded yet.")

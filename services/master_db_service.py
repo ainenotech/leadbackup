@@ -4,6 +4,7 @@ chunking, template assignment, outreach history, activity timeline, and audit lo
 All functions accept a SQLAlchemy Session and return plain dicts or model instances.
 """
 
+import os
 import math
 import re
 import uuid
@@ -762,41 +763,57 @@ def assign_template_to_chunk(
 # ─────────────────────────────────────────────────────────────
 
 def get_dashboard_metrics(db: Session) -> Dict:
-    """Aggregated overview metrics for the CEO dashboard."""
+    """Aggregated overview metrics for the CEO dashboard (optimized single-batch queries)."""
     from datetime import timedelta
 
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
 
-    total = db.query(func.count(MasterLead.id)).scalar() or 0
-    new_this_week = db.query(func.count(MasterLead.id)).filter(
-        MasterLead.created_at >= week_ago
-    ).scalar() or 0
+    # Combined aggregates for master leads
+    lead_totals = db.query(
+        func.count(MasterLead.id),
+        func.count(MasterLead.id).filter(MasterLead.created_at >= week_ago),
+        func.coalesce(func.sum(MasterLead.total_emails_sent), 0),
+        func.count(MasterLead.id).filter(MasterLead.total_replies > 0),
+        func.count(MasterLead.id).filter(
+            MasterLead.booking_status.in_(["scheduled", "confirmed", "meeting_scheduled", "booked"])
+        )
+    ).first()
 
-    status_counts = {}
-    for status_val in ["new", "active", "contacted", "replied", "booked", "unsubscribed", "bounced"]:
-        cnt = db.query(func.count(MasterLead.id)).filter(
-            MasterLead.current_status == status_val
-        ).scalar() or 0
-        status_counts[status_val] = cnt
+    total = lead_totals[0] or 0
+    new_this_week = lead_totals[1] or 0
+    total_sent = lead_totals[2] or 0
+    total_replies = lead_totals[3] or 0
+    total_booked = lead_totals[4] or 0
 
-    # Import stats
-    total_imports = db.query(func.count(LeadImport.id)).scalar() or 0
-    total_dup_records = db.query(func.coalesce(func.sum(LeadImport.duplicates), 0)).scalar() or 0
+    # Status counts in ONE single group-by query
+    sc_raw = db.query(MasterLead.current_status, func.count(MasterLead.id)).group_by(MasterLead.current_status).all()
+    status_counts = {s: 0 for s in ["new", "active", "contacted", "replied", "booked", "unsubscribed", "bounced"]}
+    for s_val, cnt in sc_raw:
+        if s_val in status_counts:
+            status_counts[s_val] = cnt
+        elif s_val:
+            status_counts[s_val] = cnt
 
-    # Chunk pipeline
-    chunk_statuses = {}
-    for s in ["AWAITING_TEMPLATE", "TEMPLATE_ASSIGNED", "READY", "PROCESSING", "COMPLETED",
-              "PARTIALLY_COMPLETED", "FAILED", "PAUSED", "CANCELLED"]:
-        cnt = db.query(func.count(LeadChunk.id)).filter(LeadChunk.processing_status == s).scalar() or 0
-        chunk_statuses[s] = cnt
+    # Import stats in one query
+    imp_totals = db.query(
+        func.count(LeadImport.id),
+        func.coalesce(func.sum(LeadImport.duplicates), 0)
+    ).first()
+    total_imports = imp_totals[0] or 0
+    total_dup_records = imp_totals[1] or 0
 
-    # Outreach stats
-    total_sent = db.query(func.coalesce(func.sum(MasterLead.total_emails_sent), 0)).scalar() or 0
-    total_replies = db.query(func.count(MasterLead.id)).filter(MasterLead.total_replies > 0).scalar() or 0
-    total_booked = db.query(func.count(MasterLead.id)).filter(
-        MasterLead.booking_status.in_(["scheduled", "confirmed", "meeting_scheduled", "booked"])
-    ).scalar() or 0
+    # Chunk pipeline in ONE single group-by query
+    cp_raw = db.query(LeadChunk.processing_status, func.count(LeadChunk.id)).group_by(LeadChunk.processing_status).all()
+    chunk_statuses = {s: 0 for s in [
+        "AWAITING_TEMPLATE", "TEMPLATE_ASSIGNED", "READY", "PROCESSING", "COMPLETED",
+        "PARTIALLY_COMPLETED", "FAILED", "PAUSED", "CANCELLED"
+    ]}
+    for c_status, cnt in cp_raw:
+        if c_status in chunk_statuses:
+            chunk_statuses[c_status] = cnt
+        elif c_status:
+            chunk_statuses[c_status] = cnt
 
     return {
         "total_leads": total,
@@ -909,36 +926,74 @@ def get_lead_detail(db: Session, lead_id: str) -> Optional[Dict]:
     # Activity timeline
     activities = db.query(LeadActivity).filter(
         LeadActivity.master_lead_id == lead.id
-    ).order_by(LeadActivity.created_at.desc()).limit(100).all()
+    ).order_by(LeadActivity.created_at.desc()).limit(50).all()
     detail["timeline"] = [
         {
             "id": a.id,
             "type": a.activity_type,
             "description": a.description,
-            "metadata": a.metadata,
+            "metadata": a.event_metadata,
             "created_at": a.created_at.isoformat() if a.created_at else None,
         }
         for a in activities
     ]
 
-    # Chunk memberships
-    memberships = db.query(LeadChunkMember).filter(
-        LeadChunkMember.master_lead_id == lead.id
-    ).all()
-    chunks_info = []
-    for m in memberships:
-        chunk = db.query(LeadChunk).filter(LeadChunk.id == m.chunk_id).first()
-        if chunk:
-            chunks_info.append({
-                "chunk_id": chunk.id,
-                "chunk_name": chunk.chunk_name,
-                "template_name": chunk.template_name,
-                "status": chunk.processing_status,
-                "eligible": m.eligible,
-            })
-    detail["chunks"] = chunks_info
+    # Chunk memberships in ONE joined query instead of N+1
+    memberships = (
+        db.query(
+            LeadChunkMember.eligible,
+            LeadChunk.id,
+            LeadChunk.chunk_name,
+            LeadChunk.template_name,
+            LeadChunk.processing_status,
+        )
+        .join(LeadChunk, LeadChunkMember.chunk_id == LeadChunk.id)
+        .filter(LeadChunkMember.master_lead_id == lead.id)
+        .all()
+    )
+    detail["chunks"] = [
+        {
+            "chunk_id": m[1],
+            "chunk_name": m[2],
+            "template_name": m[3],
+            "status": m[4],
+            "eligible": m[0],
+        }
+        for m in memberships
+    ]
 
     return detail
+
+
+def get_recent_activities(db: Session, limit: int = 50) -> List[Dict]:
+    """Returns recent activities with MasterLead email and name joined in a single fast query.
+    Replaces the legacy N+1 query loop for lightning-fast rendering.
+    """
+    rows = (
+        db.query(
+            LeadActivity.id,
+            LeadActivity.activity_type,
+            LeadActivity.description,
+            LeadActivity.created_at,
+            MasterLead.email,
+            MasterLead.full_name,
+        )
+        .outerjoin(MasterLead, LeadActivity.master_lead_id == MasterLead.id)
+        .order_by(LeadActivity.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": r[0],
+            "type": r[1],
+            "desc": r[2],
+            "ts": r[3].strftime("%Y-%m-%d %H:%M") if r[3] else "",
+            "email": r[4] or "—",
+            "name": r[5] or "—",
+        }
+        for r in rows
+    ]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1038,7 +1093,8 @@ def get_audit_log(db: Session, limit: int = 200, entity_type: str = None) -> Lis
 
 def backfill_from_campaign_log(db: Session) -> Dict:
     """Full synchronization: syncs MasterLead, LeadImport, LeadChunk, OutreachHistory,
-    and LeadActivity from existing campaign_log rows and leads.xlsx using fast in-memory batching.
+    and LeadActivity from existing campaign_log rows, leads.xlsx, and customer_replies.xlsx
+    using idempotent, fast in-memory batching.
     """
     from Backend.models import CampaignLog
 
@@ -1046,20 +1102,41 @@ def backfill_from_campaign_log(db: Session) -> Dict:
     if not camp_logs:
         return {"created": 0, "updated": 0, "linked": 0}
 
+    # Group campaign logs by normalized email
+    logs_by_email = {}
+    for r in camp_logs:
+        if not r.email:
+            continue
+        em = normalize_email(r.email)
+        logs_by_email.setdefault(em, []).append(r)
+
     # Load rich metadata from leads.xlsx if present
     leads_meta = {}
     try:
         if os.path.exists("leads.xlsx"):
             df_leads = pd.read_excel("leads.xlsx")
             for _, r in df_leads.iterrows():
-                em = str(r.get("email", "")).strip().lower()
+                em_raw = r.get("email") or r.get("Email ID") or r.get("emails")
+                em = normalize_email(str(em_raw)) if pd.notna(em_raw) else ""
                 if em and "@" in em:
+                    full_nm = r.get("Full Name") or r.get("name")
+                    co_nm = r.get("Company Name") or r.get("company")
+                    pos = r.get("Position") or r.get("job_title")
+                    phone_val = r.get("Mobile No") or r.get("phone_numbers")
+                    links_val = r.get("links") or r.get("linkedin_url")
+                    ind_val = r.get("company_industries") or r.get("industry")
+                    loc_val = r.get("location")
+                    stage_val = r.get("last_deal_stage")
+
                     leads_meta[em] = {
-                        "job_title": None if pd.isna(r.get("job_title")) else str(r.get("job_title")),
-                        "location": None if pd.isna(r.get("location")) else str(r.get("location")),
-                        "linkedin_url": None if pd.isna(r.get("links")) else str(r.get("links")),
-                        "phone": None if pd.isna(r.get("phone_numbers") or r.get("Mobile No")) else str(r.get("phone_numbers") or r.get("Mobile No")),
-                        "industry": None if pd.isna(r.get("company_industries")) else str(r.get("company_industries")),
+                        "full_name": None if pd.isna(full_nm) else str(full_nm).strip(),
+                        "company": None if pd.isna(co_nm) else str(co_nm).strip(),
+                        "job_title": None if pd.isna(pos) else str(pos).strip(),
+                        "location": None if pd.isna(loc_val) else str(loc_val).strip(),
+                        "linkedin_url": None if pd.isna(links_val) else str(links_val).strip(),
+                        "phone": None if pd.isna(phone_val) else str(phone_val).strip(),
+                        "industry": None if pd.isna(ind_val) else str(ind_val).strip(),
+                        "last_deal_stage": None if pd.isna(stage_val) else str(stage_val).strip(),
                     }
     except Exception as ex:
         print("[backfill notice] leads.xlsx metadata note:", ex)
@@ -1091,35 +1168,76 @@ def backfill_from_campaign_log(db: Session) -> Dict:
     created_count = 0
     updated_count = 0
 
-    for r in camp_logs:
-        if not r.email:
-            continue
-        em = r.email.strip().lower()
+    for em, logs in logs_by_email.items():
+        primary_log = logs[0]
         lead = leads_by_email.get(em)
         meta = leads_meta.get(em, {})
 
+        # Compute accurate, non-duplicated stats directly from the logs
+        sent_cnt = sum(1 for x in logs if x.status in ("sent", "delivered", "replied", "opted_out"))
+        replies_cnt = sum(1 for x in logs if x.reply_received_at or x.status == "replied" or x.reply_body)
+        opens_cnt = sum(x.open_count or (1 if x.opened else 0) for x in logs if x.opened)
+        clicks_cnt = sum(x.click_count or (1 if x.clicked_link else 0) for x in logs if x.clicked_link)
+
+        # Determine true lifecycle status
+        is_booked = any(x.booking_status in ("scheduled", "meeting_scheduled", "confirmed", "booked") for x in logs)
+        is_unsub = any(x.unsubscribed or x.status == "opted_out" for x in logs)
+        is_bounced = any(x.bounced for x in logs)
+        is_replied = replies_cnt > 0
+        is_sent = sent_cnt > 0
+
+        if is_booked:
+            current_status = "booked"
+        elif is_unsub:
+            current_status = "unsubscribed"
+        elif is_bounced:
+            current_status = "bounced"
+        elif is_replied:
+            current_status = "replied"
+        elif is_sent:
+            current_status = "contacted"
+        else:
+            current_status = "new"
+
+        latest_sent_at = max([x.email_sent_at for x in logs if x.email_sent_at], default=None)
+        latest_reply_at = max([x.reply_received_at for x in logs if x.reply_received_at], default=None)
+        max_engagement = max([float(x.engagement_score or 0.0) for x in logs], default=0.0)
+        active_booking = next((x.booking_status for x in logs if x.booking_status in ("scheduled", "meeting_scheduled", "confirmed", "booked")), None)
+        unsub_time = next((x.unsubscribed_at for x in logs if x.unsubscribed_at), None)
+        bounce_reason = next((x.bounce_reason for x in logs if x.bounce_reason), None)
+
+        full_nm = meta.get("full_name") or primary_log.name or ""
+        parts = full_nm.strip().split()
+        fname = parts[0] if parts else None
+        lname = " ".join(parts[1:]) if len(parts) > 1 else None
+
         if not lead:
-            parts = (r.name or "").strip().split()
-            fname = parts[0] if parts else None
-            lname = " ".join(parts[1:]) if len(parts) > 1 else None
             lead = MasterLead(
-                email=r.email.strip(),
+                email=primary_log.email.strip(),
                 email_normalized=em,
                 first_name=fname,
                 last_name=lname,
-                full_name=r.name,
-                company=r.company,
-                phone=getattr(r, "phone", None) or meta.get("phone"),
+                full_name=full_nm,
+                company=meta.get("company") or primary_log.company,
+                phone=getattr(primary_log, "phone", None) or meta.get("phone"),
                 job_title=meta.get("job_title"),
                 location=meta.get("location"),
                 linkedin_url=meta.get("linkedin_url"),
                 industry=meta.get("industry"),
                 lead_source="leads.xlsx",
-                current_status="new",
-                total_emails_sent=0,
-                total_replies=0,
-                total_opens=0,
-                total_clicks=0,
+                current_status=current_status,
+                total_emails_sent=sent_cnt,
+                total_replies=replies_cnt,
+                total_opens=opens_cnt,
+                total_clicks=clicks_cnt,
+                engagement_score=max_engagement,
+                last_contacted_at=latest_sent_at,
+                last_reply_at=latest_reply_at,
+                booking_status=active_booking,
+                unsubscribed=is_unsub,
+                unsubscribed_at=unsub_time,
+                bounced=is_bounced,
+                bounce_reason=bounce_reason,
             )
             db.add(lead)
             db.flush()
@@ -1127,70 +1245,78 @@ def backfill_from_campaign_log(db: Session) -> Dict:
             created_count += 1
         else:
             updated_count += 1
-            if not lead.job_title and meta.get("job_title"):
+            # Update fields and metadata if missing
+            if meta.get("full_name") and not lead.full_name:
+                lead.full_name = meta["full_name"]
+            if meta.get("company") and not lead.company:
+                lead.company = meta["company"]
+            if meta.get("job_title") and not lead.job_title:
                 lead.job_title = meta["job_title"]
-            if not lead.location and meta.get("location"):
+            if meta.get("location") and not lead.location:
                 lead.location = meta["location"]
-            if not lead.linkedin_url and meta.get("linkedin_url"):
+            if meta.get("linkedin_url") and not lead.linkedin_url:
                 lead.linkedin_url = meta["linkedin_url"]
-            if not lead.phone and meta.get("phone"):
+            if meta.get("phone") and not lead.phone:
                 lead.phone = meta["phone"]
+            if meta.get("industry") and not lead.industry:
+                lead.industry = meta["industry"]
 
-        r.master_lead_id = lead.id
+            # Accurately overwrite aggregate counters to repair past corruptions
+            lead.total_emails_sent = sent_cnt
+            lead.total_replies = replies_cnt
+            lead.total_opens = opens_cnt
+            lead.total_clicks = clicks_cnt
+            lead.current_status = current_status
+            lead.engagement_score = max_engagement
+            if latest_sent_at:
+                lead.last_contacted_at = latest_sent_at
+            if latest_reply_at:
+                lead.last_reply_at = latest_reply_at
+            if active_booking:
+                lead.booking_status = active_booking
+            if is_unsub:
+                lead.unsubscribed = True
+                lead.unsubscribed_at = unsub_time or lead.unsubscribed_at
+            if is_bounced:
+                lead.bounced = True
+                lead.bounce_reason = bounce_reason
 
-        # Update metrics accurately for both new and existing leads
-        if r.status in ("sent", "delivered"):
-            lead.total_emails_sent = (lead.total_emails_sent or 0) + 1
-            lead.last_contacted_at = r.email_sent_at or getattr(r, "contacted_at", None) or lead.last_contacted_at
-            if lead.current_status in ("new", "active"):
-                lead.current_status = "contacted"
+        # Link foreign key on each CampaignLog row
+        for r in logs:
+            r.master_lead_id = lead.id
 
-        if r.opened:
-            lead.total_opens = (lead.total_opens or 0) + (r.open_count or 1)
+            key = (lead.id, r.id)
+            if key not in oh_set:
+                oh = OutreachHistory(
+                    master_lead_id=lead.id,
+                    template_id=r.template_id,
+                    template_name=r.template_name,
+                    campaign_log_id=r.id,
+                    status=r.status or "sent",
+                    sent_at=r.email_sent_at or getattr(r, "contacted_at", None),
+                    opened=bool(r.opened),
+                    clicked=bool(r.clicked_link),
+                    replied=bool(r.reply_received_at or r.status == "replied"),
+                    booked=bool(r.booking_status in ("scheduled", "meeting_scheduled", "confirmed", "booked")),
+                    bounced=bool(r.bounced),
+                )
+                db.add(oh)
+                oh_set[key] = oh
 
-        if r.clicked_link:
-            lead.total_clicks = (lead.total_clicks or 0) + (r.click_count or 1)
-
-        if r.reply_received_at or r.status == "replied":
-            lead.total_replies = (lead.total_replies or 0) + 1
-            lead.current_status = "replied"
-            lead.last_reply_at = r.reply_received_at or lead.last_reply_at
-
-        if r.booking_status in ("scheduled", "meeting_scheduled", "confirmed", "booked"):
-            lead.current_status = "booked"
-            lead.booking_status = r.booking_status
-
-        if r.unsubscribed or r.status == "opted_out":
-            lead.current_status = "unsubscribed"
-            lead.unsubscribed = True
-            lead.unsubscribed_at = r.unsubscribed_at
-
-        if r.bounced:
-            lead.current_status = "bounced"
-            lead.bounced = True
-            lead.bounce_reason = r.bounce_reason
-
-        if r.engagement_score and (r.engagement_score > (lead.engagement_score or 0)):
-            lead.engagement_score = float(r.engagement_score)
-
-        # Outreach history tracking
-        key = (lead.id, r.id)
-        if key not in oh_set:
-            oh = OutreachHistory(
+    # Populate LeadImportRecord if missing
+    import_rec_count = db.query(LeadImportRecord).filter(LeadImportRecord.import_id == import_id).count()
+    if import_rec_count == 0:
+        imp_objs = [
+            LeadImportRecord(
+                import_id=import_id,
                 master_lead_id=lead.id,
-                template_id=r.template_id,
-                template_name=r.template_name,
-                campaign_log_id=r.id,
-                status=r.status or "sent",
-                sent_at=r.email_sent_at or getattr(r, "contacted_at", None),
-                opened=r.opened or False,
-                clicked=r.clicked_link or False,
-                replied=bool(r.reply_received_at or r.status == "replied"),
-                booked=bool(r.booking_status in ("scheduled", "meeting_scheduled", "confirmed", "booked")),
-                bounced=r.bounced or False,
+                row_number=idx + 1,
+                action="created",
+                raw_data={"email": lead.email, "name": lead.full_name, "company": lead.company},
             )
-            db.add(oh)
-            oh_set[key] = oh
+            for idx, (em, lead) in enumerate(leads_by_email.items())
+        ]
+        db.bulk_save_objects(imp_objs)
 
     # Intelligent Chunks creation if none exist
     chunk_count = db.query(LeadChunk).count()
@@ -1243,20 +1369,30 @@ def backfill_from_campaign_log(db: Session) -> Dict:
     # LeadActivity event stream population if none exist
     act_count = db.query(LeadActivity).count()
     if act_count == 0:
-        for l_id, lead in list(leads_by_email.items())[:50]:
-            db.add(LeadActivity(
+        act_objs = []
+        for em, lead in list(leads_by_email.items())[:50]:
+            act_objs.append(LeadActivity(
                 master_lead_id=lead.id,
                 activity_type="lead_imported",
                 description=f"Lead record imported from {lead.lead_source or 'leads.xlsx'}",
                 created_at=lead.created_at or datetime.now(timezone.utc),
             ))
             if lead.total_emails_sent and lead.total_emails_sent > 0:
-                db.add(LeadActivity(
+                act_objs.append(LeadActivity(
                     master_lead_id=lead.id,
-                    activity_type="outreach_sent",
+                    activity_type="email_sent",
                     description=f"Outreach email dispatched to {lead.email}",
                     created_at=lead.last_contacted_at or datetime.now(timezone.utc),
                 ))
+            if lead.total_replies and lead.total_replies > 0:
+                act_objs.append(LeadActivity(
+                    master_lead_id=lead.id,
+                    activity_type="reply_received",
+                    description=f"Customer reply received from {lead.email}",
+                    created_at=lead.last_reply_at or datetime.now(timezone.utc),
+                ))
+        if act_objs:
+            db.bulk_save_objects(act_objs)
 
     # AuditLog entry if none exist
     audit_count = db.query(AuditLog).count()
@@ -1296,6 +1432,8 @@ def sync_campaign_entry_to_master_db(db: Session, entry) -> Optional[MasterLead]
                 current_status="new",
                 total_emails_sent=0,
                 total_replies=0,
+                total_opens=0,
+                total_clicks=0,
             )
             db.add(lead)
             db.flush()
@@ -1303,13 +1441,19 @@ def sync_campaign_entry_to_master_db(db: Session, entry) -> Optional[MasterLead]
         entry.master_lead_id = lead.id
 
         if entry.status in ("sent", "delivered"):
-            lead.total_emails_sent = (lead.total_emails_sent or 0) + 1
-            lead.current_status = "contacted"
+            if lead.current_status in ("new", "active"):
+                lead.current_status = "contacted"
             lead.last_contacted_at = entry.email_sent_at or datetime.now(timezone.utc)
-            log_activity(db, lead.id, "email_sent", f"Email dispatched: {entry.subject or ''}")
+
+        if entry.opened:
+            lead.total_opens = max(lead.total_opens or 0, entry.open_count or 1)
+            log_activity(db, lead.id, "email_opened", f"Email opened by {lead.email}")
+
+        if entry.clicked_link:
+            lead.total_clicks = max(lead.total_clicks or 0, entry.click_count or 1)
+            log_activity(db, lead.id, "link_clicked", f"Link clicked by {lead.email}")
 
         if entry.reply_received_at or entry.status == "replied":
-            lead.total_replies = (lead.total_replies or 0) + 1
             lead.current_status = "replied"
             lead.last_reply_at = entry.reply_received_at or datetime.now(timezone.utc)
             log_activity(db, lead.id, "reply_received", f"Inbound reply received from {lead.email}")
@@ -1318,6 +1462,24 @@ def sync_campaign_entry_to_master_db(db: Session, entry) -> Optional[MasterLead]
             lead.current_status = "booked"
             lead.booking_status = entry.booking_status
             log_activity(db, lead.id, "meeting_booked", f"Meeting scheduled: {entry.booking_status}")
+
+        if entry.unsubscribed or entry.status == "opted_out":
+            lead.current_status = "unsubscribed"
+            lead.unsubscribed = True
+            lead.unsubscribed_at = entry.unsubscribed_at or datetime.now(timezone.utc)
+            log_activity(db, lead.id, "status_changed", f"{lead.email} unsubscribed")
+
+        if entry.bounced:
+            lead.current_status = "bounced"
+            lead.bounced = True
+            lead.bounce_reason = entry.bounce_reason
+            log_activity(db, lead.id, "status_changed", f"{lead.email} delivery bounced: {entry.bounce_reason}")
+
+        # Re-verify and set accurate totals from all campaign logs for this lead
+        lead_logs = db.query(CampaignLog).filter(CampaignLog.master_lead_id == lead.id).all()
+        if lead_logs:
+            lead.total_emails_sent = sum(1 for x in lead_logs if x.status in ("sent", "delivered", "replied", "opted_out"))
+            lead.total_replies = sum(1 for x in lead_logs if x.reply_received_at or x.status == "replied" or x.reply_body)
 
         # Update or add OutreachHistory
         if entry.template_id or entry.template_name:
@@ -1335,9 +1497,17 @@ def sync_campaign_entry_to_master_db(db: Session, entry) -> Optional[MasterLead]
                     sent_at=entry.email_sent_at,
                     opened=bool(entry.opened),
                     clicked=bool(entry.clicked_link),
-                    replied=bool(entry.reply_received_at),
+                    replied=bool(entry.reply_received_at or entry.status == "replied"),
                     booked=bool(entry.booking_status in ("scheduled", "meeting_scheduled", "confirmed", "booked")),
+                    bounced=bool(entry.bounced),
                 ))
+            else:
+                oh.opened = bool(entry.opened)
+                oh.clicked = bool(entry.clicked_link)
+                oh.replied = bool(entry.reply_received_at or entry.status == "replied")
+                oh.booked = bool(entry.booking_status in ("scheduled", "meeting_scheduled", "confirmed", "booked"))
+                oh.bounced = bool(entry.bounced)
+                oh.status = entry.status or oh.status
 
         db.commit()
         return lead

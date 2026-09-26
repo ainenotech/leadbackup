@@ -92,6 +92,18 @@ def create_pending_entry(
     if not tracking_link or "localhost" in str(tracking_link) or "127.0.0.1" in str(tracking_link):
         tracking_link = booking_url
 
+    # Check and link master lead if already known
+    m_id = None
+    try:
+        from Backend.master_db_models import MasterLead
+        from services.master_db_service import normalize_email
+        norm_em = normalize_email(email)
+        m_lead = db.query(MasterLead).filter(MasterLead.email_normalized == norm_em).first()
+        if m_lead:
+            m_id = m_lead.id
+    except Exception:
+        pass
+
     entry = CampaignLog(
         campaign_name=campaign_name,
         lead_id=lead_id,
@@ -105,6 +117,7 @@ def create_pending_entry(
         status=status,
         template_id=template_id,
         template_name=template_name,
+        master_lead_id=m_id,
     )
     db.add(entry)
     db.commit()
@@ -786,6 +799,12 @@ def mark_scheduled(
             meet_link=meet_link,
         )
 
+        try:
+            from services.master_db_service import sync_campaign_entry_to_master_db
+            sync_campaign_entry_to_master_db(db, entry)
+        except Exception:
+            pass
+
 
 def mark_confirmation_sent(db: Session, entry_id: str) -> None:
     entry = db.query(CampaignLog).filter(CampaignLog.id == entry_id).first()
@@ -885,6 +904,11 @@ def record_email_open(db: Session, token: str) -> Optional[CampaignLog]:
         entry.engagement_score = _calculate_engagement(entry)
         db.commit()
         db.refresh(entry)
+        try:
+            from services.master_db_service import sync_campaign_entry_to_master_db
+            sync_campaign_entry_to_master_db(db, entry)
+        except Exception:
+            pass
     return entry
 
 
@@ -909,6 +933,11 @@ def record_link_click(db: Session, token: str, destination_url: str = "") -> Opt
         entry.engagement_score = _calculate_engagement(entry)
         db.commit()
         db.refresh(entry)
+        try:
+            from services.master_db_service import sync_campaign_entry_to_master_db
+            sync_campaign_entry_to_master_db(db, entry)
+        except Exception:
+            pass
     return entry
 
 
@@ -923,6 +952,11 @@ def record_unsubscribe(db: Session, token: str, reason: str = "Lead clicked opt-
         entry.engagement_score = 0.0
         db.commit()
         db.refresh(entry)
+        try:
+            from services.master_db_service import sync_campaign_entry_to_master_db
+            sync_campaign_entry_to_master_db(db, entry)
+        except Exception:
+            pass
     return entry
 
 
@@ -946,6 +980,11 @@ def record_bounce(db: Session, email_or_token: str, reason: str = "550 User Unkn
         entry.engagement_score = 0.0
         db.commit()
         db.refresh(entry)
+        try:
+            from services.master_db_service import sync_campaign_entry_to_master_db
+            sync_campaign_entry_to_master_db(db, entry)
+        except Exception:
+            pass
     return entry
 
 
