@@ -1116,7 +1116,7 @@ def backfill_from_campaign_log(db: Session) -> Dict:
     try:
         if os.path.exists("leads.xlsx"):
             df_leads = pd.read_excel("leads.xlsx")
-            for _, r in df_leads.iterrows():
+            for r in df_leads.to_dict("records"):
                 em_raw = r.get("email") or r.get("Email ID") or r.get("emails")
                 em = normalize_email(str(em_raw)) if pd.notna(em_raw) else ""
                 if em and "@" in em:
@@ -1213,7 +1213,9 @@ def backfill_from_campaign_log(db: Session) -> Dict:
         lname = " ".join(parts[1:]) if len(parts) > 1 else None
 
         if not lead:
+            new_lead_id = str(uuid.uuid4())
             lead = MasterLead(
+                id=new_lead_id,
                 email=primary_log.email.strip(),
                 email_normalized=em,
                 first_name=fname,
@@ -1241,7 +1243,6 @@ def backfill_from_campaign_log(db: Session) -> Dict:
                 bounce_reason=bounce_reason,
             )
             db.add(lead)
-            db.flush()
             leads_by_email[em] = lead
             created_count += 1
         else:
@@ -1303,6 +1304,8 @@ def backfill_from_campaign_log(db: Session) -> Dict:
                 )
                 db.add(oh)
                 oh_set[key] = oh
+
+    db.flush()
 
     # Populate LeadImportRecord if missing
     import_rec_count = db.query(LeadImportRecord).filter(LeadImportRecord.import_id == import_id).count()

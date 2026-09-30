@@ -94,10 +94,8 @@ from services.rag import (
 from Agent.reply_agent import process_incoming_reply
 import services.template_service
 from services.template_service import load_all_templates, render_template
-import importlib
 import template_hub_view
 import master_db_view
-importlib.reload(master_db_view)
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from knowledge_base_view import render_knowledge_base_hub
@@ -110,7 +108,6 @@ from utils.theme import (
     apply_chart_theme,
     get_complete_theme_css,
 )
-from analytics_view import render_analytics
 
 @st.cache_resource(show_spinner=False)
 def ensure_database_ready() -> bool:
@@ -3390,23 +3387,25 @@ def render_replies(df: pd.DataFrame) -> None:
 # ─────────────────────────────────────────────────────────────
 page = st.session_state.active_page
 
-def render_main_view(page_name: str):
+def get_campaign_logs_df() -> pd.DataFrame:
     rows = load_campaign_logs()
-    df_logs = pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
+    return pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
+
+def render_main_view(page_name: str):
     if page_name == "overview":
-        render_overview(df_logs)
+        render_overview(get_campaign_logs_df())
     elif page_name == "master_db":
-        render_master_db(df_logs)
+        render_master_db()
     elif page_name == "analytics":
-        render_analytics(df_logs)
+        render_analytics(get_campaign_logs_df())
     elif page_name == "replies":
-        render_replies(df_logs)
+        render_replies(get_campaign_logs_df())
     elif page_name == "leads":
-        render_leads(df_logs)
+        render_leads(get_campaign_logs_df())
     elif page_name == "templates":
-        render_template_hub(df_logs)
+        render_template_hub(get_campaign_logs_df())
     elif page_name == "email":
-        render_email_review(df_logs)
+        render_email_review(get_campaign_logs_df())
     elif page_name == "upload":
         render_upload()
     elif page_name == "knowledge_base":

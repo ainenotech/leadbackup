@@ -40,7 +40,7 @@ from utils.theme import apply_chart_theme, is_dark_mode
 # HIGH-PERFORMANCE IN-MEMORY CACHE (Eliminates Network Lag)
 # ─────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=25, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def fetch_cached_dashboard_metrics() -> Dict:
     db = SessionLocal()
     try:
@@ -49,7 +49,7 @@ def fetch_cached_dashboard_metrics() -> Dict:
         db.close()
 
 
-@st.cache_data(ttl=25, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def fetch_cached_chunks() -> List[Dict]:
     db = SessionLocal()
     try:
@@ -58,7 +58,7 @@ def fetch_cached_chunks() -> List[Dict]:
         db.close()
 
 
-@st.cache_data(ttl=25, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def fetch_cached_imports() -> List[Dict]:
     db = SessionLocal()
     try:
@@ -67,7 +67,7 @@ def fetch_cached_imports() -> List[Dict]:
         db.close()
 
 
-@st.cache_data(ttl=25, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def fetch_cached_recent_activities(limit: int = 50) -> List[Dict]:
     db = SessionLocal()
     try:
@@ -76,7 +76,7 @@ def fetch_cached_recent_activities(limit: int = 50) -> List[Dict]:
         db.close()
 
 
-@st.cache_data(ttl=25, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def fetch_cached_audit_log(limit: int = 200) -> List[Dict]:
     db = SessionLocal()
     try:
@@ -85,7 +85,7 @@ def fetch_cached_audit_log(limit: int = 200) -> List[Dict]:
         db.close()
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_cached_lead_detail(lead_id: str) -> Optional[Dict]:
     db = SessionLocal()
     try:
@@ -403,24 +403,29 @@ def _inject_master_db_styles(is_dark: bool) -> None:
 # MAIN VIEW CONTROLLER
 # ─────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _ensure_master_db_synced_once() -> bool:
+    """Fast initial check to ensure Master DB has records."""
+    db_chk = SessionLocal()
+    try:
+        m_cnt = db_chk.query(MasterLead).count()
+        if m_cnt == 0:
+            backfill_from_campaign_log(db_chk)
+        return True
+    except Exception as _ex:
+        print(f"[Master DB sync notice] {_ex}")
+        return False
+    finally:
+        db_chk.close()
+
+
 def render_master_db(df_logs: pd.DataFrame = None):
     """Main entry point for Master Database & CRM Intelligence."""
     is_dark = is_dark_mode()
     _inject_master_db_styles(is_dark)
 
-    # Automatic initial sync check: ensure Master DB is populated with campaign logs & chunks
-    if "mdb_initial_sync_done" not in st.session_state:
-        db_chk = SessionLocal()
-        try:
-            unlinked_cnt = db_chk.query(CampaignLog).filter(CampaignLog.master_lead_id.is_(None)).count()
-            m_cnt = db_chk.query(MasterLead).count()
-            if m_cnt == 0 or unlinked_cnt > 0:
-                backfill_from_campaign_log(db_chk)
-            st.session_state.mdb_initial_sync_done = True
-        except Exception as _ex:
-            print(f"[Master DB sync notice] {_ex}")
-        finally:
-            db_chk.close()
+    # Automatic initial sync check: cached for 10 minutes so it doesn't run on every tab click
+    _ensure_master_db_synced_once()
 
     # Top Executive Banner
     banner_html = f"""
@@ -461,40 +466,57 @@ def render_master_db(df_logs: pd.DataFrame = None):
             finally:
                 db_sync.close()
 
-    # Master DB Sub-navigation
-    tabs = st.tabs([
-        "📊 Command Center",
-        "👥 Leads Directory",
-        "📥 Lead Ingestion & Deduplication",
-        "📦 Intelligent Chunks",
-        "🏷️ Template Performance",
-        "📜 Batch History",
-        "🕐 Global Timeline",
-        "📋 Regulatory Audit Log",
-    ])
+    # Master DB Sub-navigation (Lazy Evaluation — executes ONLY the selected view)
+    MDB_TAB_CHOICES = [
+        ("overview", "📊 Command Center"),
+        ("leads", "👥 Leads Directory"),
+        ("ingestion", "📥 Ingestion & Deduplication"),
+        ("chunks", "📦 Intelligent Chunks"),
+        ("templates", "🏷️ Template Performance"),
+        ("history", "📜 Batch History"),
+        ("timeline", "🕐 Global Timeline"),
+        ("audit", "📋 Regulatory Audit Log"),
+    ]
 
-    with tabs[0]:
+    if "mdb_tab" in st.query_params and any(st.query_params["mdb_tab"] == k for k, _ in MDB_TAB_CHOICES):
+        st.session_state.mdb_active_tab = st.query_params["mdb_tab"]
+    elif "mdb_active_tab" not in st.session_state or st.session_state.mdb_active_tab not in [k for k, _ in MDB_TAB_CHOICES]:
+        st.session_state.mdb_active_tab = "overview"
+
+    # Sleek Tab Ribbon
+    tab_cols = st.columns(len(MDB_TAB_CHOICES))
+    for i, (t_key, t_label) in enumerate(MDB_TAB_CHOICES):
+        with tab_cols[i]:
+            is_cur = (st.session_state.mdb_active_tab == t_key)
+            btn_type = "primary" if is_cur else "secondary"
+            if st.button(
+                t_label,
+                key=f"btn_mdb_tab_{t_key}",
+                type=btn_type,
+                use_container_width=True,
+            ):
+                if st.session_state.mdb_active_tab != t_key:
+                    st.session_state.mdb_active_tab = t_key
+                    st.query_params["mdb_tab"] = t_key
+                    st.rerun()
+
+    cur_mdb_tab = st.session_state.mdb_active_tab
+
+    if cur_mdb_tab == "overview":
         _render_tab_overview()
-
-    with tabs[1]:
+    elif cur_mdb_tab == "leads":
         _render_tab_leads_directory()
-
-    with tabs[2]:
+    elif cur_mdb_tab == "ingestion":
         _render_tab_ingestion()
-
-    with tabs[3]:
+    elif cur_mdb_tab == "chunks":
         _render_tab_chunks()
-
-    with tabs[4]:
+    elif cur_mdb_tab == "templates":
         _render_tab_templates()
-
-    with tabs[5]:
+    elif cur_mdb_tab == "history":
         _render_tab_import_history()
-
-    with tabs[6]:
+    elif cur_mdb_tab == "timeline":
         _render_tab_activity_timeline()
-
-    with tabs[7]:
+    elif cur_mdb_tab == "audit":
         _render_tab_audit_log()
 
 
@@ -795,7 +817,32 @@ def categorize_lead_temperature(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-@st.cache_data(ttl=25, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_cached_leads_file_metadata(file_path: str = "leads.xlsx") -> Dict[str, Dict]:
+    """Fast in-memory cache of leads spreadsheet metadata."""
+    leads_meta = {}
+    if os.path.exists(file_path):
+        try:
+            df_meta = pd.read_excel(file_path)
+            for r in df_meta.to_dict("records"):
+                em_raw = r.get("email") or r.get("Email ID") or r.get("emails")
+                if pd.notna(em_raw):
+                    em = str(em_raw).strip().lower()
+                    if "@" in em and em not in leads_meta:
+                        pos = r.get("Position") or r.get("job_title")
+                        co = r.get("Company Name") or r.get("company")
+                        fn = r.get("Full Name") or r.get("name")
+                        leads_meta[em] = {
+                            "job_title": str(pos).strip() if pd.notna(pos) and str(pos).strip().lower() not in ("nan", "none", "") else "",
+                            "company": str(co).strip() if pd.notna(co) and str(co).strip().lower() not in ("nan", "none", "") else "",
+                            "name": str(fn).strip() if pd.notna(fn) and str(fn).strip().lower() not in ("nan", "none", "") else "",
+                        }
+        except Exception:
+            pass
+    return leads_meta
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def load_enriched_master_data() -> pd.DataFrame:
     """Loads all Master Leads with full telemetry, template assignments, and Excel metadata."""
     from Backend.db import SessionLocal
@@ -818,26 +865,8 @@ def load_enriched_master_data() -> pd.DataFrame:
             if em and em not in cl_map:
                 cl_map[em] = cl
 
-        # Load leads.xlsx metadata if present
-        leads_meta = {}
-        if os.path.exists("leads.xlsx"):
-            try:
-                df_meta = pd.read_excel("leads.xlsx")
-                for _, r in df_meta.iterrows():
-                    em_raw = r.get("email") or r.get("Email ID") or r.get("emails")
-                    if pd.notna(em_raw):
-                        em = str(em_raw).strip().lower()
-                        if "@" in em and em not in leads_meta:
-                            pos = r.get("Position") or r.get("job_title")
-                            co = r.get("Company Name") or r.get("company")
-                            fn = r.get("Full Name") or r.get("name")
-                            leads_meta[em] = {
-                                "job_title": str(pos).strip() if pd.notna(pos) and str(pos).strip().lower() not in ("nan", "none", "") else "",
-                                "company": str(co).strip() if pd.notna(co) and str(co).strip().lower() not in ("nan", "none", "") else "",
-                                "name": str(fn).strip() if pd.notna(fn) and str(fn).strip().lower() not in ("nan", "none", "") else "",
-                            }
-            except Exception:
-                pass
+        # Load leads.xlsx metadata from fast in-memory cache
+        leads_meta = _load_cached_leads_file_metadata("leads.xlsx")
 
         data = []
         for l in leads:
@@ -885,8 +914,9 @@ def load_enriched_master_data() -> pd.DataFrame:
     return pd.DataFrame(data) if data else pd.DataFrame()
 
 
+@st.cache_data(show_spinner=False, ttl=600)
 def generate_excel_export_bytes(df: pd.DataFrame, sheet_name: str = "Leads") -> bytes:
-    """Generates an executive-formatted .xlsx Excel spreadsheet."""
+    """Generates an executive-formatted .xlsx Excel spreadsheet (cached in RAM)."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
@@ -900,6 +930,12 @@ def generate_excel_export_bytes(df: pd.DataFrame, sheet_name: str = "Leads") -> 
             col_letter = col[0].column_letter
             worksheet.column_dimensions[col_letter].width = min(max(max_len + 3, 11), 50)
     return output.getvalue()
+
+
+@st.cache_data(show_spinner=False, ttl=600)
+def generate_csv_export_bytes(df: pd.DataFrame) -> bytes:
+    """Fast in-memory cached CSV byte generator."""
+    return df.to_csv(index=False).encode("utf-8")
 
 
 def build_clean_dataframe(df_source: pd.DataFrame) -> pd.DataFrame:
@@ -1104,7 +1140,7 @@ def _render_tab_leads_directory():
                     use_container_width=True,
                 )
             with row_top_h3:
-                csv_h = h_clean.to_csv(index=False).encode("utf-8")
+                csv_h = generate_csv_export_bytes(h_clean)
                 st.download_button(
                     label="📄 CSV",
                     data=csv_h,
@@ -1144,7 +1180,7 @@ def _render_tab_leads_directory():
                     use_container_width=True,
                 )
             with row_top_w3:
-                csv_w = w_clean.to_csv(index=False).encode("utf-8")
+                csv_w = generate_csv_export_bytes(w_clean)
                 st.download_button(
                     label="📄 CSV",
                     data=csv_w,
@@ -1183,7 +1219,7 @@ def _render_tab_leads_directory():
                     use_container_width=True,
                 )
             with row_top_c3:
-                csv_c = c_clean.to_csv(index=False).encode("utf-8")
+                csv_c = generate_csv_export_bytes(c_clean)
                 st.download_button(
                     label="📄 CSV",
                     data=csv_c,
@@ -1222,7 +1258,7 @@ def _render_tab_leads_directory():
                     use_container_width=True,
                 )
             with row_top_a3:
-                csv_all = all_clean.to_csv(index=False).encode("utf-8")
+                csv_all = generate_csv_export_bytes(all_clean)
                 st.download_button(
                     label="📄 CSV",
                     data=csv_all,

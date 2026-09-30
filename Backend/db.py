@@ -18,24 +18,56 @@ DATABASE_URL = os.getenv(
 def _init_engine(url: str):
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
+
+    from sqlalchemy.pool import QueuePool
+    from sqlalchemy import text
+
+    # 1. Try standard driver (psycopg2 for Linux / Render production)
     try:
-        from sqlalchemy.pool import QueuePool
         eng = create_engine(
             url,
             poolclass=QueuePool,
-            pool_size=5,
-            max_overflow=10,
-            pool_timeout=15,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=25,
             pool_recycle=300,
             pool_pre_ping=True,
         )
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
         return eng
-    except Exception as exc:
-        sqlite_fallback = "sqlite:///campaign.db"
-        server_info = url.split("@")[-1] if "@" in url else url
-        print(f"[Notice] Could not initialize PostgreSQL engine at {server_info} ({exc}).")
-        print(f"[Notice] Automatically falling back to local SQLite database: '{sqlite_fallback}'.")
-        return create_engine(sqlite_fallback, connect_args={"check_same_thread": False, "timeout": 30})
+    except Exception as exc_primary:
+        # 2. Try pure-python pg8000 driver (works on Windows without C DLL blocks)
+        try:
+            import ssl
+            ctx = ssl.create_default_context()
+            pg8000_url = url
+            if "postgresql+psycopg2://" in pg8000_url:
+                pg8000_url = pg8000_url.replace("postgresql+psycopg2://", "postgresql+pg8000://")
+            elif pg8000_url.startswith("postgresql://"):
+                pg8000_url = "postgresql+pg8000://" + pg8000_url[len("postgresql://"):]
+
+            base_url = pg8000_url.split("?")[0]
+            eng = create_engine(
+                base_url,
+                connect_args={"ssl_context": ctx},
+                poolclass=QueuePool,
+                pool_size=10,
+                max_overflow=20,
+                pool_timeout=25,
+                pool_recycle=300,
+                pool_pre_ping=True,
+            )
+            with eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            print(f"[Notice] Connected to PostgreSQL via pure-python pg8000 driver.")
+            return eng
+        except Exception as exc_pg8000:
+            sqlite_fallback = "sqlite:///campaign.db"
+            server_info = url.split("@")[-1] if "@" in url else url
+            print(f"[Notice] Could not initialize PostgreSQL engine at {server_info} ({exc_pg8000}).")
+            print(f"[Notice] Automatically falling back to local SQLite database: '{sqlite_fallback}'.")
+            return create_engine(sqlite_fallback, connect_args={"check_same_thread": False, "timeout": 30})
 
 
 engine = _init_engine(DATABASE_URL)
