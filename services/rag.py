@@ -125,13 +125,10 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 
 
 def add_document(
-    db: Session, title: str, content: str, category: Optional[str] = None
+    db: Session, title: str, content: str, category: Optional[str] = None, organization_id: Optional[str] = None
 ) -> int:
     """Chunks, embeds and stores `content` under `title`. Returns the
-    number of chunks stored. Call this once per FAQ/policy/product doc —
-    re-running with the same title creates duplicate chunks, so callers
-    that want to replace a document should delete_document(title) first
-    (seed_knowledge_base.py does this for its whole run)."""
+    number of chunks stored."""
     chunks = chunk_text(content)
     if not chunks:
         return 0
@@ -145,24 +142,28 @@ def add_document(
                 category=category,
                 content=chunk,
                 embedding=vector,
+                organization_id=organization_id,
             )
         )
     db.commit()
     return len(chunks)
 
 
-def list_documents(db: Session) -> List[dict]:
+def list_documents(db: Session, organization_id: Optional[str] = None) -> List[dict]:
     """Returns one summary row per distinct source document (grouped by
-    title), without loading heavy embedding vector arrays."""
+    title), filtered by organization_id if provided."""
     from sqlalchemy import func
+    q = db.query(
+        KnowledgeDocument.title,
+        KnowledgeDocument.category,
+        func.count(KnowledgeDocument.id).label("chunks"),
+        func.min(func.substr(KnowledgeDocument.content, 1, 200)).label("preview"),
+    )
+    if organization_id:
+        q = q.filter(KnowledgeDocument.organization_id == organization_id)
+
     rows = (
-        db.query(
-            KnowledgeDocument.title,
-            KnowledgeDocument.category,
-            func.count(KnowledgeDocument.id).label("chunks"),
-            func.min(func.substr(KnowledgeDocument.content, 1, 200)).label("preview"),
-        )
-        .group_by(KnowledgeDocument.title, KnowledgeDocument.category)
+        q.group_by(KnowledgeDocument.title, KnowledgeDocument.category)
         .order_by(KnowledgeDocument.title)
         .all()
     )
@@ -177,9 +178,12 @@ def list_documents(db: Session) -> List[dict]:
     ]
 
 
-def clear_all_knowledge_documents(db: Session) -> int:
-    """Deletes every document chunk stored in the knowledge base, returning count removed."""
-    deleted = db.query(KnowledgeDocument).delete()
+def clear_all_knowledge_documents(db: Session, organization_id: Optional[str] = None) -> int:
+    """Deletes document chunks stored in the knowledge base (scoped to org if provided)."""
+    q = db.query(KnowledgeDocument)
+    if organization_id:
+        q = q.filter(KnowledgeDocument.organization_id == organization_id)
+    deleted = q.delete()
     db.commit()
     return deleted
 
@@ -349,7 +353,7 @@ def ingest_file_content(
         doc_title = f"{doc_title} (Word)"
 
     # Remove existing chunks for this title to avoid duplicate accumulation
-    delete_document(db, doc_title)
+    delete_document(db, doc_title, organization_id=organization_id)
 
     # Auto-detect category from file extension if not specified
     if not category:
@@ -363,13 +367,16 @@ def ingest_file_content(
         }
         category = ext_categories.get(ext, "Documentation")
 
-    return add_document(db, title=doc_title, content=text, category=category)
+    return add_document(db, title=doc_title, content=text, category=category, organization_id=organization_id)
 
 
-def get_knowledge_base_summary(db: Session) -> dict:
+def get_knowledge_base_summary(db: Session, organization_id: Optional[str] = None) -> dict:
     """Returns total chunk count, list of documents, and embedding configuration."""
-    docs = list_documents(db)
-    total_chunks = db.query(KnowledgeDocument).count()
+    docs = list_documents(db, organization_id=organization_id)
+    q = db.query(KnowledgeDocument)
+    if organization_id:
+        q = q.filter(KnowledgeDocument.organization_id == organization_id)
+    total_chunks = q.count()
     return {
         "total_chunks": total_chunks,
         "total_documents": len(docs),
@@ -378,10 +385,13 @@ def get_knowledge_base_summary(db: Session) -> dict:
     }
 
 
-def delete_document(db: Session, title: str) -> int:
+def delete_document(db: Session, title: str, organization_id: Optional[str] = None) -> int:
     """Deletes every chunk stored under `title`. Returns the number of
     chunks removed."""
-    deleted = db.query(KnowledgeDocument).filter(KnowledgeDocument.title == title).delete()
+    q = db.query(KnowledgeDocument).filter(KnowledgeDocument.title == title)
+    if organization_id:
+        q = q.filter(KnowledgeDocument.organization_id == organization_id)
+    deleted = q.delete()
     db.commit()
     return deleted
 
@@ -395,14 +405,17 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
 
 
 def retrieve_relevant_chunks(
-    db: Session, query: str, top_k: int = 4, min_score: float = 0.40
+    db: Session, query: str, top_k: int = 4, min_score: float = 0.40, organization_id: Optional[str] = None
 ) -> List[dict]:
     """Embeds `query` and returns the top_k most similar stored chunks
     (each as {"title", "category", "content", "score"}), filtered to a
     minimum cosine-similarity so unrelated messages ("thanks, bye") don't
     drag in irrelevant knowledge. Returns [] if the knowledge base is
     empty or nothing clears min_score."""
-    rows = db.query(KnowledgeDocument).all()
+    q = db.query(KnowledgeDocument)
+    if organization_id:
+        q = q.filter(KnowledgeDocument.organization_id == organization_id)
+    rows = q.all()
     if not rows:
         return []
 

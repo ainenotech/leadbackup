@@ -94,12 +94,32 @@ from services.rag import (
 from Agent.reply_agent import process_incoming_reply
 import services.template_service
 from services.template_service import load_all_templates, render_template
+import importlib
 import template_hub_view
 import master_db_view
+import knowledge_base_view
+import analytics_view
+import auth_view
+import org_settings_view
+import team_view
+import super_admin_view
+
+for _mod in [master_db_view, knowledge_base_view, template_hub_view, analytics_view, auth_view, org_settings_view, team_view, super_admin_view]:
+    try:
+        importlib.reload(_mod)
+    except Exception:
+        pass
+
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from knowledge_base_view import render_knowledge_base_hub
 from master_db_view import render_master_db, _render_tab_leads_directory
+from auth_view import render_auth_page, render_org_switcher
+from org_settings_view import render_org_settings
+from team_view import render_team_view
+from super_admin_view import render_super_admin_portal
+from Backend.auth_models import Organization, User, OrganizationMember
+from Backend.auth_service import authenticate_user
 import utils.theme
 from utils.theme import (
     get_current_theme,
@@ -169,6 +189,58 @@ if "sidebar_checked" not in st.session_state:
 # ─────────────────────────────────────────────────────────────
 st.markdown(get_complete_theme_css(is_dark_mode()), unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────────────────────
+# MULTI-TENANT SAAS AUTHENTICATION & WORKSPACE STATE
+# ─────────────────────────────────────────────────────────────
+if "authenticated" not in st.session_state:
+    db_init_session = SessionLocal()
+    try:
+        default_org = db_init_session.query(Organization).filter(Organization.status == "active").first()
+        default_user = db_init_session.query(User).filter(User.email == "mohit@nenotechnology.us").first()
+        if default_org and default_user:
+            user_memberships = (
+                db_init_session.query(OrganizationMember, Organization)
+                .join(Organization, OrganizationMember.organization_id == Organization.id)
+                .filter(OrganizationMember.user_id == default_user.id, Organization.status == "active")
+                .all()
+            )
+            st.session_state.authenticated = True
+            st.session_state.user = {
+                "id": default_user.id,
+                "email": default_user.email,
+                "full_name": default_user.full_name,
+                "platform_role": default_user.platform_role,
+            }
+            st.session_state.current_org = {
+                "id": default_org.id,
+                "name": default_org.name,
+                "slug": default_org.slug,
+                "role": "organization_owner",
+                "logo_url": default_org.logo_url,
+                "brand_name": default_org.brand_name or default_org.name,
+                "settings": default_org.settings or {},
+            }
+            st.session_state.current_org_id = default_org.id
+            st.session_state.user_organizations = [
+                {
+                    "id": o.id,
+                    "name": o.name,
+                    "slug": o.slug,
+                    "role": m.role,
+                    "is_default": bool(m.is_default),
+                }
+                for m, o in user_memberships
+            ]
+        else:
+            st.session_state.authenticated = False
+    except Exception:
+        st.session_state.authenticated = False
+    finally:
+        db_init_session.close()
+
+if not st.session_state.get("authenticated"):
+    render_auth_page()
+    st.stop()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -222,10 +294,10 @@ CAMPAIGN_LOG_COLUMNS = [
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def fetch_cached_kb_summary() -> dict:
+def fetch_cached_kb_summary(organization_id: Optional[str] = None) -> dict:
     db = SessionLocal()
     try:
-        return get_knowledge_base_summary(db)
+        return get_knowledge_base_summary(db, organization_id=organization_id)
     except Exception:
         return {"total_chunks": 0, "total_documents": 0, "documents": []}
     finally:
@@ -249,10 +321,13 @@ def get_cached_excel_df(file_path: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def load_campaign_logs():
+def load_campaign_logs(organization_id: Optional[str] = None):
     db = SessionLocal()
     try:
-        rows = db.query(CampaignLog).order_by(CampaignLog.created_at.desc()).all()
+        q = db.query(CampaignLog)
+        if organization_id:
+            q = q.filter(CampaignLog.organization_id == organization_id)
+        rows = q.order_by(CampaignLog.created_at.desc()).all()
     finally:
         db.close()
     return [
@@ -322,6 +397,7 @@ def sync_external_sources_once() -> dict:
 # ─────────────────────────────────────────────────────────────
 # SIDEBAR NAVIGATION
 # ─────────────────────────────────────────────────────────────
+# Core Campaign Pipeline Navigation
 NAV_ITEMS = {
     "overview": {"icon": "📊", "label": "Pipeline Overview"},
     "master_db": {"icon": "🗄️", "label": "MasterDB"},
@@ -334,7 +410,17 @@ NAV_ITEMS = {
     "knowledge_base": {"icon": "📚", "label": "Knowledge Base Hub"},
 }
 
-if "page" in st.query_params and st.query_params["page"] in NAV_ITEMS:
+# Dedicated Workspace Management Pages (Integrated under Active Organization)
+WORKSPACE_NAV_ITEMS = {
+    "org_settings": {"icon": "⚙️", "label": "Workspace Settings"},
+    "team": {"icon": "👥", "label": "Team Members"},
+}
+
+ALL_PAGES = set(NAV_ITEMS.keys()) | set(WORKSPACE_NAV_ITEMS.keys())
+if st.session_state.get("user", {}).get("platform_role") == "platform_super_admin":
+    ALL_PAGES.add("super_admin")
+
+if "page" in st.query_params and st.query_params["page"] in ALL_PAGES:
     st.session_state.active_page = st.query_params["page"]
 
 if "tab" in st.query_params:
@@ -343,7 +429,7 @@ if "tab" in st.query_params:
 if "feature" in st.query_params:
     st.session_state.analytics_focused_feature = st.query_params["feature"]
 
-if "active_page" not in st.session_state or st.session_state.active_page not in NAV_ITEMS:
+if "active_page" not in st.session_state or st.session_state.active_page not in ALL_PAGES:
     st.session_state.active_page = "overview"
 
 
@@ -409,7 +495,43 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div style='font-family: \"JetBrains Mono\", monospace; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 10px 0 8px 6px;'>Navigation</div>", unsafe_allow_html=True)
+    # ── Platform Administration Box (TOP SIDE - Platform Super Admin Only) ──
+    is_platform_admin = st.session_state.get("user", {}).get("platform_role") == "platform_super_admin"
+    if is_platform_admin:
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #B45309; text-transform: uppercase; letter-spacing: 0.08em;">
+                        👑 Administration
+                    </span>
+                    <span style="font-size: 9px; background: #FEF3C7; color: #92400E; font-weight: 700; padding: 1.5px 6px; border-radius: 4px; border: 1px solid #FDE68A;">
+                        PLATFORM ROOT
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            is_admin_active = st.session_state.active_page == "super_admin"
+            if st.button(
+                "👑  Platform Super Admin",
+                key="top_admin_super_portal",
+                type="primary" if is_admin_active else "secondary",
+                use_container_width=True,
+                help="Global SaaS Operations, Tenant Oversight & System Health",
+            ):
+                st.session_state.active_page = "super_admin"
+                st.query_params["page"] = "super_admin"
+                if "tab" in st.query_params:
+                    del st.query_params["tab"]
+                if "feature" in st.query_params:
+                    del st.query_params["feature"]
+                st.rerun()
+
+    render_org_switcher()
+
+    st.markdown("<hr style='border: none; border-top: 1px solid #E2E8F0; margin: 12px 0 10px 0;'>", unsafe_allow_html=True)
+    st.markdown("<div style='font-family: \"JetBrains Mono\", monospace; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 8px 6px;'>Pipeline Navigation</div>", unsafe_allow_html=True)
 
     for key, nav in NAV_ITEMS.items():
         btn_type = "primary" if st.session_state.active_page == key else "secondary"
@@ -510,6 +632,36 @@ with st.sidebar:
         st.caption("Erase all uploaded leads, drafts, logs, replies, and bookings to test fresh with 0 records.")
         if st.button("⚠️ Reset All Data to Zero", type="secondary", use_container_width=True, key="reset_all_data_btn"):
             confirm_reset_dialog()
+
+    # User Profile & Sign Out
+    st.markdown("<hr style='border: none; border-top: 1px solid #E2E8F0; margin: 14px 0 10px 0;'>", unsafe_allow_html=True)
+    user_info = st.session_state.get("user", {})
+    user_role = st.session_state.get("current_org", {}).get("role", "regular_user")
+    role_disp = {
+        "organization_owner": "👑 Owner",
+        "organization_admin": "🛡️ Admin",
+        "campaign_manager": "🚀 Campaign Mgr",
+        "sales_user": "💼 Sales User",
+        "regular_user": "👤 Member",
+        "viewer": "👁️ Viewer",
+    }.get(user_role, "👤 Member")
+
+    st.markdown(
+        f"""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
+            <div style="font-weight: 700; font-size: 13px; color: #0F172A;">{user_info.get('full_name') or 'User'}</div>
+            <div style="font-size: 11px; color: #64748B;">{user_info.get('email')}</div>
+            <div style="margin-top: 4px;"><span style="background: #EDE9FE; color: #7C3AED; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">{role_disp}</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("🚪 Sign Out", key="sb_btn_logout", type="secondary", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.user = None
+        st.session_state.current_org = None
+        st.session_state.current_org_id = None
+        st.rerun()
 
 
 
@@ -3381,14 +3533,19 @@ def render_replies(df: pd.DataFrame) -> None:
 page = st.session_state.active_page
 
 def get_campaign_logs_df() -> pd.DataFrame:
-    rows = load_campaign_logs()
+    org_id = st.session_state.get("current_org_id")
+    rows = load_campaign_logs(org_id)
     return pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
 
 def render_main_view(page_name: str):
+    org_id = st.session_state.get("current_org_id")
     if page_name == "overview":
         render_overview(get_campaign_logs_df())
     elif page_name == "master_db":
-        render_master_db()
+        try:
+            render_master_db(get_campaign_logs_df(), organization_id=org_id)
+        except TypeError:
+            render_master_db(get_campaign_logs_df())
     elif page_name == "analytics":
         render_analytics(get_campaign_logs_df())
     elif page_name == "replies":
@@ -3402,7 +3559,21 @@ def render_main_view(page_name: str):
     elif page_name == "upload":
         render_upload()
     elif page_name == "knowledge_base":
-        render_knowledge_base_hub()
+        try:
+            render_knowledge_base_hub(organization_id=org_id)
+        except TypeError:
+            render_knowledge_base_hub()
+    elif page_name == "org_settings":
+        render_org_settings(organization_id=org_id)
+    elif page_name == "team":
+        render_team_view(organization_id=org_id)
+    elif page_name == "super_admin":
+        if st.session_state.get("user", {}).get("platform_role") == "platform_super_admin":
+            render_super_admin_portal()
+        else:
+            st.error("⛔ Access restricted to Platform Super Administrators only.")
+            st.session_state.active_page = "overview"
+            render_overview(get_campaign_logs_df())
 
 render_main_view(page)
 

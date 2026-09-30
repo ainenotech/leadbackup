@@ -101,6 +101,7 @@ class KnowledgeDocument(Base):
     content = Column(Text, nullable=False)  # this chunk's text
     embedding = Column(ARRAY(Float).with_variant(JSON, "sqlite"), nullable=False)
 
+    organization_id = Column(String, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -116,6 +117,7 @@ class ProcessedReply(Base):
     sender_email = Column(String, nullable=True)
     subject = Column(String, nullable=True)
     status = Column(String, default="processed")
+    organization_id = Column(String, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

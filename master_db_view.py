@@ -41,46 +41,56 @@ from utils.theme import apply_chart_theme, is_dark_mode
 # ─────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=180, show_spinner=False)
-def fetch_cached_dashboard_metrics() -> Dict:
+def fetch_cached_dashboard_metrics(organization_id: Optional[str] = None) -> Dict:
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     db = SessionLocal()
     try:
-        return get_dashboard_metrics(db)
+        return get_dashboard_metrics(db, organization_id=organization_id)
     finally:
         db.close()
 
 
 @st.cache_data(ttl=180, show_spinner=False)
-def fetch_cached_chunks() -> List[Dict]:
+def fetch_cached_chunks(organization_id: Optional[str] = None) -> List[Dict]:
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     db = SessionLocal()
     try:
-        return get_all_chunks(db)
+        return get_all_chunks(db, organization_id=organization_id)
     finally:
         db.close()
 
 
 @st.cache_data(ttl=180, show_spinner=False)
-def fetch_cached_imports() -> List[Dict]:
+def fetch_cached_imports(organization_id: Optional[str] = None) -> List[Dict]:
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     db = SessionLocal()
     try:
-        return get_all_imports(db)
+        return get_all_imports(db, organization_id=organization_id)
     finally:
         db.close()
 
 
 @st.cache_data(ttl=120, show_spinner=False)
-def fetch_cached_recent_activities(limit: int = 50) -> List[Dict]:
+def fetch_cached_recent_activities(limit: int = 50, organization_id: Optional[str] = None) -> List[Dict]:
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     db = SessionLocal()
     try:
-        return get_recent_activities(db, limit=limit)
+        return get_recent_activities(db, limit=limit, organization_id=organization_id)
     finally:
         db.close()
 
 
 @st.cache_data(ttl=120, show_spinner=False)
-def fetch_cached_audit_log(limit: int = 200) -> List[Dict]:
+def fetch_cached_audit_log(limit: int = 200, organization_id: Optional[str] = None) -> List[Dict]:
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     db = SessionLocal()
     try:
-        return get_audit_log(db, limit=limit)
+        return get_audit_log(db, limit=limit, organization_id=organization_id)
     finally:
         db.close()
 
@@ -404,13 +414,18 @@ def _inject_master_db_styles(is_dark: bool) -> None:
 # ─────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _ensure_master_db_synced_once() -> bool:
+def _ensure_master_db_synced_once(organization_id: Optional[str] = None) -> bool:
     """Fast initial check to ensure Master DB has records."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     db_chk = SessionLocal()
     try:
-        m_cnt = db_chk.query(MasterLead).count()
+        q = db_chk.query(MasterLead)
+        if organization_id:
+            q = q.filter(MasterLead.organization_id == organization_id)
+        m_cnt = q.count()
         if m_cnt == 0:
-            backfill_from_campaign_log(db_chk)
+            backfill_from_campaign_log(db_chk, organization_id=organization_id)
         return True
     except Exception as _ex:
         print(f"[Master DB sync notice] {_ex}")
@@ -419,13 +434,16 @@ def _ensure_master_db_synced_once() -> bool:
         db_chk.close()
 
 
-def render_master_db(df_logs: pd.DataFrame = None):
+def render_master_db(df_logs: pd.DataFrame = None, organization_id: Optional[str] = None, *args, **kwargs):
     """Main entry point for Master Database & CRM Intelligence."""
+    if organization_id is None:
+        organization_id = kwargs.get("organization_id") or st.session_state.get("current_org_id")
+
     is_dark = is_dark_mode()
     _inject_master_db_styles(is_dark)
 
     # Automatic initial sync check: cached for 10 minutes so it doesn't run on every tab click
-    _ensure_master_db_synced_once()
+    _ensure_master_db_synced_once(organization_id=organization_id)
 
     # Top Executive Banner
     banner_html = f"""
@@ -459,9 +477,9 @@ def render_master_db(df_logs: pd.DataFrame = None):
             db_sync = SessionLocal()
             try:
                 with st.spinner("Syncing live telemetry & campaign records..."):
-                    res = backfill_from_campaign_log(db_sync)
+                    res = backfill_from_campaign_log(db_sync, organization_id=organization_id)
                 st.cache_data.clear()
-                st.toast(f"✅ Real data live synced! ({res['linked']} records verified)", icon="⚡")
+                st.toast(f"✅ Real data live synced! ({res.get('linked', 0)} records verified)", icon="⚡")
                 st.rerun()
             finally:
                 db_sync.close()
@@ -503,31 +521,33 @@ def render_master_db(df_logs: pd.DataFrame = None):
     cur_mdb_tab = st.session_state.mdb_active_tab
 
     if cur_mdb_tab == "overview":
-        _render_tab_overview()
+        _render_tab_overview(organization_id=organization_id)
     elif cur_mdb_tab == "leads":
-        _render_tab_leads_directory()
+        _render_tab_leads_directory(organization_id=organization_id)
     elif cur_mdb_tab == "ingestion":
-        _render_tab_ingestion()
+        _render_tab_ingestion(organization_id=organization_id)
     elif cur_mdb_tab == "chunks":
-        _render_tab_chunks()
+        _render_tab_chunks(organization_id=organization_id)
     elif cur_mdb_tab == "templates":
-        _render_tab_templates()
+        _render_tab_templates(organization_id=organization_id)
     elif cur_mdb_tab == "history":
-        _render_tab_import_history()
+        _render_tab_import_history(organization_id=organization_id)
     elif cur_mdb_tab == "timeline":
-        _render_tab_activity_timeline()
+        _render_tab_activity_timeline(organization_id=organization_id)
     elif cur_mdb_tab == "audit":
-        _render_tab_audit_log()
+        _render_tab_audit_log(organization_id=organization_id)
 
 
 # ─────────────────────────────────────────────────────────────
 # TAB 1: 📊 COMMAND CENTER (Executive Overview)
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_overview():
+def _render_tab_overview(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders executive KPI metrics, interactive Plotly charts, and system status."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
-    metrics = fetch_cached_dashboard_metrics()
+    metrics = fetch_cached_dashboard_metrics(organization_id=organization_id)
 
     total_leads = metrics.get("total_leads", 0)
     new_this_week = metrics.get("new_this_week", 0)
@@ -843,22 +863,31 @@ def _load_cached_leads_file_metadata(file_path: str = "leads.xlsx") -> Dict[str,
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def load_enriched_master_data() -> pd.DataFrame:
+def load_enriched_master_data(organization_id: Optional[str] = None) -> pd.DataFrame:
     """Loads all Master Leads with full telemetry, template assignments, and Excel metadata."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     from Backend.db import SessionLocal
     from Backend.master_db_models import MasterLead, OutreachHistory
     from Backend.models import CampaignLog
 
     db = SessionLocal()
     try:
-        leads = db.query(MasterLead).all()
-        oh_rows = db.query(OutreachHistory).order_by(OutreachHistory.created_at.desc()).all()
+        q_leads = db.query(MasterLead)
+        q_oh = db.query(OutreachHistory)
+        q_cl = db.query(CampaignLog)
+        if organization_id:
+            q_leads = q_leads.filter(MasterLead.organization_id == organization_id)
+            q_oh = q_oh.filter(OutreachHistory.organization_id == organization_id)
+            q_cl = q_cl.filter(CampaignLog.organization_id == organization_id)
+        leads = q_leads.all()
+        oh_rows = q_oh.order_by(OutreachHistory.created_at.desc()).all()
         oh_map = {}
         for oh in oh_rows:
             if oh.master_lead_id and oh.master_lead_id not in oh_map:
                 oh_map[oh.master_lead_id] = oh
 
-        cl_rows = db.query(CampaignLog).order_by(CampaignLog.created_at.desc()).all()
+        cl_rows = q_cl.order_by(CampaignLog.created_at.desc()).all()
         cl_map = {}
         for cl in cl_rows:
             em = (cl.email or "").strip().lower()
@@ -988,13 +1017,15 @@ def build_clean_dataframe(df_source: pd.DataFrame) -> pd.DataFrame:
     return df_out[cols_order]
 
 
-def _render_tab_leads_directory():
+def _render_tab_leads_directory(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders template-wise lead segmentation into Hot, Warm, and Cold leads with Excel sheet export."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
     templates = load_all_templates()
 
     # Load authentic enriched master lead records
-    enriched_df = load_enriched_master_data()
+    enriched_df = load_enriched_master_data(organization_id=organization_id)
 
     if enriched_df.empty:
         st.info("No leads found in the database. Ingest leads via the **Lead Ingestion & Deduplication** tab.")
@@ -1482,8 +1513,10 @@ def _render_lead_profile_card(lead_id: str):
 # TAB 3: 📥 LEAD INGESTION & DEDUPLICATION HUB
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_ingestion():
+def _render_tab_ingestion(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders a guided 4-step pipeline for uploading, deduplicating, previewing, and chunking leads."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
 
     st.markdown("""
@@ -1579,7 +1612,7 @@ def _render_tab_ingestion():
             db = SessionLocal()
             try:
                 with st.spinner("Analyzing emails, identifying duplicates, and checking collisions..."):
-                    preview = generate_import_preview(db, df_raw, template_id=pre_tpl_id, filename=uploaded_file.name)
+                    preview = generate_import_preview(db, df_raw, template_id=pre_tpl_id, filename=uploaded_file.name, organization_id=organization_id)
             finally:
                 db.close()
 
@@ -1646,6 +1679,7 @@ def _render_tab_ingestion():
                             template_id=st.session_state.mdb_chosen_tpl_id,
                             template_name=st.session_state.mdb_chosen_tpl_name,
                             column_mapping=preview.get("column_mapping"),
+                            organization_id=organization_id,
                         )
                 finally:
                     db.close()
@@ -1673,8 +1707,10 @@ def _render_tab_ingestion():
 # TAB 4: 📦 INTELLIGENT CHUNK MANAGEMENT
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_chunks():
+def _render_tab_chunks(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders chunk queue, template assignments, and state transitions."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
 
     st.markdown("""
@@ -1684,7 +1720,7 @@ def _render_tab_chunks():
     </div>
     """, unsafe_allow_html=True)
 
-    chunks = fetch_cached_chunks()
+    chunks = fetch_cached_chunks(organization_id=organization_id)
 
     if not chunks:
         st.info("No chunks created yet. Import leads via the **Lead Ingestion & Deduplication** tab to generate chunks automatically.")
@@ -1885,8 +1921,10 @@ def _render_tab_chunks():
 # TAB 5: 🏷️ TEMPLATE PERFORMANCE & MATRIX
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_templates():
+def _render_tab_templates(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders cross-chunk template performance and conversion matrix."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
 
     st.markdown("""
@@ -1896,7 +1934,7 @@ def _render_tab_templates():
     </div>
     """, unsafe_allow_html=True)
 
-    chunks = fetch_cached_chunks()
+    chunks = fetch_cached_chunks(organization_id=organization_id)
 
     assigned_chunks = [c for c in chunks if c.get("template_name")]
     unassigned_chunks = [c for c in chunks if not c.get("template_name")]
@@ -1969,8 +2007,10 @@ def _render_tab_templates():
 # TAB 6: 📜 BATCH IMPORT HISTORY
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_import_history():
+def _render_tab_import_history(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders all past file uploads, stats, and row-level breakdown."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
 
     st.markdown("""
@@ -1980,7 +2020,7 @@ def _render_tab_import_history():
     </div>
     """, unsafe_allow_html=True)
 
-    imports = fetch_cached_imports()
+    imports = fetch_cached_imports(organization_id=organization_id)
 
     if not imports:
         st.info("No batch imports recorded yet.")
@@ -2043,8 +2083,10 @@ def _render_tab_import_history():
 # TAB 7: 🕐 GLOBAL ACTIVITY TIMELINE
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_activity_timeline():
+def _render_tab_activity_timeline(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders real-time chronological stream of lead events across the enterprise."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
 
     st.markdown("""
@@ -2054,7 +2096,7 @@ def _render_tab_activity_timeline():
     </div>
     """, unsafe_allow_html=True)
 
-    act_rows = fetch_cached_recent_activities(limit=50)
+    act_rows = fetch_cached_recent_activities(limit=50, organization_id=organization_id)
 
     if not act_rows:
         st.info("No activity recorded yet.")
@@ -2086,8 +2128,10 @@ def _render_tab_activity_timeline():
 # TAB 8: 📋 REGULATORY AUDIT LOG
 # ─────────────────────────────────────────────────────────────
 
-def _render_tab_audit_log():
+def _render_tab_audit_log(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders administrative audit log for security, compliance, and traceability."""
+    if organization_id is None:
+        organization_id = st.session_state.get("current_org_id")
     is_dark = is_dark_mode()
 
     st.markdown("""
@@ -2097,7 +2141,7 @@ def _render_tab_audit_log():
     </div>
     """, unsafe_allow_html=True)
 
-    logs = fetch_cached_audit_log(limit=200)
+    logs = fetch_cached_audit_log(limit=200, organization_id=organization_id)
 
     if not logs:
         st.info("No audit logs recorded yet.")

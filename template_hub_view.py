@@ -1302,16 +1302,17 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                             booking_url=booking_url,
                         )
 
+                        current_org_id = st.session_state.get("current_org_id")
+
                         # Check if un-sent draft already exists in DB for this email
-                        existing_draft = (
-                            db.query(CampaignLog)
-                            .filter(
-                                func.lower(CampaignLog.email) == email,
-                                CampaignLog.status.in_(["drafted", "pending", "draft", "rejected"]),
-                                CampaignLog.email_sent_at.is_(None),
-                            )
-                            .first()
+                        q_draft = db.query(CampaignLog).filter(
+                            func.lower(CampaignLog.email) == email,
+                            CampaignLog.status.in_(["drafted", "pending", "draft", "rejected"]),
+                            CampaignLog.email_sent_at.is_(None),
                         )
+                        if current_org_id:
+                            q_draft = q_draft.filter(CampaignLog.organization_id == current_org_id)
+                        existing_draft = q_draft.first()
 
                         if existing_draft:
                             update_draft_content(
@@ -1340,6 +1341,7 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                                 status="drafted",
                                 template_id=batch_tpl_id,
                                 template_name=batch_tpl["name"],
+                                organization_id=current_org_id,
                             )
                             created += 1
 

@@ -124,10 +124,14 @@ def create_or_update_lead(
     location: str = None,
     lead_source: str = None,
     custom_fields: Dict = None,
+    organization_id: Optional[str] = None,
 ) -> Tuple[MasterLead, bool]:
     """Find or create a MasterLead. Returns (lead, is_new)."""
     norm = normalize_email(email)
-    existing = db.query(MasterLead).filter(MasterLead.email_normalized == norm).first()
+    q = db.query(MasterLead).filter(MasterLead.email_normalized == norm)
+    if organization_id:
+        q = q.filter(MasterLead.organization_id == organization_id)
+    existing = q.first()
 
     if existing:
         # Update fields only if they were previously empty
@@ -164,6 +168,7 @@ def create_or_update_lead(
     lead = MasterLead(
         email=email.strip(),
         email_normalized=norm,
+        organization_id=organization_id,
         first_name=first_name,
         last_name=last_name,
         full_name=full_name or (f"{first_name or ''} {last_name or ''}".strip() or None),
@@ -261,6 +266,7 @@ def generate_import_preview(
     df: pd.DataFrame,
     template_id: str = None,
     filename: str = "upload",
+    organization_id: Optional[str] = None,
 ) -> Dict:
     """Analyses a DataFrame without inserting anything.
     Returns preview statistics for the admin to review.
@@ -314,7 +320,10 @@ def generate_import_preview(
         seen_in_file.add(norm)
 
         # Check against Master DB
-        existing_lead = db.query(MasterLead).filter(MasterLead.email_normalized == norm).first()
+        q_ex = db.query(MasterLead).filter(MasterLead.email_normalized == norm)
+        if organization_id:
+            q_ex = q_ex.filter(MasterLead.organization_id == organization_id)
+        existing_lead = q_ex.first()
         if existing_lead:
             existing_leads += 1
             # Check template-specific duplicate
@@ -368,6 +377,7 @@ def confirm_import(
     template_name: str = None,
     uploaded_by: str = "Admin",
     column_mapping: Dict = None,
+    organization_id: Optional[str] = None,
 ) -> Dict:
     """
     Full ingestion pipeline:
@@ -386,6 +396,7 @@ def confirm_import(
         filename=filename,
         file_type=file_type,
         uploaded_by=uploaded_by,
+        organization_id=organization_id,
         total_records=len(df),
         chunk_size=chunk_size,
         status="processing",
@@ -394,7 +405,8 @@ def confirm_import(
     db.flush()
 
     log_audit(db, "import_started", "import", imp.id, uploaded_by,
-              new_value={"filename": filename, "total_records": len(df)})
+              new_value={"filename": filename, "total_records": len(df)},
+              organization_id=organization_id)
 
     # Column mapping
     cm = column_mapping or {}
@@ -492,13 +504,15 @@ def confirm_import(
             company=company, phone=phone, job_title=job_title,
             website=website, linkedin_url=linkedin,
             industry=industry, location=location, lead_source=source,
+            organization_id=organization_id,
         )
 
         if is_new:
             new_count += 1
             action = "created"
             log_activity(db, lead.id, "lead_imported",
-                         f"Lead imported from {filename}")
+                         f"Lead imported from {filename}",
+                         organization_id=organization_id)
         else:
             existing_count += 1
             action = "existing"
@@ -512,6 +526,7 @@ def confirm_import(
                     master_lead_id=lead.id, action="duplicate_template",
                     raw_data={"email": raw_email},
                     error_detail=f"Template {template_id} already sent",
+                    organization_id=organization_id,
                 ))
                 continue
             else:
@@ -521,6 +536,7 @@ def confirm_import(
             import_id=imp.id, row_number=idx + 1,
             master_lead_id=lead.id, action=action,
             raw_data={"email": raw_email, "name": full_name or first_name, "company": company},
+            organization_id=organization_id,
         ))
         eligible_leads.append(lead.id)
 
@@ -538,6 +554,7 @@ def confirm_import(
                 import_id=imp.id,
                 total_leads=len(chunk_leads),
                 processing_status="AWAITING_TEMPLATE",
+                organization_id=organization_id,
             )
             db.add(chunk)
             db.flush()
@@ -548,10 +565,12 @@ def confirm_import(
                     master_lead_id=lead_id,
                 ))
                 log_activity(db, lead_id, "assigned_to_chunk",
-                             f"Assigned to {chunk_name}")
+                             f"Assigned to {chunk_name}",
+                             organization_id=organization_id)
 
             log_audit(db, "chunk_created", "chunk", chunk.id, uploaded_by,
-                      new_value={"chunk_name": chunk_name, "total_leads": len(chunk_leads)})
+                      new_value={"chunk_name": chunk_name, "total_leads": len(chunk_leads)},
+                      organization_id=organization_id)
 
     # Finalise import record
     imp.new_leads = new_count
@@ -596,9 +615,12 @@ def confirm_import(
 # CHUNK MANAGEMENT
 # ─────────────────────────────────────────────────────────────
 
-def get_all_chunks(db: Session) -> List[Dict]:
-    """Returns all chunks with summary stats."""
-    chunks = db.query(LeadChunk).order_by(LeadChunk.created_at.desc()).all()
+def get_all_chunks(db: Session, organization_id: Optional[str] = None) -> List[Dict]:
+    """Returns all chunks with summary stats, scoped to organization if provided."""
+    q = db.query(LeadChunk)
+    if organization_id:
+        q = q.filter(LeadChunk.organization_id == organization_id)
+    chunks = q.order_by(LeadChunk.created_at.desc()).all()
     return [_chunk_to_dict(c) for c in chunks]
 
 
@@ -763,7 +785,7 @@ def assign_template_to_chunk(
 # DASHBOARD METRICS
 # ─────────────────────────────────────────────────────────────
 
-def get_dashboard_metrics(db: Session) -> Dict:
+def get_dashboard_metrics(db: Session, organization_id: Optional[str] = None) -> Dict:
     """Aggregated overview metrics for the CEO dashboard (optimized single-batch queries)."""
     from datetime import timedelta
 
@@ -771,7 +793,7 @@ def get_dashboard_metrics(db: Session) -> Dict:
     week_ago = now - timedelta(days=7)
 
     # Combined aggregates for master leads
-    lead_totals = db.query(
+    lead_q = db.query(
         func.count(MasterLead.id),
         func.count(MasterLead.id).filter(MasterLead.created_at >= week_ago),
         func.coalesce(func.sum(MasterLead.total_emails_sent), 0),
@@ -779,7 +801,10 @@ def get_dashboard_metrics(db: Session) -> Dict:
         func.count(MasterLead.id).filter(
             MasterLead.booking_status.in_(["scheduled", "confirmed", "meeting_scheduled", "booked"])
         )
-    ).first()
+    )
+    if organization_id:
+        lead_q = lead_q.filter(MasterLead.organization_id == organization_id)
+    lead_totals = lead_q.first()
 
     total = lead_totals[0] or 0
     new_this_week = lead_totals[1] or 0
@@ -788,7 +813,10 @@ def get_dashboard_metrics(db: Session) -> Dict:
     total_booked = lead_totals[4] or 0
 
     # Status counts in ONE single group-by query
-    sc_raw = db.query(MasterLead.current_status, func.count(MasterLead.id)).group_by(MasterLead.current_status).all()
+    sc_q = db.query(MasterLead.current_status, func.count(MasterLead.id))
+    if organization_id:
+        sc_q = sc_q.filter(MasterLead.organization_id == organization_id)
+    sc_raw = sc_q.group_by(MasterLead.current_status).all()
     status_counts = {s: 0 for s in ["new", "active", "contacted", "replied", "booked", "unsubscribed", "bounced"]}
     for s_val, cnt in sc_raw:
         if s_val in status_counts:
@@ -797,15 +825,21 @@ def get_dashboard_metrics(db: Session) -> Dict:
             status_counts[s_val] = cnt
 
     # Import stats in one query
-    imp_totals = db.query(
+    imp_q = db.query(
         func.count(LeadImport.id),
         func.coalesce(func.sum(LeadImport.duplicates), 0)
-    ).first()
+    )
+    if organization_id:
+        imp_q = imp_q.filter(LeadImport.organization_id == organization_id)
+    imp_totals = imp_q.first()
     total_imports = imp_totals[0] or 0
     total_dup_records = imp_totals[1] or 0
 
     # Chunk pipeline in ONE single group-by query
-    cp_raw = db.query(LeadChunk.processing_status, func.count(LeadChunk.id)).group_by(LeadChunk.processing_status).all()
+    cp_q = db.query(LeadChunk.processing_status, func.count(LeadChunk.id))
+    if organization_id:
+        cp_q = cp_q.filter(LeadChunk.organization_id == organization_id)
+    cp_raw = cp_q.group_by(LeadChunk.processing_status).all()
     chunk_statuses = {s: 0 for s in [
         "AWAITING_TEMPLATE", "TEMPLATE_ASSIGNED", "READY", "PROCESSING", "COMPLETED",
         "PARTIALLY_COMPLETED", "FAILED", "PAUSED", "CANCELLED"
@@ -842,9 +876,12 @@ def get_leads_paginated(
     status_filter: str = None,
     sort_by: str = "created_at",
     sort_order: str = "desc",
+    organization_id: Optional[str] = None,
 ) -> Dict:
     """Returns paginated, filtered, searchable lead list."""
     query = db.query(MasterLead)
+    if organization_id:
+        query = query.filter(MasterLead.organization_id == organization_id)
 
     if search:
         search_term = f"%{search.strip().lower()}%"
@@ -966,11 +1003,9 @@ def get_lead_detail(db: Session, lead_id: str) -> Optional[Dict]:
     return detail
 
 
-def get_recent_activities(db: Session, limit: int = 50) -> List[Dict]:
-    """Returns recent activities with MasterLead email and name joined in a single fast query.
-    Replaces the legacy N+1 query loop for lightning-fast rendering.
-    """
-    rows = (
+def get_recent_activities(db: Session, limit: int = 50, organization_id: Optional[str] = None) -> List[Dict]:
+    """Returns recent activities with MasterLead email and name joined in a single fast query."""
+    q = (
         db.query(
             LeadActivity.id,
             LeadActivity.activity_type,
@@ -980,10 +1015,10 @@ def get_recent_activities(db: Session, limit: int = 50) -> List[Dict]:
             MasterLead.full_name,
         )
         .outerjoin(MasterLead, LeadActivity.master_lead_id == MasterLead.id)
-        .order_by(LeadActivity.created_at.desc())
-        .limit(limit)
-        .all()
     )
+    if organization_id:
+        q = q.filter(LeadActivity.organization_id == organization_id)
+    rows = q.order_by(LeadActivity.created_at.desc()).limit(limit).all()
     return [
         {
             "id": r[0],
@@ -1001,9 +1036,12 @@ def get_recent_activities(db: Session, limit: int = 50) -> List[Dict]:
 # IMPORT HISTORY
 # ─────────────────────────────────────────────────────────────
 
-def get_all_imports(db: Session) -> List[Dict]:
-    """Returns all import records."""
-    imports = db.query(LeadImport).order_by(LeadImport.created_at.desc()).all()
+def get_all_imports(db: Session, organization_id: Optional[str] = None) -> List[Dict]:
+    """Returns all import records, scoped to organization if provided."""
+    q = db.query(LeadImport)
+    if organization_id:
+        q = q.filter(LeadImport.organization_id == organization_id)
+    imports = q.order_by(LeadImport.created_at.desc()).all()
     return [
         {
             "id": i.id,
@@ -1067,9 +1105,11 @@ def get_import_detail(db: Session, import_id: str) -> Optional[Dict]:
 # AUDIT LOG QUERIES
 # ─────────────────────────────────────────────────────────────
 
-def get_audit_log(db: Session, limit: int = 200, entity_type: str = None) -> List[Dict]:
-    """Returns recent audit log entries."""
+def get_audit_log(db: Session, limit: int = 200, entity_type: str = None, organization_id: Optional[str] = None) -> List[Dict]:
+    """Returns recent audit log entries, scoped to organization if provided."""
     query = db.query(AuditLog)
+    if organization_id:
+        query = query.filter(AuditLog.organization_id == organization_id)
     if entity_type:
         query = query.filter(AuditLog.entity_type == entity_type)
     entries = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
@@ -1092,14 +1132,17 @@ def get_audit_log(db: Session, limit: int = 200, entity_type: str = None) -> Lis
 # BACKFILL: Populate MasterLead from existing campaign_log
 # ─────────────────────────────────────────────────────────────
 
-def backfill_from_campaign_log(db: Session) -> Dict:
+def backfill_from_campaign_log(db: Session, organization_id: Optional[str] = None) -> Dict:
     """Full synchronization: syncs MasterLead, LeadImport, LeadChunk, OutreachHistory,
     and LeadActivity from existing campaign_log rows, leads.xlsx, and customer_replies.xlsx
     using idempotent, fast in-memory batching.
     """
     from Backend.models import CampaignLog
 
-    camp_logs = db.query(CampaignLog).all()
+    q = db.query(CampaignLog)
+    if organization_id:
+        q = q.filter(CampaignLog.organization_id == organization_id)
+    camp_logs = q.all()
     if not camp_logs:
         return {"created": 0, "updated": 0, "linked": 0}
 
@@ -1143,21 +1186,31 @@ def backfill_from_campaign_log(db: Session) -> Dict:
         print("[backfill notice] leads.xlsx metadata note:", ex)
 
     # Preload existing MasterLeads into memory
-    all_leads = db.query(MasterLead).all()
+    q_ml = db.query(MasterLead)
+    if organization_id:
+        q_ml = q_ml.filter(MasterLead.organization_id == organization_id)
+    all_leads = q_ml.all()
     leads_by_email = {l.email_normalized: l for l in all_leads if l.email_normalized}
 
     # Preload existing OutreachHistory into a lookup map
-    all_oh = db.query(OutreachHistory).all()
+    q_oh = db.query(OutreachHistory)
+    if organization_id:
+        q_oh = q_oh.filter(OutreachHistory.organization_id == organization_id)
+    all_oh = q_oh.all()
     oh_set = {(oh.master_lead_id, oh.campaign_log_id): oh for oh in all_oh}
 
     # Ensure baseline LeadImport exists so Batch History tab displays the batch
-    imp = db.query(LeadImport).first()
+    q_imp = db.query(LeadImport)
+    if organization_id:
+        q_imp = q_imp.filter(LeadImport.organization_id == organization_id)
+    imp = q_imp.first()
     if not imp:
         imp = LeadImport(
             import_code="IMP-INIT-MASTER-001",
             filename="leads.xlsx",
             file_type="xlsx",
             uploaded_by="System Initial Sync",
+            organization_id=organization_id,
             total_records=len(camp_logs),
             status="completed",
             completed_at=datetime.now(timezone.utc),
@@ -1218,6 +1271,7 @@ def backfill_from_campaign_log(db: Session) -> Dict:
                 id=new_lead_id,
                 email=primary_log.email.strip(),
                 email_normalized=em,
+                organization_id=organization_id or getattr(primary_log, "organization_id", None),
                 first_name=fname,
                 last_name=lname,
                 full_name=full_nm,
@@ -1291,6 +1345,7 @@ def backfill_from_campaign_log(db: Session) -> Dict:
             if key not in oh_set:
                 oh = OutreachHistory(
                     master_lead_id=lead.id,
+                    organization_id=organization_id or getattr(r, "organization_id", None) or getattr(lead, "organization_id", None),
                     template_id=r.template_id,
                     template_name=r.template_name,
                     campaign_log_id=r.id,
@@ -1308,12 +1363,16 @@ def backfill_from_campaign_log(db: Session) -> Dict:
     db.flush()
 
     # Populate LeadImportRecord if missing
-    import_rec_count = db.query(LeadImportRecord).filter(LeadImportRecord.import_id == import_id).count()
+    q_ir = db.query(LeadImportRecord).filter(LeadImportRecord.import_id == import_id)
+    if organization_id:
+        q_ir = q_ir.filter(LeadImportRecord.organization_id == organization_id)
+    import_rec_count = q_ir.count()
     if import_rec_count == 0:
         imp_objs = [
             LeadImportRecord(
                 import_id=import_id,
                 master_lead_id=lead.id,
+                organization_id=organization_id or getattr(lead, "organization_id", None),
                 row_number=idx + 1,
                 action="created",
                 raw_data={"email": lead.email, "name": lead.full_name, "company": lead.company},
@@ -1323,7 +1382,10 @@ def backfill_from_campaign_log(db: Session) -> Dict:
         db.bulk_save_objects(imp_objs)
 
     # Intelligent Chunks creation if none exist
-    chunk_count = db.query(LeadChunk).count()
+    q_chunk = db.query(LeadChunk)
+    if organization_id:
+        q_chunk = q_chunk.filter(LeadChunk.organization_id == organization_id)
+    chunk_count = q_chunk.count()
     if chunk_count == 0:
         tpl_groups = {}
         for r in camp_logs:
@@ -1339,6 +1401,7 @@ def backfill_from_campaign_log(db: Session) -> Dict:
             chunk_obj = LeadChunk(
                 chunk_name=f"CHUNK-{chunk_idx:03d} ({t_name[:24]})",
                 import_id=import_id,
+                organization_id=organization_id,
                 template_id=t_id,
                 template_name=t_name,
                 assigned_by="System Sync",
@@ -1371,12 +1434,17 @@ def backfill_from_campaign_log(db: Session) -> Dict:
             chunk_idx += 1
 
     # LeadActivity event stream population if none exist
-    act_count = db.query(LeadActivity).count()
+    q_act = db.query(LeadActivity)
+    if organization_id:
+        q_act = q_act.filter(LeadActivity.organization_id == organization_id)
+    act_count = q_act.count()
     if act_count == 0:
         act_objs = []
         for em, lead in list(leads_by_email.items())[:50]:
+            lead_org = organization_id or getattr(lead, "organization_id", None)
             act_objs.append(LeadActivity(
                 master_lead_id=lead.id,
+                organization_id=lead_org,
                 activity_type="lead_imported",
                 description=f"Lead record imported from {lead.lead_source or 'leads.xlsx'}",
                 created_at=lead.created_at or datetime.now(timezone.utc),
@@ -1384,6 +1452,7 @@ def backfill_from_campaign_log(db: Session) -> Dict:
             if lead.total_emails_sent and lead.total_emails_sent > 0:
                 act_objs.append(LeadActivity(
                     master_lead_id=lead.id,
+                    organization_id=lead_org,
                     activity_type="email_sent",
                     description=f"Outreach email dispatched to {lead.email}",
                     created_at=lead.last_contacted_at or datetime.now(timezone.utc),
@@ -1391,6 +1460,7 @@ def backfill_from_campaign_log(db: Session) -> Dict:
             if lead.total_replies and lead.total_replies > 0:
                 act_objs.append(LeadActivity(
                     master_lead_id=lead.id,
+                    organization_id=lead_org,
                     activity_type="reply_received",
                     description=f"Customer reply received from {lead.email}",
                     created_at=lead.last_reply_at or datetime.now(timezone.utc),

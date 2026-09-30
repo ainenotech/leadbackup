@@ -110,6 +110,15 @@ Base = declarative_base()
 _DB_INITIALIZED = False
 
 
+def get_db():
+    """FastAPI database session dependency."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def init_db():
     """Ensures all tables are created and applies non-breaking schema migrations."""
     global _DB_INITIALIZED
@@ -119,6 +128,7 @@ def init_db():
     from sqlalchemy import inspect, text
     import Backend.models  # Ensure all model tables are registered on Base
     import Backend.master_db_models  # Ensure Master DB tables are registered on Base
+    import Backend.auth_models  # Multi-tenant foundation: organizations, users, memberships
 
     new_cols = [
         ("phone", "VARCHAR"),

@@ -35,3 +35,7 @@ google-auth
 # Analytics & Exporting (PDF / Excel / Charts)
 matplotlib
 reportlab
+
+# Multi-Tenant SaaS Infrastructure
+alembic
+bcrypt

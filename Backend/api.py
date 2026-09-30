@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .db import Base, SessionLocal, engine, init_db
 from .models import CampaignLog
+from .auth_endpoints import router as auth_router
 
 load_dotenv()
 
@@ -18,6 +19,7 @@ SERVER_START_TIME = datetime.now(timezone.utc)
 init_db()
 
 app = FastAPI(title="AINeotechnology — Lead Outreach & Analytics API")
+app.include_router(auth_router)
 
 
 @app.on_event("startup")
@@ -130,11 +132,14 @@ def trigger_keepalive_ping():
 
 
 @app.get("/api/realtime/summary")
-def get_realtime_summary():
+def get_realtime_summary(org_id: Optional[str] = None):
     """Returns aggregated real-time outreach, engagement, and reply metrics."""
     db = SessionLocal()
     try:
-        rows = db.query(CampaignLog).all()
+        q = db.query(CampaignLog)
+        if org_id:
+            q = q.filter(CampaignLog.organization_id == org_id)
+        rows = q.all()
         total_leads = len(rows)
         sent_rows = [r for r in rows if r.status in ("sent", "delivered", "replied", "meeting_booked", "booked")]
         sent_count = len(sent_rows)
@@ -194,12 +199,15 @@ def get_realtime_summary():
 
 
 @app.get("/api/realtime/feed")
-def get_realtime_feed(limit: int = 25):
+def get_realtime_feed(limit: int = 25, org_id: Optional[str] = None):
     """Returns chronological real-time event feed for live activity streaming."""
     db = SessionLocal()
     events = []
     try:
-        rows = db.query(CampaignLog).all()
+        q = db.query(CampaignLog)
+        if org_id:
+            q = q.filter(CampaignLog.organization_id == org_id)
+        rows = q.all()
         now = datetime.now(timezone.utc)
 
         def _format_relative(dt):

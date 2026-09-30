@@ -74,6 +74,7 @@ class MasterLead(Base):
 
     # Extensibility
     custom_fields = Column(JSON, nullable=True)
+    organization_id = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -113,6 +114,7 @@ class LeadImport(Base):
     error_message = Column(Text, nullable=True)
 
     config = Column(JSON, nullable=True)  # stores column mapping, options
+    organization_id = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -136,6 +138,7 @@ class LeadImportRecord(Base):
     raw_data = Column(JSON, nullable=True)
     duplicate_of_id = Column(String, nullable=True)
     error_detail = Column(Text, nullable=True)
+    organization_id = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -205,6 +208,7 @@ class LeadChunk(Base):
     open_count = Column(Integer, default=0)
     click_count = Column(Integer, default=0)
     booking_count = Column(Integer, default=0)
+    organization_id = Column(String, nullable=True, index=True)
 
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -226,6 +230,7 @@ class LeadChunkMember(Base):
     eligible = Column(Boolean, default=True)
     duplicate_template = Column(Boolean, default=False)
     override_approved = Column(Boolean, default=False)
+    organization_id = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -265,6 +270,7 @@ class OutreachHistory(Base):
     bounced = Column(Boolean, default=False)
 
     admin_override = Column(Boolean, default=False)
+    organization_id = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -287,6 +293,7 @@ class LeadActivity(Base):
     description = Column(Text, nullable=True)
     event_metadata = Column(JSON, nullable=True)
     campaign_log_id = Column(String, nullable=True)
+    organization_id = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -314,6 +321,7 @@ class AuditLog(Base):
     previous_value = Column(JSON, nullable=True)
     new_value = Column(JSON, nullable=True)
     ip_address = Column(String, nullable=True)
+    organization_id = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

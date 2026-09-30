@@ -13,45 +13,48 @@ from services.excel_logger import log_booking_to_excel, log_form_submission_to_e
 from .models import CampaignLog, KnowledgeDocument, ProcessedReply
 
 
-def get_already_sent_emails(db: Session) -> Set[str]:
+def get_already_sent_emails(db: Session, organization_id: Optional[str] = None) -> Set[str]:
     """Returns a set of lowercased emails that have already received an email (status == 'sent')."""
-    rows = db.query(CampaignLog.email).filter(CampaignLog.status == "sent").all()
+    q = db.query(CampaignLog.email).filter(CampaignLog.status == "sent")
+    if organization_id:
+        q = q.filter(CampaignLog.organization_id == organization_id)
+    rows = q.all()
     return {r[0].strip().lower() for r in rows if r[0]}
 
 
-def get_already_drafted_emails(db: Session) -> Set[str]:
+def get_already_drafted_emails(db: Session, organization_id: Optional[str] = None) -> Set[str]:
     """Returns a set of lowercased emails that currently have a draft in review or approved."""
-    rows = (
-        db.query(CampaignLog.email)
-        .filter(CampaignLog.status.in_(["drafted", "approved"]))
-        .all()
-    )
+    q = db.query(CampaignLog.email).filter(CampaignLog.status.in_(["drafted", "approved"]))
+    if organization_id:
+        q = q.filter(CampaignLog.organization_id == organization_id)
+    rows = q.all()
     return {r[0].strip().lower() for r in rows if r[0]}
 
 
-def is_email_already_sent(db: Session, email: str) -> bool:
+def is_email_already_sent(db: Session, email: str, organization_id: Optional[str] = None) -> bool:
     """Check if an email has already received a sent email."""
     if not email:
         return False
-    row = (
-        db.query(CampaignLog.id)
-        .filter(
-            func.lower(CampaignLog.email) == email.strip().lower(),
-            CampaignLog.status == "sent",
-        )
-        .first()
+    q = db.query(CampaignLog.id).filter(
+        func.lower(CampaignLog.email) == email.strip().lower(),
+        CampaignLog.status == "sent",
     )
-    return row is not None
+    if organization_id:
+        q = q.filter(CampaignLog.organization_id == organization_id)
+    return q.first() is not None
 
 
 def already_contacted(
-    db: Session, campaign_name: str, lead_id: str, email: Optional[str] = None
+    db: Session, campaign_name: str, lead_id: str, email: Optional[str] = None, organization_id: Optional[str] = None
 ) -> bool:
     """Idempotency check: has this lead already been emailed or drafted in this campaign (by lead_id or email)?"""
     query = db.query(CampaignLog).filter(
         CampaignLog.campaign_name == campaign_name,
         CampaignLog.status.in_(["sent", "drafted", "approved"]),
     )
+    if organization_id:
+        query = query.filter(CampaignLog.organization_id == organization_id)
+
     if email:
         cleaned_email = email.strip().lower()
         if lead_id:
@@ -77,13 +80,13 @@ def create_pending_entry(
     name: str,
     company: str,
     token: str,
-
     subject: str,
     body: str,
     status: str = "pending",
     tracking_link: Optional[str] = None,
     template_id: Optional[str] = None,
     template_name: Optional[str] = None,
+    organization_id: Optional[str] = None,
 ) -> CampaignLog:
     booking_url = os.getenv(
         "BOOKING_FORM_URL",
@@ -98,7 +101,10 @@ def create_pending_entry(
         from Backend.master_db_models import MasterLead
         from services.master_db_service import normalize_email
         norm_em = normalize_email(email)
-        m_lead = db.query(MasterLead).filter(MasterLead.email_normalized == norm_em).first()
+        m_q = db.query(MasterLead).filter(MasterLead.email_normalized == norm_em)
+        if organization_id:
+            m_q = m_q.filter(MasterLead.organization_id == organization_id)
+        m_lead = m_q.first()
         if m_lead:
             m_id = m_lead.id
     except Exception:
@@ -118,6 +124,7 @@ def create_pending_entry(
         template_id=template_id,
         template_name=template_name,
         master_lead_id=m_id,
+        organization_id=organization_id,
     )
     db.add(entry)
     db.commit()

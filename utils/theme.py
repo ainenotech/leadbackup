@@ -335,6 +335,26 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {{
     box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
 }}
 
+/* Sidebar Modern Container Boxes (Workspace & Administration) */
+section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {{
+    background: {'#1E293B' if is_dark else '#FFFFFF'} !important;
+    border: 1px solid {'#334155' if is_dark else '#E2E8F0'} !important;
+    border-radius: 10px !important;
+    padding: 10px 12px 10px 12px !important;
+    margin-bottom: 10px !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, {'0.2' if is_dark else '0.03'}) !important;
+    transition: all 0.2s ease !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"]:hover {{
+    border-color: {'#475569' if is_dark else '#CBD5E1'} !important;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, {'0.25' if is_dark else '0.05'}) !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] .stButton > button {{
+    padding: 7px 10px !important;
+    font-size: 12.5px !important;
+    margin-bottom: 0px !important;
+}}
+
 /* Sidebar Nav Buttons */
 section[data-testid="stSidebar"] .stButton > button {{
     font-family: 'Inter', sans-serif !important;

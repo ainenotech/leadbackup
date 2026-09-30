@@ -7,6 +7,7 @@ and stored in PostgreSQL for retrieval-augmented generation (RAG) when the
 AI reply agent handles inbound customer emails.
 """
 
+from typing import Any, Dict, List, Optional
 import html
 import os
 from datetime import datetime, timezone
@@ -66,13 +67,15 @@ def _clean_text_preview(text: str, max_chars: int = 200) -> str:
 # ─────────────────────────────────────────────────────────────
 # MAIN VIEW FUNCTION
 # ─────────────────────────────────────────────────────────────
-def render_knowledge_base_hub():
+def render_knowledge_base_hub(organization_id: Optional[str] = None, *args, **kwargs):
     """Renders the full Knowledge Base Hub page."""
+    if organization_id is None:
+        organization_id = kwargs.get("organization_id") or st.session_state.get("current_org_id")
 
     # ── Fetch current KB state ──
     db = SessionLocal()
     try:
-        kb_summary = get_knowledge_base_summary(db)
+        kb_summary = get_knowledge_base_summary(db, organization_id=organization_id)
     except Exception:
         kb_summary = {"total_chunks": 0, "total_documents": 0, "documents": [], "embedding_model": "N/A"}
     finally:
@@ -214,6 +217,7 @@ def render_knowledge_base_hub():
                     file_bytes_or_content=file_bytes,
                     title=custom_title.strip() if custom_title else None,
                     category=cat,
+                    organization_id=organization_id,
                 )
             except Exception as e:
                 st.error(f"❌ Failed to ingest document: {e}")
@@ -292,7 +296,7 @@ def render_knowledge_base_hub():
                 if st.button("🗑️ Remove", key=f"kb_hub_del_{d_title}", use_container_width=True, type="secondary"):
                     db_del = SessionLocal()
                     try:
-                        delete_document(db_del, d_title)
+                        delete_document(db_del, d_title, organization_id=organization_id)
                     finally:
                         db_del.close()
                     st.toast(f"Removed '{d_title}' from Knowledge Base.", icon="🗑️")
@@ -308,7 +312,7 @@ def render_knowledge_base_hub():
             if st.button("🗑️ Purge All Documents", key="kb_hub_purge_all_btn", use_container_width=True, type="secondary"):
                 db_purge = SessionLocal()
                 try:
-                    clear_all_knowledge_documents(db_purge)
+                    clear_all_knowledge_documents(db_purge, organization_id=organization_id)
                 finally:
                     db_purge.close()
                 st.cache_data.clear()
@@ -355,7 +359,7 @@ def render_knowledge_base_hub():
         with st.spinner("Embedding query and searching vector memory..."):
             db_test = SessionLocal()
             try:
-                retrieved = retrieve_relevant_chunks(db_test, query=test_query, top_k=4, min_score=0.35)
+                retrieved = retrieve_relevant_chunks(db_test, query=test_query, top_k=4, min_score=0.35, organization_id=organization_id)
                 test_agent_res = process_incoming_reply(
                     db=db_test,
                     from_email="inquiry@client.com",
