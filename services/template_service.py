@@ -971,17 +971,55 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
         tid = row.get("template_id")
         if pd.notna(tid) and str(tid).strip() and str(tid).strip().lower() != "nan":
             # Map legacy IDs to new canonical IDs if needed
-            t_str = str(tid).strip()
+            t_str = str(tid).strip().lower()
             legacy_map = {
+                "template_1": "tpl_fde_velocity",
+                "template 1": "tpl_fde_velocity",
+                "template-1": "tpl_fde_velocity",
+                "tpl_1": "tpl_fde_velocity",
                 "tpl_exec_navy": "tpl_fde_velocity",
-                "tpl_calling_agents": "tpl_voice_calling",
-                "tpl_blue_gradient": "tpl_agentic_workflows",
-                "tpl_workflow_automation": "tpl_business_automation",
                 "tpl_standard_fde": "tpl_fde_velocity",
+                "template_2": "tpl_voice_calling",
+                "template 2": "tpl_voice_calling",
+                "tpl_2": "tpl_voice_calling",
+                "tpl_calling_agents": "tpl_voice_calling",
+                "template_3": "tpl_agentic_workflows",
+                "template 3": "tpl_agentic_workflows",
+                "tpl_3": "tpl_agentic_workflows",
+                "tpl_blue_gradient": "tpl_agentic_workflows",
+                "template_4": "tpl_business_automation",
+                "template 4": "tpl_business_automation",
+                "tpl_4": "tpl_business_automation",
+                "tpl_workflow_automation": "tpl_business_automation",
+                "template_5": "tpl_dedicated_workbench",
+                "template 5": "tpl_dedicated_workbench",
+                "tpl_5": "tpl_dedicated_workbench",
+                "template_6": "tpl_internal_dashboards",
+                "template 6": "tpl_internal_dashboards",
+                "tpl_6": "tpl_internal_dashboards",
                 "tpl_teal_grid": "tpl_internal_dashboards",
+                "template_7": "tpl_founder_strategy",
+                "template 7": "tpl_founder_strategy",
+                "tpl_7": "tpl_founder_strategy",
                 "tpl_editorial_letter": "tpl_founder_strategy",
+                "template_8": "tpl_founder_note",
+                "template 8": "tpl_founder_note",
+                "tpl_8": "tpl_founder_note",
+                "template_9": "tpl_mohit_agentic_workflows",
+                "template 9": "tpl_mohit_agentic_workflows",
+                "tpl_9": "tpl_mohit_agentic_workflows",
+                "template_10": "tpl_mohit_business_automation",
+                "template 10": "tpl_mohit_business_automation",
+                "tpl_10": "tpl_mohit_business_automation",
+                "template_11": "tpl_mohit_strategic_advisory",
+                "template 11": "tpl_mohit_strategic_advisory",
+                "tpl_11": "tpl_mohit_strategic_advisory",
             }
-            return legacy_map.get(t_str, t_str)
+            if t_str in legacy_map:
+                return legacy_map[t_str]
+            if str(tid).strip() in tpl_lookup:
+                return str(tid).strip()
+
         # Infer from template_id if it's Mohit
         t_id_str = str(tid or "").lower()
         if "mohit" in t_id_str or "tpl_mohit" in t_id_str:
@@ -1005,7 +1043,7 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
             elif "overhead" in subj or "strategic" in subj or "consultation" in subj:
                 return "tpl_mohit_strategic_advisory"
 
-        if "quick idea" in subj or "velocity" in subj or "forward deployed" in subj:
+        if "quick idea" in subj or "velocity" in subj or "forward deployed" in subj or "transformation" in subj or "engineering partnership" in subj:
             return "tpl_fde_velocity"
         elif "voice" in subj or "calling" in subj or "inbound" in subj:
             return "tpl_voice_calling"

@@ -94,10 +94,41 @@ def find_best_matching_column(columns: List[str], target: str) -> Optional[str]:
     return None
 
 
+from Backend.master_db_models import MasterLead
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_cached_template_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
+    return compute_template_analytics(df_logs)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_db_leads_for_template_batch(status_filter: str = "all", limit: int = 50) -> List[Dict[str, Any]]:
+    db = SessionLocal()
+    try:
+        query = db.query(MasterLead)
+        if status_filter == "new":
+            query = query.filter(MasterLead.current_status == "new")
+        elif status_filter == "drafted":
+            query = query.filter(MasterLead.current_status == "drafted")
+        leads = query.limit(limit).all()
+        return [
+            {
+                "lead_id": l.id,
+                "email": l.email,
+                "name": l.full_name or (f"{l.first_name or ''} {l.last_name or ''}".strip()) or None,
+                "company": l.company or None,
+            }
+            for l in leads
+        ]
+    finally:
+        db.close()
+
+
 def render_template_hub(df_logs: pd.DataFrame) -> None:
     """Renders the executive Email Template Studio & Performance Hub."""
     templates = load_all_templates()
-    stats = compute_template_analytics(df_logs)
+    stats = get_cached_template_analytics(df_logs)
 
     # Scoped Premium CSS for Template Studio
     st.markdown(
@@ -996,119 +1027,154 @@ def render_template_hub(df_logs: pd.DataFrame) -> None:
                 <div class="batch-step-card" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow-sm);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                         <div class="batch-step-title" style="font-size: 15px; font-weight: 700; color: var(--text-primary);">
-                            1. Upload Lead Spreadsheet
+                            1. Select Lead Cohort Source
                         </div>
                         <span style="font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: #EFF6FF; color: #1D4ED8; border: 1px solid #DBEAFE;">
                             Step 1 of 2
                         </span>
                     </div>
                     <div class="batch-step-desc" style="font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin-bottom: 12px;">
-                        Upload your CSV or Excel lead sheet. Required: <code>Email</code> (case-insensitive). Auto-detects <code>Name</code> and <code>Company</code> columns.
+                        Pull leads directly from your connected <strong>Neon PostgreSQL Master DB</strong> (1,130 leads) or upload a fresh CSV / Excel spreadsheet.
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            batch_file = st.file_uploader(
-                "Upload Lead Spreadsheet",
-                type=["xlsx", "xls", "csv"],
-                key="batch_sheet_uploader",
-                label_visibility="collapsed",
-                help="Accepts .xlsx, .xls, and .csv files. Headers can be uppercase or lowercase.",
+
+            source_mode = st.radio(
+                "Lead Intake Method:",
+                ["🗄️ Pull from Database (Master DB)", "📤 Upload Spreadsheet (CSV/Excel)"],
+                horizontal=True,
+                key="batch_source_mode_radio",
             )
 
-            batch_df = pd.DataFrame()
             parsed_leads = []
-            detected_cols = {}
 
-            if batch_file:
-                try:
-                    if batch_file.name.lower().endswith(".csv"):
-                        batch_df = pd.read_csv(batch_file)
-                    else:
-                        batch_df = pd.read_excel(batch_file)
+            if source_mode == "🗄️ Pull from Database (Master DB)":
+                st.markdown(
+                    """
+                    <div style="background: rgba(37, 99, 235, 0.05); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: 8px; padding: 9px 13px; margin: 8px 0 12px 0;">
+                        <span style="font-size: 12px; color: #1D4ED8; font-weight: 600;">⚡ Connected to Cloud Neon Database (1,130 Master Leads)</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                db_filter_c1, db_filter_c2 = st.columns([1.5, 1])
+                with db_filter_c1:
+                    db_status = st.selectbox(
+                        "Database Lead Cohort:",
+                        ["All Leads", "New Leads (Never Contacted)", "Drafted Leads"],
+                        key="batch_db_status_filter",
+                    )
+                with db_filter_c2:
+                    db_limit = st.selectbox(
+                        "Cohort Batch Size:",
+                        [25, 50, 100, 250, "All (1,130)"],
+                        index=0,
+                        key="batch_db_limit_select",
+                    )
+                limit_val = 1130 if db_limit == "All (1,130)" else int(db_limit)
+                status_key = "new" if "New" in db_status else ("drafted" if "Drafted" in db_status else "all")
+                parsed_leads = load_db_leads_for_template_batch(status_filter=status_key, limit=limit_val)
+                st.caption(f"✓ Loaded **{len(parsed_leads)}** lead record(s) directly from Master Database.")
+            else:
+                batch_file = st.file_uploader(
+                    "Upload Lead Spreadsheet",
+                    type=["xlsx", "xls", "csv"],
+                    key="batch_sheet_uploader",
+                    label_visibility="collapsed",
+                    help="Accepts .xlsx, .xls, and .csv files. Headers can be uppercase or lowercase.",
+                )
 
-                    all_cols = batch_df.columns.tolist()
-                    detected_email = find_best_matching_column(all_cols, "email")
-                    detected_name = find_best_matching_column(all_cols, "name")
-                    detected_comp = find_best_matching_column(all_cols, "company")
-                    detected_lead_id = find_best_matching_column(all_cols, "lead_id")
+                batch_df = pd.DataFrame()
+                if batch_file:
+                    try:
+                        if batch_file.name.lower().endswith(".csv"):
+                            batch_df = pd.read_csv(batch_file)
+                        else:
+                            batch_df = pd.read_excel(batch_file)
 
-                    # If no email column matched by name, check cell values for @
-                    if not detected_email:
-                        for c in all_cols:
-                            non_null = batch_df[c].dropna()
-                            if not non_null.empty and "@" in str(non_null.iloc[0]):
-                                detected_email = c
-                                break
+                        all_cols = batch_df.columns.tolist()
+                        detected_email = find_best_matching_column(all_cols, "email")
+                        detected_name = find_best_matching_column(all_cols, "name")
+                        detected_comp = find_best_matching_column(all_cols, "company")
+                        detected_lead_id = find_best_matching_column(all_cols, "lead_id")
 
-                    st.markdown("<div style='font-size: 12.5px; font-weight: 700; color: var(--text-primary); margin: 12px 0 6px 0;'>🔗 Confirm Column Mapping:</div>", unsafe_allow_html=True)
-                    m_col1, m_col2, m_col3 = st.columns(3)
-                    with m_col1:
-                        em_idx = all_cols.index(detected_email) if detected_email in all_cols else 0
-                        chosen_email = st.selectbox("📧 Email Column", options=all_cols, index=em_idx, key="batch_col_email")
-                    with m_col2:
-                        name_opts = ["(None / Use 'there')"] + all_cols
-                        nm_idx = name_opts.index(detected_name) if detected_name in name_opts else (name_opts.index(detected_name) if detected_name else 0)
-                        chosen_name = st.selectbox("👤 Contact Name", options=name_opts, index=nm_idx, key="batch_col_name")
-                    with m_col3:
-                        comp_opts = ["(None / Use 'your team')"] + all_cols
-                        cp_idx = comp_opts.index(detected_comp) if detected_comp in comp_opts else (comp_opts.index(detected_comp) if detected_comp else 0)
-                        chosen_comp = st.selectbox("🏢 Company Name", options=comp_opts, index=cp_idx, key="batch_col_comp")
+                        # If no email column matched by name, check cell values for @
+                        if not detected_email:
+                            for c in all_cols:
+                                non_null = batch_df[c].dropna()
+                                if not non_null.empty and "@" in str(non_null.iloc[0]):
+                                    detected_email = c
+                                    break
 
-                    # Extract parsed leads using the confirmed columns
-                    for idx, row in batch_df.iterrows():
-                        raw_email = row.get(chosen_email)
-                        if pd.isna(raw_email) or "@" not in str(raw_email):
-                            continue
-                        email_val = str(raw_email).strip().lower()
+                        st.markdown("<div style='font-size: 12.5px; font-weight: 700; color: var(--text-primary); margin: 12px 0 6px 0;'>🔗 Confirm Column Mapping:</div>", unsafe_allow_html=True)
+                        m_col1, m_col2, m_col3 = st.columns(3)
+                        with m_col1:
+                            em_idx = all_cols.index(detected_email) if detected_email in all_cols else 0
+                            chosen_email = st.selectbox("📧 Email Column", options=all_cols, index=em_idx, key="batch_col_email")
+                        with m_col2:
+                            name_opts = ["(None / Use 'there')"] + all_cols
+                            nm_idx = name_opts.index(detected_name) if detected_name in name_opts else (name_opts.index(detected_name) if detected_name else 0)
+                            chosen_name = st.selectbox("👤 Contact Name", options=name_opts, index=nm_idx, key="batch_col_name")
+                        with m_col3:
+                            comp_opts = ["(None / Use 'your team')"] + all_cols
+                            cp_idx = comp_opts.index(detected_comp) if detected_comp in comp_opts else (comp_opts.index(detected_comp) if detected_comp else 0)
+                            chosen_comp = st.selectbox("🏢 Company Name", options=comp_opts, index=cp_idx, key="batch_col_comp")
 
-                        name_val = None
-                        if chosen_name and chosen_name != "(None / Use 'there')":
-                            val = row.get(chosen_name)
-                            if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
-                                name_val = str(val).strip()
+                        # Extract parsed leads using the confirmed columns
+                        for idx, row in batch_df.iterrows():
+                            raw_email = row.get(chosen_email)
+                            if pd.isna(raw_email) or "@" not in str(raw_email):
+                                continue
+                            email_val = str(raw_email).strip().lower()
 
-                        comp_val = None
-                        if chosen_comp and chosen_comp != "(None / Use 'your team')":
-                            val = row.get(chosen_comp)
-                            if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
-                                comp_val = str(val).strip()
+                            name_val = None
+                            if chosen_name and chosen_name != "(None / Use 'there')":
+                                val = row.get(chosen_name)
+                                if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
+                                    name_val = str(val).strip()
 
-                        lead_id_val = str(row.get(detected_lead_id)) if detected_lead_id and detected_lead_id in row and pd.notna(row.get(detected_lead_id)) else f"lead_{idx}_{uuid.uuid4().hex[:4]}"
+                            comp_val = None
+                            if chosen_comp and chosen_comp != "(None / Use 'your team')":
+                                val = row.get(chosen_comp)
+                                if pd.notna(val) and str(val).strip().lower() not in ("nan", "none", ""):
+                                    comp_val = str(val).strip()
 
-                        parsed_leads.append({
-                            "lead_id": lead_id_val,
-                            "email": email_val,
-                            "name": name_val,
-                            "company": comp_val,
-                        })
+                            lead_id_val = str(row.get(detected_lead_id)) if detected_lead_id and detected_lead_id in row and pd.notna(row.get(detected_lead_id)) else f"lead_{idx}_{uuid.uuid4().hex[:4]}"
 
-                    valid_email_count = len(parsed_leads)
-                    if valid_email_count > 0:
-                        first_lead = parsed_leads[0]
-                        v_name = first_lead['name'] or 'there'
-                        v_comp = first_lead['company'] or 'your team'
-                        st.markdown(
-                            f"""
-                            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; padding: 10px 14px; margin-top: 8px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                    <span style="font-size: 12.5px; font-weight: 700; color: #047857;">✓ {batch_file.name} — {valid_email_count} Valid Leads Ready</span>
+                            parsed_leads.append({
+                                "lead_id": lead_id_val,
+                                "email": email_val,
+                                "name": name_val,
+                                "company": comp_val,
+                            })
+
+                        valid_email_count = len(parsed_leads)
+                        if valid_email_count > 0:
+                            first_lead = parsed_leads[0]
+                            v_name = first_lead['name'] or 'there'
+                            v_comp = first_lead['company'] or 'your team'
+                            st.markdown(
+                                f"""
+                                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; padding: 10px 14px; margin-top: 8px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                        <span style="font-size: 12.5px; font-weight: 700; color: #047857;">✓ {batch_file.name} — {valid_email_count} Valid Leads Ready</span>
+                                    </div>
+                                    <div style="font-size: 11.5px; color: #065F46;">
+                                        <strong>✨ Live Sample (Row 1):</strong> Name: <strong>{v_name}</strong> | Company: <strong>{v_comp}</strong> | Email: <code>{first_lead['email']}</code>
+                                    </div>
                                 </div>
-                                <div style="font-size: 11.5px; color: #065F46;">
-                                    <strong>✨ Live Sample (Row 1):</strong> Name: <strong>{v_name}</strong> | Company: <strong>{v_comp}</strong> | Email: <code>{first_lead['email']}</code>
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.error(
-                            f"⚠️ Found {len(batch_df)} row(s) in **{batch_file.name}**, but could not detect any valid email addresses with an '@' symbol in column '{chosen_email}'. "
-                            "Please check your column selection above."
-                        )
-                except Exception as e:
-                    st.error(f"Error reading file: {e}")
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.error(
+                                f"⚠️ Found {len(batch_df)} row(s) in **{batch_file.name}**, but could not detect any valid email addresses with an '@' symbol in column '{chosen_email}'. "
+                                "Please check your column selection above."
+                            )
+                    except Exception as e:
+                        st.error(f"Error reading file: {e}")
 
         with b_col2:
             st.markdown(

@@ -10,34 +10,30 @@ import plotly.graph_objects as go
 
 
 def get_current_theme() -> str:
-    """Returns 'dark' or 'light' based on session state, default is 'light'."""
-    if "app_theme" not in st.session_state:
+    """Returns 'light' mode permanently across all modules (Dark Mode completely removed)."""
+    if "app_theme" in st.session_state and st.session_state.app_theme != "light":
         st.session_state.app_theme = "light"
-    return st.session_state.app_theme
+    return "light"
 
 
 def is_dark_mode() -> bool:
-    """Convenience helper to check if dark mode is active."""
-    return get_current_theme() == "dark"
+    """Convenience helper: returns False as Dark Mode has been completely removed."""
+    return False
 
 
 def set_theme(theme_name: str) -> None:
-    """Updates the active theme in session state."""
-    if theme_name in {"dark", "light"}:
-        st.session_state.app_theme = theme_name
+    """Dark Mode has been removed. Theme remains permanently locked to light."""
+    st.session_state.app_theme = "light"
 
 
 def apply_chart_theme(fig: go.Figure, is_dark: Optional[bool] = None) -> go.Figure:
-    """Adapts any Plotly figure to the active UI theme with crisp fonts,
-    transparent backgrounds, and theme-matched axes and grids.
+    """Adapts any Plotly figure to clean Light theme with crisp fonts,
+    transparent backgrounds, and crisp modern axes and grids.
     """
-    if is_dark is None:
-        is_dark = is_dark_mode()
-
-    text_color = "#F9FAFB" if is_dark else "#0F172A"
-    grid_color = "#1F2937" if is_dark else "#E2E8F0"
-    sub_color = "#9CA3AF" if is_dark else "#64748B"
-    template = "plotly_dark" if is_dark else "plotly_white"
+    text_color = "#0F172A"
+    grid_color = "#E2E8F0"
+    sub_color = "#64748B"
+    template = "plotly_white"
 
     fig.update_layout(
         template=template,
@@ -45,9 +41,9 @@ def apply_chart_theme(fig: go.Figure, is_dark: Optional[bool] = None) -> go.Figu
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif", color=text_color, size=12),
         hoverlabel=dict(
-            bgcolor="#1F2937" if is_dark else "#FFFFFF",
-            font=dict(color="#F9FAFB" if is_dark else "#0F172A", family="Inter, sans-serif", size=12),
-            bordercolor="#374151" if is_dark else "#CBD5E1",
+            bgcolor="#FFFFFF",
+            font=dict(color="#0F172A", family="Inter, sans-serif", size=12),
+            bordercolor="#CBD5E1",
         ),
     )
 
@@ -65,59 +61,13 @@ def apply_chart_theme(fig: go.Figure, is_dark: Optional[bool] = None) -> go.Figu
 
 
 @lru_cache(maxsize=4)
-def get_complete_theme_css(is_dark: bool) -> str:
+def get_complete_theme_css(is_dark: bool = False) -> str:
     """Generates the master CSS for the entire dashboard with complete
-    Light and Dark mode tokens, modern typography, and all 124 component classes.
+    Light mode tokens, modern typography, and all 124 component classes.
+    Dark mode is permanently removed.
     """
-    if is_dark:
-        tokens = """
-    --bg-canvas: #090D16;
-    --bg-surface: #111827;
-    --bg-elevated: #1F2937;
-    --bg-nested: #161F30;
-    --border-subtle: #1F2937;
-    --border-strong: #374151;
-    --border-highlight: #4B5563;
-    --text-primary: #F9FAFB;
-    --text-secondary: #E5E7EB;
-    --text-muted: #9CA3AF;
-    --text-micro: #6B7280;
-    --brand-primary: #3B82F6;
-    --brand-hover: #2563EB;
-    --brand-soft: rgba(59, 130, 246, 0.16);
-    --brand-border: rgba(59, 130, 246, 0.35);
-    --teal-primary: #14B8A6;
-    --teal-soft: rgba(20, 184, 166, 0.16);
-    --teal-border: rgba(20, 184, 166, 0.35);
-    --amber-primary: #F59E0B;
-    --amber-soft: rgba(245, 158, 11, 0.16);
-    --amber-border: rgba(245, 158, 11, 0.35);
-    --danger-primary: #EF4444;
-    --danger-soft: rgba(239, 68, 68, 0.16);
-    --danger-border: rgba(239, 68, 68, 0.35);
-    --purple-primary: #8B5CF6;
-    --purple-soft: rgba(139, 92, 246, 0.16);
-    --purple-border: rgba(139, 92, 246, 0.35);
-    --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.25);
-    --shadow-md: 0 4px 14px -2px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.55);
-    --input-bg: #1F2937;
-    --input-border: #374151;
-    --input-color: #F9FAFB;
-    --sidebar-bg: #0D1322;
-        """
-        badge_styles = """
-    .badge-sent      { background: rgba(20, 184, 166, 0.18) !important; color: #5EEAD4 !important; border: 1px solid rgba(20, 184, 166, 0.35) !important; }
-    .badge-drafted   { background: rgba(245, 158, 11, 0.18) !important; color: #FCD34D !important; border: 1px solid rgba(245, 158, 11, 0.35) !important; }
-    .badge-pending   { background: rgba(107, 114, 128, 0.18) !important; color: #D1D5DB !important; border: 1px solid rgba(107, 114, 128, 0.35) !important; }
-    .badge-rejected  { background: rgba(239, 68, 68, 0.18) !important; color: #FCA5A5 !important; border: 1px solid rgba(239, 68, 68, 0.35) !important; }
-    .badge-failed    { background: rgba(239, 68, 68, 0.18) !important; color: #FCA5A5 !important; border: 1px solid rgba(239, 68, 68, 0.35) !important; }
-    .badge-replied   { background: rgba(20, 184, 166, 0.18) !important; color: #5EEAD4 !important; border: 1px solid rgba(20, 184, 166, 0.35) !important; }
-    .badge-scheduled { background: rgba(139, 92, 246, 0.18) !important; color: #C4B5FD !important; border: 1px solid rgba(139, 92, 246, 0.35) !important; }
-        """
-    else:
-        tokens = """
+    is_dark = False
+    tokens = """
     --bg-canvas: #F8FAFC;
     --bg-surface: #FFFFFF;
     --bg-elevated: #F1F5F9;
@@ -153,8 +103,8 @@ def get_complete_theme_css(is_dark: bool) -> str:
     --input-border: #CBD5E1;
     --input-color: #0F172A;
     --sidebar-bg: #FFFFFF;
-        """
-        badge_styles = """
+    """
+    badge_styles = """
     .badge-sent      { background: #F0FDFA !important; color: #0F766E !important; border: 1px solid #99F6E4 !important; }
     .badge-drafted   { background: #FFFBEB !important; color: #92400E !important; border: 1px solid #FDE68A !important; }
     .badge-pending   { background: #F4F4F5 !important; color: #27272A !important; border: 1px solid #E4E4E7 !important; }
@@ -162,7 +112,7 @@ def get_complete_theme_css(is_dark: bool) -> str:
     .badge-failed    { background: #FEF2F2 !important; color: #991B1B !important; border: 1px solid #FECACA !important; }
     .badge-replied   { background: #F0FDFA !important; color: #0F766E !important; border: 1px solid #99F6E4 !important; }
     .badge-scheduled { background: #F5F3FF !important; color: #5B21B6 !important; border: 1px solid #DDD6FE !important; }
-        """
+    """
 
     return f"""
 <style>

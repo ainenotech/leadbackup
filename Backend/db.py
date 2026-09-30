@@ -19,11 +19,36 @@ def _init_engine(url: str):
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
 
+    import ssl
+    import sys
     from sqlalchemy.pool import QueuePool
     from sqlalchemy import text
 
-    # 1. Try standard driver (psycopg2 for Linux / Render production)
-    try:
+    def _build_pg8000_engine():
+        ctx = ssl.create_default_context()
+        pg8000_url = url
+        if "postgresql+psycopg2://" in pg8000_url:
+            pg8000_url = pg8000_url.replace("postgresql+psycopg2://", "postgresql+pg8000://")
+        elif pg8000_url.startswith("postgresql://"):
+            pg8000_url = "postgresql+pg8000://" + pg8000_url[len("postgresql://"):]
+
+        base_url = pg8000_url.split("?")[0]
+        eng = create_engine(
+            base_url,
+            connect_args={"ssl_context": ctx},
+            poolclass=QueuePool,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=25,
+            pool_recycle=300,
+            pool_pre_ping=True,
+        )
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        print("[Notice] Connected to PostgreSQL via pure-python pg8000 driver.")
+        return eng
+
+    def _build_psycopg2_engine():
         eng = create_engine(
             url,
             poolclass=QueuePool,
@@ -36,38 +61,30 @@ def _init_engine(url: str):
         with eng.connect() as conn:
             conn.execute(text("SELECT 1"))
         return eng
-    except Exception as exc_primary:
-        # 2. Try pure-python pg8000 driver (works on Windows without C DLL blocks)
-        try:
-            import ssl
-            ctx = ssl.create_default_context()
-            pg8000_url = url
-            if "postgresql+psycopg2://" in pg8000_url:
-                pg8000_url = pg8000_url.replace("postgresql+psycopg2://", "postgresql+pg8000://")
-            elif pg8000_url.startswith("postgresql://"):
-                pg8000_url = "postgresql+pg8000://" + pg8000_url[len("postgresql://"):]
 
-            base_url = pg8000_url.split("?")[0]
-            eng = create_engine(
-                base_url,
-                connect_args={"ssl_context": ctx},
-                poolclass=QueuePool,
-                pool_size=10,
-                max_overflow=20,
-                pool_timeout=25,
-                pool_recycle=300,
-                pool_pre_ping=True,
-            )
-            with eng.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            print(f"[Notice] Connected to PostgreSQL via pure-python pg8000 driver.")
-            return eng
-        except Exception as exc_pg8000:
+    # On Windows, psycopg2 C DLL is typically blocked by Windows AppLocker policy; use pg8000 directly
+    if sys.platform == "win32":
+        try:
+            return _build_pg8000_engine()
+        except Exception as exc_win_pg8000:
+            try:
+                return _build_psycopg2_engine()
+            except Exception:
+                pass
             sqlite_fallback = "sqlite:///campaign.db"
             server_info = url.split("@")[-1] if "@" in url else url
-            print(f"[Notice] Could not initialize PostgreSQL engine at {server_info} ({exc_pg8000}).")
-            print(f"[Notice] Automatically falling back to local SQLite database: '{sqlite_fallback}'.")
+            print(f"[Notice] Could not initialize PostgreSQL engine at {server_info} ({exc_win_pg8000}). Falling back to SQLite.")
             return create_engine(sqlite_fallback, connect_args={"check_same_thread": False, "timeout": 30})
+    else:
+        # On Linux / Docker / Render, standard psycopg2 is fastest and natively supported
+        try:
+            return _build_psycopg2_engine()
+        except Exception:
+            try:
+                return _build_pg8000_engine()
+            except Exception as exc_linux_fallback:
+                sqlite_fallback = "sqlite:///campaign.db"
+                return create_engine(sqlite_fallback, connect_args={"check_same_thread": False, "timeout": 30})
 
 
 engine = _init_engine(DATABASE_URL)

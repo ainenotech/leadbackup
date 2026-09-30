@@ -123,9 +123,8 @@ st.set_page_config(
 
 ensure_database_ready()
 
-# Process theme query parameter early before CSS generation
-if "theme" in st.query_params and st.query_params["theme"] in ["dark", "light"]:
-    set_theme(st.query_params["theme"])
+# Permanent Light Mode enforced
+set_theme("light")
 
 # Starting the Outlook monitor during dashboard boot makes page loads wait on
 # network-heavy work. Keep it opt-in; the Replies page still has a start button.
@@ -385,14 +384,14 @@ def confirm_reset_dialog():
 
 
 with st.sidebar:
-    curr_theme = get_current_theme()
-    logo_name = "logo-light.png" if curr_theme == "dark" else "logo-dark.png"
+    curr_theme = "light"
+    logo_name = "logo-dark.png"
     logo_file = os.path.join(os.path.dirname(__file__), logo_name)
     logo_b64 = get_image_base64(logo_file)
     if logo_b64:
         logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" alt="Neno Technology" class="sidebar-brand-logo-img" />'
     else:
-        logo_fallback_color = "#FFFFFF" if curr_theme == "dark" else "#0F172A"
+        logo_fallback_color = "#0F172A"
         logo_img_tag = f'<span style="color: {logo_fallback_color}; font-weight: 700; font-size: 15px;">⚡ Neno Technology</span>'
 
     st.markdown(
@@ -409,22 +408,6 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-
-        # ── Appearance Mode Switcher ──
-    st.markdown("<div style='font-family: \"JetBrains Mono\", monospace; font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 6px 6px;'>Theme Mode</div>", unsafe_allow_html=True)
-    th_col1, th_col2 = st.columns(2)
-    with th_col1:
-        dark_btn_kind = "primary" if curr_theme == "dark" else "secondary"
-        if st.button("🌙 Dark", key="btn_switch_dark", type=dark_btn_kind, use_container_width=True):
-            if curr_theme != "dark":
-                set_theme("dark")
-                st.rerun()
-    with th_col2:
-        light_btn_kind = "primary" if curr_theme == "light" else "secondary"
-        if st.button("☀️ Light", key="btn_switch_light", type=light_btn_kind, use_container_width=True):
-            if curr_theme != "light":
-                set_theme("light")
-                st.rerun()
 
     st.markdown("<div style='font-family: \"JetBrains Mono\", monospace; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 10px 0 8px 6px;'>Navigation</div>", unsafe_allow_html=True)
 
@@ -583,7 +566,17 @@ def render_live_activity_stream(df: pd.DataFrame) -> None:
             return ""
 
     events = []
-    for _, r in df.iterrows():
+    # Fast vectorized pre-filter: only process rows with active telemetry events (< 20 rows instead of 1,130)
+    has_activity = (
+        (df["opened"] == True)
+        | (df["clicked_link"] == True)
+        | df["reply_received_at"].notna()
+        | df["form_filled_at"].notna()
+        | df["booking_status"].astype(str).str.lower().isin(["confirmed", "scheduled", "booked"])
+    )
+    active_df = df[has_activity] if not df.empty else df
+
+    for _, r in active_df.iterrows():
         name = str(r.get("name") or "Lead")
         email = str(r.get("email") or "")
         company = str(r.get("company") or "")
