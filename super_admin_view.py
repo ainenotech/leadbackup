@@ -25,19 +25,17 @@ def render_super_admin_portal():
 
         # Executive Header Banner
         st.markdown(
-            """
-            <div style="margin-bottom: 22px;">
-                <div style="display: inline-flex; align-items: center; gap: 6px; background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 9999px; text-transform: uppercase; border: 1px solid #FDE68A; margin-bottom: 10px; letter-spacing: 0.04em;">
-                    <span>👑</span> Platform Super Admin
-                </div>
-                <h1 style="font-size: 28px; font-weight: 800; color: #0F172A; margin: 0 0 6px 0; letter-spacing: -0.025em; font-family: 'Outfit', sans-serif;">
-                    Global SaaS Operations Center
-                </h1>
-                <p style="font-size: 14px; color: #64748B; margin: 0; line-height: 1.5;">
-                    Platform-wide telemetry, cross-tenant auditing, and organization workspace controls.
-                </p>
-            </div>
-            """,
+            '<div style="margin-bottom: 22px;">'
+            '<div style="display: inline-flex; align-items: center; gap: 6px; background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 9999px; text-transform: uppercase; border: 1px solid #FDE68A; margin-bottom: 10px; letter-spacing: 0.04em;">'
+            '<span>👑</span> Platform Super Admin'
+            '</div>'
+            '<h1 style="font-size: 28px; font-weight: 800; color: #0F172A; margin: 0 0 6px 0; letter-spacing: -0.025em; font-family: Outfit, sans-serif;">'
+            'Global SaaS Operations Center'
+            '</h1>'
+            '<p style="font-size: 14px; color: #64748B; margin: 0; line-height: 1.5;">'
+            'Platform-wide telemetry, cross-tenant auditing, and organization workspace controls.'
+            '</p>'
+            '</div>',
             unsafe_allow_html=True,
         )
 
@@ -55,17 +53,11 @@ def render_super_admin_portal():
             with kpi_cols[idx]:
                 with st.container(border=True):
                     st.markdown(
-                        f"""
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.04em;">
-                                {label}
-                            </span>
-                            <span style="font-size: 14px;">{icon}</span>
-                        </div>
-                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700; color: #0F172A; line-height: 1.1;">
-                            {val}
-                        </div>
-                        """,
+                        f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">'
+                        f'<span style="font-family: monospace; font-size: 10px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.04em;">{label}</span>'
+                        f'<span style="font-size: 14px;">{icon}</span>'
+                        f'</div>'
+                        f'<div style="font-family: monospace; font-size: 26px; font-weight: 700; color: #0F172A; line-height: 1.1;">{val}</div>',
                         unsafe_allow_html=True,
                     )
 
@@ -106,62 +98,33 @@ def render_super_admin_portal():
                 badge_text = "● Active" if is_active else "● Suspended"
 
                 with st.container(border=True):
-                    col_info, col_status, col_stats, col_action = st.columns([3.6, 1.6, 3.4, 1.4], vertical_alignment="center")
+                    col_info, col_status, col_stats, col_action = st.columns([3.8, 1.4, 3.4, 1.4], vertical_alignment="center")
                     with col_info:
                         root_tag = ""
                         if o.get("is_platform_org"):
                             root_tag = '<span style="font-size: 9.5px; background: #FEF3C7; color: #92400E; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid #FDE68A; margin-left: 6px;">ROOT</span>'
                         st.markdown(
-                            f"""
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div style="width: 38px; height: 38px; border-radius: 8px; background: #EFF6FF; border: 1px solid #DBEAFE; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">
-                                    🏢
-                                </div>
-                                <div>
-                                    <div style="display: flex; align-items: center;">
-                                        <span style="font-size: 15px; font-weight: 700; color: #0F172A; font-family: 'Outfit', sans-serif;">{o['name']}</span>
-                                        {root_tag}
-                                    </div>
-                                    <div style="font-size: 11.5px; color: #64748B; font-family: 'JetBrains Mono', monospace; margin-top: 1px;">
-                                        slug: <span style="color: #2563EB;">{o['slug']}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            """,
+                            f'<div style="display: flex; align-items: center; gap: 10px;">'
+                            f'<div style="width: 38px; height: 38px; border-radius: 8px; background: #EFF6FF; border: 1px solid #DBEAFE; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">🏢</div>'
+                            f'<div>'
+                            f'<div style="display: flex; align-items: center;"><span style="font-size: 15px; font-weight: 700; color: #0F172A; font-family: Outfit, sans-serif;">{o["name"]}</span>{root_tag}</div>'
+                            f'<div style="font-size: 11.5px; color: #64748B; font-family: monospace; margin-top: 1px;">slug: <span style="color: #2563EB;">{o["slug"]}</span></div>'
+                            f'</div>'
+                            f'</div>',
                             unsafe_allow_html=True,
                         )
                     with col_status:
                         st.markdown(
-                            f"""
-                            <div>
-                                <span style="background: {badge_bg}; color: {badge_color}; border: 1px solid {badge_border}; font-weight: 700; font-size: 11px; padding: 3px 10px; border-radius: 9999px; display: inline-flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace;">
-                                    {badge_text}
-                                </span>
-                            </div>
-                            """,
+                            f'<div><span style="background: {badge_bg}; color: {badge_color}; border: 1px solid {badge_border}; font-weight: 700; font-size: 11px; padding: 3px 10px; border-radius: 9999px; display: inline-flex; align-items: center; gap: 4px; font-family: monospace; white-space: nowrap;">{badge_text}</span></div>',
                             unsafe_allow_html=True,
                         )
                     with col_stats:
                         st.markdown(
-                            f"""
-                            <div style="display: flex; gap: 14px; align-items: center; font-size: 12px; color: #334155;">
-                                <div style="display: flex; align-items: center; gap: 4px;">
-                                    <span style="color: #64748B;">👥</span>
-                                    <strong>{o['member_count']}</strong>
-                                    <span style="color: #64748B; font-size: 11px;">members</span>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 4px;">
-                                    <span style="color: #64748B;">📋</span>
-                                    <strong>{o['lead_count']}</strong>
-                                    <span style="color: #64748B; font-size: 11px;">leads</span>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 4px;">
-                                    <span style="color: #64748B;">✉️</span>
-                                    <strong>{o['campaign_count']}</strong>
-                                    <span style="color: #64748B; font-size: 11px;">campaigns</span>
-                                </div>
-                            </div>
-                            """,
+                            f'<div style="display: flex; gap: 14px; align-items: center; font-size: 12px; color: #334155; white-space: nowrap;">'
+                            f'<div style="display: flex; align-items: center; gap: 4px;"><span style="color: #64748B;">👥</span> <strong>{o["member_count"]}</strong> <span style="color: #64748B; font-size: 11px;">members</span></div>'
+                            f'<div style="display: flex; align-items: center; gap: 4px;"><span style="color: #64748B;">📋</span> <strong>{o["lead_count"]}</strong> <span style="color: #64748B; font-size: 11px;">leads</span></div>'
+                            f'<div style="display: flex; align-items: center; gap: 4px;"><span style="color: #64748B;">✉️</span> <strong>{o["campaign_count"]}</strong> <span style="color: #64748B; font-size: 11px;">campaigns</span></div>'
+                            f'</div>',
                             unsafe_allow_html=True,
                         )
                     with col_action:
@@ -175,27 +138,17 @@ def render_super_admin_portal():
                                 st.rerun()
                         else:
                             st.markdown(
-                                """
-                                <div style="text-align: center; font-size: 11px; color: #94A3B8; font-weight: 600; padding: 6px 0;">
-                                    Protected
-                                </div>
-                                """,
+                                '<div style="text-align: center; font-size: 11px; color: #94A3B8; font-weight: 600; padding: 6px 0;">Protected</div>',
                                 unsafe_allow_html=True,
                             )
 
         with tab_create:
             with st.container(border=True):
                 st.markdown(
-                    """
-                    <div style="margin-bottom: 16px;">
-                        <h3 style="font-size: 18px; font-weight: 700; color: #0F172A; margin: 0 0 4px 0; font-family: 'Outfit', sans-serif;">
-                            ➕ Provision New Organization Workspace
-                        </h3>
-                        <p style="font-size: 13px; color: #64748B; margin: 0;">
-                            Deploy an isolated multi-tenant organization with its own dedicated database scope, credentials, and owner account.
-                        </p>
-                    </div>
-                    """,
+                    '<div style="margin-bottom: 16px;">'
+                    '<h3 style="font-size: 18px; font-weight: 700; color: #0F172A; margin: 0 0 4px 0; font-family: Outfit, sans-serif;">➕ Provision New Organization Workspace</h3>'
+                    '<p style="font-size: 13px; color: #64748B; margin: 0;">Deploy an isolated multi-tenant organization with its own dedicated database scope, credentials, and owner account.</p>'
+                    '</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -227,3 +180,4 @@ def render_super_admin_portal():
 
     finally:
         db.close()
+
