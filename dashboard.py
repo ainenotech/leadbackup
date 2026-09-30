@@ -495,30 +495,35 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # ── Platform Administration Box (TOP SIDE - Platform Super Admin Only) ──
+    # ── Global SaaS Operations Center Box (TOP SIDE - Platform Super Admin Only) ──
     is_platform_admin = st.session_state.get("user", {}).get("platform_role") == "platform_super_admin"
     if is_platform_admin:
         with st.container(border=True):
             st.markdown(
                 """
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #B45309; text-transform: uppercase; letter-spacing: 0.08em;">
-                        👑 Administration
-                    </span>
-                    <span style="font-size: 9px; background: #FEF3C7; color: #92400E; font-weight: 700; padding: 1.5px 6px; border-radius: 4px; border: 1px solid #FDE68A;">
-                        PLATFORM ROOT
-                    </span>
+                <div style="margin-bottom: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700; color: #92400E; text-transform: uppercase; letter-spacing: 0.04em;">
+                            👑 Administration
+                        </span>
+                        <span style="font-size: 9px; background: #FEF3C7; color: #92400E; font-weight: 700; padding: 1.5px 6px; border-radius: 4px; border: 1px solid #FDE68A;">
+                            PLATFORM
+                        </span>
+                    </div>
+                    <div style="font-size: 12px; font-weight: 700; color: #0F172A; line-height: 1.3;">
+                        Global SaaS Operations Center
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
             is_admin_active = st.session_state.active_page == "super_admin"
             if st.button(
-                "👑  Platform Super Admin",
+                "👑  Open Operations Portal",
                 key="top_admin_super_portal",
                 type="primary" if is_admin_active else "secondary",
                 use_container_width=True,
-                help="Global SaaS Operations, Tenant Oversight & System Health",
+                help="Platform operations, cross-tenant telemetry, and workspace controls",
             ):
                 st.session_state.active_page = "super_admin"
                 st.query_params["page"] = "super_admin"

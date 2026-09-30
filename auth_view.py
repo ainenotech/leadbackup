@@ -204,10 +204,10 @@ def render_org_switcher():
         st.markdown(
             f"""
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.08em;">
-                    🏢 Active Organization
+                <span style="font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.04em;">
+                    🏢 Workspace
                 </span>
-                <span style="font-size: 9.5px; background: #EEF2F6; color: #2563EB; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #DBEAFE;">
+                <span style="font-size: 9.5px; background: #EFF6FF; color: #1D4ED8; font-weight: 700; padding: 1.5px 6px; border-radius: 4px; border: 1px solid #BFDBFE;">
                     {role_badge}
                 </span>
             </div>
@@ -238,41 +238,38 @@ def render_org_switcher():
             finally:
                 db.close()
 
-        # Workspace Management Actions inside the box
+        # Workspace Management Actions inside the box (Full-width buttons with complete labels)
         active_page = st.session_state.get("active_page", "overview")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            is_settings = active_page == "org_settings"
-            if st.button(
-                "⚙️ Settings",
-                key="ws_box_settings_btn",
-                type="primary" if is_settings else "secondary",
-                use_container_width=True,
-                help="Configure Workspace Settings, Branding & AI BYOK",
-            ):
-                st.session_state.active_page = "org_settings"
-                st.query_params["page"] = "org_settings"
-                if "tab" in st.query_params:
-                    del st.query_params["tab"]
-                if "feature" in st.query_params:
-                    del st.query_params["feature"]
-                st.rerun()
+        is_settings = active_page == "org_settings"
+        if st.button(
+            "⚙️  Workspace Settings",
+            key="ws_box_settings_btn",
+            type="primary" if is_settings else "secondary",
+            use_container_width=True,
+            help="Configure Workspace Settings, Branding & AI BYOK",
+        ):
+            st.session_state.active_page = "org_settings"
+            st.query_params["page"] = "org_settings"
+            if "tab" in st.query_params:
+                del st.query_params["tab"]
+            if "feature" in st.query_params:
+                del st.query_params["feature"]
+            st.rerun()
 
-        with col2:
-            is_team = active_page == "team"
-            if st.button(
-                "👥 Team",
-                key="ws_box_team_btn",
-                type="primary" if is_team else "secondary",
-                use_container_width=True,
-                help="Manage Team Members & Access Roles",
-            ):
-                st.session_state.active_page = "team"
-                st.query_params["page"] = "team"
-                if "tab" in st.query_params:
-                    del st.query_params["tab"]
-                if "feature" in st.query_params:
-                    del st.query_params["feature"]
-                st.rerun()
+        is_team = active_page == "team"
+        if st.button(
+            "👥  Team Members",
+            key="ws_box_team_btn",
+            type="primary" if is_team else "secondary",
+            use_container_width=True,
+            help="Manage Team Members & Access Roles",
+        ):
+            st.session_state.active_page = "team"
+            st.query_params["page"] = "team"
+            if "tab" in st.query_params:
+                del st.query_params["tab"]
+            if "feature" in st.query_params:
+                del st.query_params["feature"]
+            st.rerun()
 

@@ -352,7 +352,17 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"]:ho
 section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] .stButton > button {{
     padding: 7px 10px !important;
     font-size: 12.5px !important;
-    margin-bottom: 0px !important;
+    margin-bottom: 3px !important;
+    min-height: 36px !important;
+    border-radius: 6px !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] .stButton > button p,
+section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] .stButton > button span {{
+    font-size: 12.5px !important;
+    white-space: nowrap !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stSelectbox"] {{
+    margin-bottom: 6px !important;
 }}
 
 /* Sidebar Nav Buttons */
