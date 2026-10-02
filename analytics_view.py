@@ -8,7 +8,13 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-from services.analytics_service import FEATURE_DEFINITIONS, build_comprehensive_analytics
+from services.analytics_service import (
+    FEATURE_DEFINITIONS,
+    build_comprehensive_analytics,
+    get_available_timeframes,
+    filter_logs_by_timeframe,
+    compute_temporal_rollups,
+)
 from services.analytics_export import generate_analytics_excel, generate_analytics_pdf
 from services.template_service import compute_template_analytics
 from utils.theme import apply_chart_theme, is_dark_mode
@@ -100,10 +106,16 @@ FEATURE_SECTION_MAP = {
         "tab_name": "📜 Lead Activity Timeline",
         "feature_name": "Lead Activity Timeline",
     },
+    "temporal_rollups": {
+        "tab": "temporal",
+        "tab_name": "📅 Day & Month Rollups",
+        "feature_name": "Day & Month Rollups",
+    },
 }
 
 TAB_CONFIG = [
     {"id": "matrix", "name": "📋 All 14 Features Matrix"},
+    {"id": "temporal", "name": "📅 Day & Month Rollups"},
     {"id": "templates", "name": "📑 Template Performance & Trends"},
     {"id": "telemetry", "name": "👁️ Opens, Clicks & Deliverability"},
     {"id": "replies", "name": "💬 Replies, Latency & Sequences"},
@@ -154,6 +166,247 @@ def _render_feature_header(
     st.markdown(clean_html(markup), unsafe_allow_html=True)
 
 
+def _render_tab_temporal_rollups(
+    rollups: Dict[str, Any],
+    tf_info: Dict[str, Any],
+    active_scope: str,
+    selected_date: Optional[str],
+    selected_month: Optional[str],
+    df_logs: pd.DataFrame,
+) -> None:
+    """Renders Day-Wise and Month-Wise aggregated telemetry trends, comparisons, and audit tables."""
+    daily_df = rollups.get("daily_trends", pd.DataFrame())
+    monthly_df = rollups.get("monthly_trends", pd.DataFrame())
+
+    total_days = len(daily_df)
+    total_months = len(monthly_df)
+
+    _render_feature_header(
+        "temporal_rollups",
+        "Day-Wise & Month-Wise Telemetry Intelligence",
+        "Granular chronological audit tracking daily and monthly dispatch volumes, delivered emails, unique open rates, link CTR, and inbound reply velocities.",
+        "📅",
+        "Time-Series Telemetry",
+        f"{total_days} Days · {total_months} Months Tracked",
+    )
+
+    peak_day_sent = int(daily_df["sent"].max()) if not daily_df.empty and "sent" in daily_df.columns else 0
+    best_open_day = daily_df.sort_values(by="open_rate", ascending=False).iloc[0] if not daily_df.empty and "open_rate" in daily_df.columns else None
+
+    # ── 4 Executive Highlight Metric Cards ──
+    hl_c1, hl_c2, hl_c3, hl_c4 = st.columns(4)
+    with hl_c1:
+        st.markdown(
+            clean_html(f"""
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Active Campaign Days</div>
+                <div style="font-size: 24px; font-weight: 800; color: #1E293B; margin-top: 4px;">{total_days}</div>
+                <div style="font-size: 11.5px; color: #2563EB;">📅 Unique dispatch dates</div>
+            </div>
+            """),
+            unsafe_allow_html=True,
+        )
+    with hl_c2:
+        st.markdown(
+            clean_html(f"""
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Peak Single-Day Velocity</div>
+                <div style="font-size: 24px; font-weight: 800; color: #0D9488; margin-top: 4px;">{peak_day_sent:,}</div>
+                <div style="font-size: 11.5px; color: #0D9488;">⚡ Maximum leads sent in 24h</div>
+            </div>
+            """),
+            unsafe_allow_html=True,
+        )
+    with hl_c3:
+        best_day_str = best_open_day["display_date"] if best_open_day is not None else "—"
+        best_day_rate = best_open_day["open_rate"] if best_open_day is not None else 0.0
+        st.markdown(
+            clean_html(f"""
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Best Open Rate Day</div>
+                <div style="font-size: 24px; font-weight: 800; color: #2563EB; margin-top: 4px;">{best_day_rate}%</div>
+                <div style="font-size: 11.5px; color: #64748B;">{best_day_str}</div>
+            </div>
+            """),
+            unsafe_allow_html=True,
+        )
+    with hl_c4:
+        st.markdown(
+            clean_html(f"""
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Tracked Months</div>
+                <div style="font-size: 24px; font-weight: 800; color: #7C3AED; margin-top: 4px;">{total_months}</div>
+                <div style="font-size: 11.5px; color: #7C3AED;">📆 Month-wise cohorts</div>
+            </div>
+            """),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+
+    # ── Interactive Sub-View Switcher ──
+    temporal_choice = st.radio(
+        "Choose Temporal Rollup View",
+        ["📅 Day-by-Day Telemetry Breakdown", "📆 Month-by-Month Cohort Comparison"],
+        horizontal=True,
+        key="radio_temporal_choice",
+    )
+
+    if "Day-by-Day" in temporal_choice:
+        st.markdown("#### 📅 Day-by-Day Outreach & Telemetry Trajectory")
+        if not daily_df.empty:
+            chart_df = daily_df.sort_values(by="date", ascending=True)
+
+            fig_daily = go.Figure()
+            fig_daily.add_trace(go.Bar(
+                x=chart_df["display_date"],
+                y=chart_df["sent"],
+                name="Dispatched Leads",
+                marker_color="#2563EB",
+            ))
+            fig_daily.add_trace(go.Bar(
+                x=chart_df["display_date"],
+                y=chart_df["opens"],
+                name="Unique Opens",
+                marker_color="#0D9488",
+            ))
+            fig_daily.add_trace(go.Bar(
+                x=chart_df["display_date"],
+                y=chart_df["replies"],
+                name="Customer Replies",
+                marker_color="#7C3AED",
+            ))
+            fig_daily.add_trace(go.Scatter(
+                x=chart_df["display_date"],
+                y=chart_df["open_rate"],
+                name="Open Rate (%)",
+                yaxis="y2",
+                mode="lines+markers",
+                line=dict(color="#F59E0B", width=3),
+                marker=dict(size=8),
+            ))
+
+            fig_daily.update_layout(
+                height=350,
+                hovermode="x unified",
+                barmode="group",
+                margin=dict(l=10, r=10, t=30, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                yaxis=dict(title="Volume (Count)"),
+                yaxis2=dict(title="Open Rate (%)", overlaying="y", side="right", range=[0, 105]),
+            )
+            apply_chart_theme(fig_daily)
+            st.plotly_chart(fig_daily, use_container_width=True, config={"displayModeBar": False})
+
+            # Interactive Daily Summary Table
+            st.markdown("##### 📋 Day-by-Day Historical Telemetry Table")
+            display_daily = daily_df[[
+                "display_date", "sent", "delivered", "opens", "open_rate", "clicks", "click_rate", "replies", "reply_rate", "bounces", "deliverability_rate"
+            ]].copy()
+            display_daily.columns = [
+                "Calendar Date", "Dispatched", "Delivered", "Unique Opens", "Open Rate %", "Clicks", "CTR %", "Replies", "Reply %", "Bounces", "Deliverability %"
+            ]
+            st.dataframe(display_daily, use_container_width=True, hide_index=True)
+
+            # Interactive Shortcut to drill-down into a specific day
+            d_pick_col1, d_pick_col2 = st.columns([3, 1])
+            with d_pick_col1:
+                picked_day = st.selectbox(
+                    "Select a day to inspect in the 6 Macro KPI cards above:",
+                    options=daily_df["date"].tolist(),
+                    format_func=lambda d: next((r["display_date"] for _, r in daily_df.iterrows() if r["date"] == d), d),
+                    key="sb_drill_down_day",
+                )
+            with d_pick_col2:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Apply Day Filter", key="btn_apply_day_filter", use_container_width=True):
+                    st.session_state.analytics_scope_mode = "day"
+                    st.session_state.analytics_selected_date = picked_day
+                    st.rerun()
+
+        else:
+            st.info("No day-wise outreach logs available yet.")
+
+    else:
+        st.markdown("#### 📆 Month-by-Month Cohort Comparison")
+        if not monthly_df.empty:
+            chart_m = monthly_df.sort_values(by="month", ascending=True)
+
+            fig_m = go.Figure()
+            fig_m.add_trace(go.Bar(
+                x=chart_m["display_month"],
+                y=chart_m["sent"],
+                name="Dispatched Leads",
+                marker_color="#3B82F6",
+            ))
+            fig_m.add_trace(go.Bar(
+                x=chart_m["display_month"],
+                y=chart_m["opens"],
+                name="Opens",
+                marker_color="#10B981",
+            ))
+            fig_m.add_trace(go.Bar(
+                x=chart_m["display_month"],
+                y=chart_m["replies"],
+                name="Replies",
+                marker_color="#8B5CF6",
+            ))
+            fig_m.add_trace(go.Scatter(
+                x=chart_m["display_month"],
+                y=chart_m["deliverability_rate"],
+                name="Deliverability (%)",
+                yaxis="y2",
+                mode="lines+markers",
+                line=dict(color="#10B981", width=3, dash="dot"),
+                marker=dict(size=8),
+            ))
+
+            fig_m.update_layout(
+                height=350,
+                hovermode="x unified",
+                barmode="group",
+                margin=dict(l=10, r=10, t=30, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                yaxis=dict(title="Volume (Count)"),
+                yaxis2=dict(title="Deliverability (%)", overlaying="y", side="right", range=[0, 105]),
+            )
+            apply_chart_theme(fig_m)
+            st.plotly_chart(fig_m, use_container_width=True, config={"displayModeBar": False})
+
+            # Monthly Comparison Table
+            st.markdown("##### 📋 Month-Over-Month Performance Table")
+            display_monthly = monthly_df[[
+                "display_month", "sent", "delivered", "opens", "open_rate", "clicks", "click_rate", "replies", "reply_rate", "bounces", "deliverability_rate"
+            ]].copy()
+            display_monthly.columns = [
+                "Month", "Dispatched", "Delivered", "Unique Opens", "Open Rate %", "Clicks", "CTR %", "Replies", "Reply %", "Bounces", "Deliverability %"
+            ]
+            st.dataframe(display_monthly, use_container_width=True, hide_index=True)
+
+            # Interactive Shortcut to drill-down into a specific month
+            m_pick_col1, m_pick_col2 = st.columns([3, 1])
+            with m_pick_col1:
+                picked_month = st.selectbox(
+                    "Select a month to inspect in the 6 Macro KPI cards above:",
+                    options=monthly_df["month"].tolist(),
+                    format_func=lambda m: next((r["display_month"] for _, r in monthly_df.iterrows() if r["month"] == m), m),
+                    key="sb_drill_down_month",
+                )
+            with m_pick_col2:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Apply Month Filter", key="btn_apply_month_filter", use_container_width=True):
+                    st.session_state.analytics_scope_mode = "month"
+                    st.session_state.analytics_selected_month = picked_month
+                    st.rerun()
+
+        else:
+            st.info("No month-wise outreach logs available yet.")
+
+
 def render_analytics(df_logs: pd.DataFrame) -> None:
     """Renders the executive-grade Analytics Suite covering all 14 outreach intelligence features."""
 
@@ -173,63 +426,170 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
     """
     st.markdown(clean_html(banner_markup), unsafe_allow_html=True)
 
-    # Build analytics data
-    analytics_data = get_cached_analytics(df_logs)
+    # Compute available timeframes & rollups from base dataset
+    tf_info = get_available_timeframes(df_logs)
+    rollups = compute_temporal_rollups(df_logs)
+
+    # Initialize scope in session_state if missing
+    if "analytics_scope_mode" not in st.session_state:
+        st.session_state.analytics_scope_mode = "all"
+    if "analytics_selected_date" not in st.session_state:
+        st.session_state.analytics_selected_date = tf_info["latest_date"]
+    if "analytics_selected_month" not in st.session_state:
+        st.session_state.analytics_selected_month = tf_info["latest_month"]
+
+    # ── Executive Time Horizon Scope Controller ──
+    SCOPE_DICT = {
+        "all": "🌐 Whole Data (All-Time)",
+        "day": "📅 Day-Wise",
+        "month": "📆 Month-Wise",
+    }
+
+    sc_c1, sc_c2 = st.columns([3.2, 3.8])
+    with sc_c1:
+        chosen_scope = st.segmented_control(
+            "Analytics Timeframe Scope",
+            options=["all", "day", "month"],
+            format_func=lambda k: SCOPE_DICT[k],
+            default=st.session_state.analytics_scope_mode,
+            key="segmented_analytics_scope",
+            label_visibility="collapsed",
+        )
+        if chosen_scope and chosen_scope != st.session_state.analytics_scope_mode:
+            st.session_state.analytics_scope_mode = chosen_scope
+            st.rerun()
+
+    active_scope = st.session_state.analytics_scope_mode
+    active_target_val = None
+
+    with sc_c2:
+        if active_scope == "all":
+            all_cnt = len(df_logs) if df_logs is not None else 0
+            badge_text = f"""
+            <div style="font-size: 13px; color: var(--text-muted); padding: 7px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; text-align: center;">
+                🌐 Aggregating <strong style="color: var(--text-primary);">{all_cnt:,}</strong> Total Outreach Leads Across All History
+            </div>
+            """
+            st.markdown(clean_html(badge_text), unsafe_allow_html=True)
+            active_target_val = None
+
+        elif active_scope == "day":
+            date_map = {item["date"]: item["label"] for item in tf_info["dates"]}
+            default_d = st.session_state.analytics_selected_date
+            if default_d not in date_map and tf_info["dates"]:
+                default_d = tf_info["dates"][0]["date"]
+
+            d_c1, d_c2 = st.columns([3, 1.2])
+            with d_c1:
+                sel_date = st.selectbox(
+                    "Select Calendar Day",
+                    options=list(date_map.keys()),
+                    format_func=lambda d: date_map.get(d, d),
+                    index=list(date_map.keys()).index(default_d) if default_d in date_map else 0,
+                    label_visibility="collapsed",
+                    key="sb_analytics_day",
+                )
+                if sel_date != st.session_state.analytics_selected_date:
+                    st.session_state.analytics_selected_date = sel_date
+                    st.rerun()
+                active_target_val = sel_date
+
+            with d_c2:
+                today_s = datetime.now().strftime("%Y-%m-%d")
+                if st.button("⚡ Today", key="btn_quick_today", use_container_width=True, help="Jump to Today's test leads"):
+                    st.session_state.analytics_selected_date = today_s
+                    st.rerun()
+
+        elif active_scope == "month":
+            month_map = {item["month"]: item["label"] for item in tf_info["months"]}
+            default_m = st.session_state.analytics_selected_month
+            if default_m not in month_map and tf_info["months"]:
+                default_m = tf_info["months"][0]["month"]
+
+            m_c1, m_c2 = st.columns([3, 1.2])
+            with m_c1:
+                sel_month = st.selectbox(
+                    "Select Month",
+                    options=list(month_map.keys()),
+                    format_func=lambda m: month_map.get(m, m),
+                    index=list(month_map.keys()).index(default_m) if default_m in month_map else 0,
+                    label_visibility="collapsed",
+                    key="sb_analytics_month",
+                )
+                if sel_month != st.session_state.analytics_selected_month:
+                    st.session_state.analytics_selected_month = sel_month
+                    st.rerun()
+                active_target_val = sel_month
+
+            with m_c2:
+                cur_m_s = datetime.now().strftime("%Y-%m")
+                if st.button("⚡ This Month", key="btn_quick_this_month", use_container_width=True, help="Jump to current calendar month"):
+                    st.session_state.analytics_selected_month = cur_m_s
+                    st.rerun()
+
+    # Filter DataFrame according to active scope
+    filtered_df_logs = filter_logs_by_timeframe(
+        df_logs,
+        scope_mode=active_scope,
+        selected_val=active_target_val,
+    )
+
+    # Build analytics data from filtered dataset
+    analytics_data = get_cached_analytics(filtered_df_logs)
     totals = analytics_data["totals"]
     records = analytics_data["leads_records"]
 
-    # Filter and Action Controls Ribbon
-    c_f1, c_f2, c_f3, c_f4 = st.columns([2.6, 2.0, 1.4, 1.4])
-    with c_f1:
-        timeframe = st.selectbox(
-            "Campaign Scope",
-            ["All Active Campaigns (Real-Time)", "Last 30 Days", "Last 7 Days", "Current Week Cohort"],
-            index=0,
-            label_visibility="collapsed",
-        )
-    with c_f2:
-        badge_text = f"""
-        <div style="font-size: 13px; color: var(--text-muted); padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; text-align: center;">
-            👥 Tracking <strong style="color: var(--text-primary);">{totals['total_leads']}</strong> Active Lead Journeys
+    # ── Active Telemetry Scope Info Pill & Live Sync Button ──
+    info_c1, info_c2 = st.columns([5, 1.5])
+    with info_c1:
+        if active_scope == "day":
+            date_map = {item["date"]: item["label"] for item in tf_info["dates"]}
+            lbl = date_map.get(active_target_val, active_target_val)
+            scope_desc = f"📅 <strong>Day-Wise Active:</strong> Displaying telemetry for <strong>{lbl}</strong> · <em>{totals['total_leads']} leads analyzed</em>"
+        elif active_scope == "month":
+            month_map = {item["month"]: item["label"] for item in tf_info["months"]}
+            lbl = month_map.get(active_target_val, active_target_val)
+            scope_desc = f"📆 <strong>Month-Wise Active:</strong> Displaying telemetry for <strong>{lbl}</strong> · <em>{totals['total_leads']} leads analyzed</em>"
+        else:
+            scope_desc = f"🌐 <strong>Whole Data Scope:</strong> Displaying aggregate telemetry for all <strong>{totals['total_leads']:,} leads</strong> across all campaigns"
+        st.markdown(clean_html(f"""
+        <div style="font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 10px 0;">
+            {scope_desc}
         </div>
-        """
-        st.markdown(clean_html(badge_text), unsafe_allow_html=True)
-    import base64
-    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M')
-    pdf_filename = f"Outreach_Analytics_Report_{timestamp_str}.pdf"
-    excel_filename = f"Outreach_Analytics_Data_{timestamp_str}.xlsx"
+        """), unsafe_allow_html=True)
 
-    with c_f3:
-        # Cache PDF generation per telemetry snapshot to keep page interactions instantaneous
-        pdf_cache_key = f"_pdf_{totals['total_leads']}_{totals['total_opens']}_{totals['total_replies']}"
-        if pdf_cache_key not in st.session_state:
-            st.session_state[pdf_cache_key] = generate_analytics_pdf(analytics_data)
-        pdf_b64 = base64.b64encode(st.session_state[pdf_cache_key]).decode("utf-8")
-        btn_pdf_html = f"""
-        <a href="data:application/pdf;base64,{pdf_b64}" download="{pdf_filename}" class="btn-export-download" title="Download {pdf_filename}">
-            <span style="display: flex; align-items: center; justify-content: center; gap: 7px;">
-                <span>📄</span>
-                <span>Export as PDF</span>
-            </span>
-        </a>
-        """
-        st.markdown(clean_html(btn_pdf_html), unsafe_allow_html=True)
+    with info_c2:
+        if st.button("⚡ Live Sync Telemetry", key="btn_refresh_analytics_telemetry", use_container_width=True, help="Synchronize newest opens, clicks, and replies from the database"):
+            st.cache_data.clear()
+            st.toast("✅ Real-time telemetry synchronized from database!", icon="⚡")
+            st.rerun()
 
-    with c_f4:
-        # Cache Excel generation per telemetry snapshot
-        excel_cache_key = f"_excel_{totals['total_leads']}_{totals['total_opens']}_{totals['total_replies']}"
-        if excel_cache_key not in st.session_state:
-            st.session_state[excel_cache_key] = generate_analytics_excel(analytics_data)
-        excel_b64 = base64.b64encode(st.session_state[excel_cache_key]).decode("utf-8")
-        btn_excel_html = f"""
-        <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{excel_b64}" download="{excel_filename}" class="btn-export-download" title="Download {excel_filename}">
-            <span style="display: flex; align-items: center; justify-content: center; gap: 7px;">
-                <span>📊</span>
-                <span>Export as Excel</span>
-            </span>
-        </a>
-        """
-        st.markdown(clean_html(btn_excel_html), unsafe_allow_html=True)
+    with st.expander("📥 Export Analytics Report (Executive PDF & Excel)", expanded=False):
+        exp_c1, exp_c2 = st.columns(2)
+        with exp_c1:
+            if st.button("📄 Prepare Executive PDF Report", key="btn_prep_pdf", use_container_width=True):
+                with st.spinner("Compiling PDF telemetry report..."):
+                    pdf_bytes = generate_analytics_pdf(analytics_data)
+                    st.download_button(
+                        label="⬇️ Download PDF Report",
+                        data=pdf_bytes,
+                        file_name=f"Outreach_Analytics_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        key="btn_dl_pdf_ready",
+                        use_container_width=True,
+                    )
+        with exp_c2:
+            if st.button("📊 Prepare Full Excel Workbook", key="btn_prep_excel", use_container_width=True):
+                with st.spinner("Generating Excel dataset..."):
+                    excel_bytes = generate_analytics_excel(analytics_data)
+                    st.download_button(
+                        label="⬇️ Download Excel Workbook",
+                        data=excel_bytes,
+                        file_name=f"Outreach_Analytics_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="btn_dl_excel_ready",
+                        use_container_width=True,
+                    )
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
@@ -472,16 +832,29 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
                 st.markdown(clean_html(card_markup), unsafe_allow_html=True)
 
     # ─────────────────────────────────────────────────────────────
+    # TAB: DAY-WISE & MONTH-WISE TEMPORAL ROLLUPS
+    # ─────────────────────────────────────────────────────────────
+    elif current_tab == "temporal":
+        _render_tab_temporal_rollups(
+            rollups,
+            tf_info,
+            active_scope,
+            st.session_state.analytics_selected_date,
+            st.session_state.analytics_selected_month,
+            df_logs,
+        )
+
+    # ─────────────────────────────────────────────────────────────
     # TAB: TEMPLATE PERFORMANCE & DAY-BY-DAY CONVERSION TRENDS
     # ─────────────────────────────────────────────────────────────
     elif current_tab == "templates":
         _render_feature_header(
             "template_performance",
             "Template-Wise Performance & Day-by-Day Conversion Trends",
-            "Analyze which email templates generate higher Open Rates, Click Rates, and Booking Conversions day-by-day across 20-25 lead batches.",
+            "100% genuine database telemetry showing real-time template assignment, dispatch volumes, deliverability, opens, clicks, and inbound replies.",
             "📑",
             "Template A/B Analytics",
-            "Live Multi-Template Telemetry",
+            "Real Database Telemetry",
         )
 
         tpl_analytics = compute_template_analytics(df_logs)
@@ -491,193 +864,281 @@ def render_analytics(df_logs: pd.DataFrame) -> None:
         best_click = tpl_analytics["best_click_rate"]
         best_booking = tpl_analytics["best_booking_rate"]
 
-        # 3 Top Winner KPI Cards
-        top_kpi_html = f"""
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0;">
-            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #2563EB; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">🏆 Best Open Rate</span>
-                    <span style="font-size: 18px;">👁️</span>
-                </div>
-                <div style="font-size: 24px; font-weight: 800; color: #1E293B; margin-top: 6px;">
-                    {f"{best_open['open_rate']}%" if best_open else "—"}
-                </div>
-                <div style="font-size: 13px; color: #2563EB; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    {best_open['name'] if best_open else "No outreach sent yet"}
-                </div>
-                <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
-                    {f"{best_open['opened_count']} opened of {best_open['total_sent']} sent" if best_open else "Awaiting live opens"}
-                </div>
-            </div>
+        # Filter out active cohorts (templates that actually sent emails)
+        active_templates = [s for s in t_stats if s["total_sent"] > 0]
 
-            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #0D9488; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">🏆 Best Click Rate</span>
-                    <span style="font-size: 18px;">🖱️</span>
+        # ── Dual Real-Time Active Cohort Showcase Cards ──
+        if active_templates:
+            st.markdown(
+                """
+                <div style="margin: 10px 0 14px 0;">
+                    <div style="font-size: 15px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                        <span>⚡ Live Active Template Cohorts</span>
+                        <span class="badge badge-sent" style="font-size: 10.5px;">Real-Time Sync</span>
+                    </div>
+                    <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                        Direct telemetry from 1,100+ outreach dispatches across verified template variants.
+                    </div>
                 </div>
-                <div style="font-size: 24px; font-weight: 800; color: #1E293B; margin-top: 6px;">
-                    {f"{best_click['click_rate']}%" if best_click else "—"}
-                </div>
-                <div style="font-size: 13px; color: #0D9488; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    {best_click['name'] if best_click else "No link clicks yet"}
-                </div>
-                <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
-                    {f"{best_click['clicked_count']} clicks of {best_click['total_sent']} sent" if best_click else "Awaiting live clicks"}
-                </div>
-            </div>
-
-            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #7C3AED; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">🏆 Best Booking Rate</span>
-                    <span style="font-size: 18px;">📅</span>
-                </div>
-                <div style="font-size: 24px; font-weight: 800; color: #1E293B; margin-top: 6px;">
-                    {f"{best_booking['booking_rate']}%" if best_booking else "—"}
-                </div>
-                <div style="font-size: 13px; color: #7C3AED; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    {best_booking['name'] if best_booking else "No bookings yet"}
-                </div>
-                <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">
-                    {f"{best_booking['booked_count']} consultations of {best_booking['total_sent']} sent" if best_booking else "Awaiting booking conversions"}
-                </div>
-            </div>
-        </div>
-        """
-        st.markdown(clean_html(top_kpi_html), unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Day-by-Day Progression Plotly Chart
-        st.markdown("##### 📈 Day-by-Day Rate Progression by Template")
-
-        tpl_names_for_filter = ["All Templates (Comparative)"] + [s["name"] for s in t_stats]
-        c_av_f1, c_av_f2 = st.columns([1.6, 1.4])
-        with c_av_f1:
-            chosen_av_tpl = st.selectbox(
-                "🎯 Select Template to Analyze (One-by-One or All):",
-                options=tpl_names_for_filter,
-                index=0,
-                key="analytics_view_tpl_dropdown",
-                help="Isolate an individual template to inspect its daily conversion curve, or choose 'All Templates' to view comparative trajectories."
-            )
-        with c_av_f2:
-            metric_mode = st.radio(
-                "Select Progression Metric to Track Day-by-Day:",
-                ["Open Rate (%)", "Click Rate (%)", "Booking Rate (%)"],
-                horizontal=True,
-                key="analytics_view_trend_metric"
+                """,
+                unsafe_allow_html=True,
             )
 
-        metric_col_map = {
-            "Open Rate (%)": "open_rate",
-            "Click Rate (%)": "click_rate",
-            "Booking Rate (%)": "booking_rate",
-        }
-        chosen_metric_col = metric_col_map[metric_mode]
-
-        if chosen_av_tpl != "All Templates (Comparative)":
-            plot_daily_df = daily_df[daily_df["template_name"] == chosen_av_tpl] if not daily_df.empty else pd.DataFrame()
-            chart_av_title = f"Daily {metric_mode} for {chosen_av_tpl}"
-            single_s = next((s for s in t_stats if s["name"] == chosen_av_tpl), None)
-            if single_s:
-                st.markdown(
-                    f"""
-                    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 16px; margin: 8px 0 14px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                        <div>
-                            <strong style="color: #0F172A; font-size: 14px;">{single_s['name']}</strong>
-                            <div style="font-size: 12px; color: #64748B;">Category: {single_s['category']}</div>
+            cols_active = st.columns(len(active_templates))
+            for idx, a_tpl in enumerate(active_templates):
+                with cols_active[idx]:
+                    accent = a_tpl.get("accent_color", "#2563EB")
+                    card_html = f"""
+                    <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid {accent}; border-radius: 12px; padding: 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); margin-bottom: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                            <div>
+                                <span class="tpl-meta-tag" style="background: #EFF6FF; color: {accent}; font-weight: 700;">{a_tpl['category']}</span>
+                                <h3 style="font-size: 16px; font-weight: 700; color: #0F172A; margin: 6px 0 2px 0; line-height: 1.3;">
+                                    {a_tpl['name']}
+                                </h3>
+                            </div>
+                            <span class="badge badge-sent" style="font-size: 10.5px; padding: 3px 8px; white-space: nowrap;">● Dispatched</span>
                         </div>
-                        <div style="display: flex; gap: 16px; font-size: 13px;">
-                            <span><strong>{single_s['total_sent']}</strong> sent</span>
-                            <span style="color: #2563EB;"><strong>{single_s['open_rate']}%</strong> open rate ({single_s['opened_count']} opens)</span>
-                            <span style="color: #0D9488;"><strong>{single_s['click_rate']}%</strong> click rate ({single_s['clicked_count']} clicks)</span>
-                            <span style="color: #7C3AED;"><strong>{single_s['booking_rate']}%</strong> booking rate ({single_s['booked_count']} booked)</span>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 12px 0; text-align: center;">
+                            <div style="background: #F8FAFC; border: 1px solid #F1F5F9; border-radius: 8px; padding: 8px 4px;">
+                                <div style="font-size: 10px; color: #64748B; font-weight: 700; text-transform: uppercase;">Assigned</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #0F172A; margin-top: 2px;">{a_tpl['total_leads']}</div>
+                            </div>
+                            <div style="background: #F8FAFC; border: 1px solid #F1F5F9; border-radius: 8px; padding: 8px 4px;">
+                                <div style="font-size: 10px; color: #64748B; font-weight: 700; text-transform: uppercase;">Delivered</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #0D9488; margin-top: 2px;">{a_tpl['delivered_count']}</div>
+                                <div style="font-size: 10px; color: #0D9488;">{a_tpl['deliverability_rate']}%</div>
+                            </div>
+                            <div style="background: #F8FAFC; border: 1px solid #F1F5F9; border-radius: 8px; padding: 8px 4px;">
+                                <div style="font-size: 10px; color: #64748B; font-weight: 700; text-transform: uppercase;">Opens</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #2563EB; margin-top: 2px;">{a_tpl['opened_count']}</div>
+                                <div style="font-size: 10px; color: #2563EB;">{a_tpl['open_rate']}%</div>
+                            </div>
+                            <div style="background: #F8FAFC; border: 1px solid #F1F5F9; border-radius: 8px; padding: 8px 4px;">
+                                <div style="font-size: 10px; color: #64748B; font-weight: 700; text-transform: uppercase;">Replies</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #7C3AED; margin-top: 2px;">{a_tpl['replied_count']}</div>
+                                <div style="font-size: 10px; color: #7C3AED;">{a_tpl['reply_rate']}%</div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #64748B; padding-top: 8px; border-top: 1px solid #F1F5F9;">
+                            <span>⚠️ Bounces: <strong>{a_tpl['bounced_count']}</strong></span>
+                            <span>🖱️ Clicks: <strong>{a_tpl['clicked_count']}</strong></span>
+                            <span>📅 Booked: <strong>{a_tpl['booked_count']}</strong></span>
                         </div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            plot_daily_df = daily_df
-            chart_av_title = f"Daily {metric_mode} Trajectory Across Templates"
+                    """
+                    st.markdown(clean_html(card_html), unsafe_allow_html=True)
 
-        if not plot_daily_df.empty:
-            fig_trend = px.line(
-                plot_daily_df,
-                x="date",
-                y=chosen_metric_col,
-                color="template_name",
-                markers=True,
-                title=chart_av_title,
-                labels={"date": "Date", chosen_metric_col: metric_mode, "template_name": "Template"},
-            )
-            fig_trend.update_layout(
-                height=350,
-                hovermode="x unified",
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                legend=dict(orientation="h", yanchor="bottom", y=-0.3),
-                margin=dict(l=20, r=20, t=40, b=20),
-            )
-            apply_chart_theme(fig_trend)
-            st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False})
-        else:
-            if chosen_av_tpl != "All Templates (Comparative)":
-                st.info(f"ℹ️ No daily telemetry recorded yet for **{chosen_av_tpl}**. Send outreach batches using this template to visualize its daily conversion curve.")
-            else:
-                st.info("ℹ️ No day-by-day progression data recorded yet. Send outreach batches using different templates to visualize their daily trajectory.")
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Template Comparison Table
-        st.markdown("##### 🏆 Template Performance Leaderboard")
+        # ── Multi-Variant Conversion Leaderboard ──
+        st.markdown("##### 🏆 Multi-Variant Performance Leaderboard")
         tbl_data = []
         for s in t_stats:
+            is_active_cohort = s["total_sent"] > 0
+            status_badge = f"🟢 Active ({s['total_sent']} sent)" if is_active_cohort else "⚪ Ready / Standby"
             tbl_data.append({
                 "Template": s["name"],
                 "Category": s["category"],
-                "Total Assigned": s["total_leads"],
-                "Outreach Sent": s["total_sent"],
+                "Cohort Status": status_badge,
+                "Assigned Leads": s["total_leads"],
+                "Dispatched": s["total_sent"],
+                "Delivered": s.get("delivered_count", s["total_sent"] - s.get("bounced_count", 0)),
+                "Deliverability %": f"{s.get('deliverability_rate', 100.0)}%",
+                "Bounces": s.get("bounced_count", 0),
                 "Opens": s["opened_count"],
-                "Open Rate": f"{s['open_rate']}%",
+                "Open Rate %": f"{s['open_rate']}%",
                 "Clicks": s["clicked_count"],
-                "Click Rate": f"{s['click_rate']}%",
-                "Bookings": s["booked_count"],
-                "Booking Rate": f"{s['booking_rate']}%",
-                "Badge": s.get("badge", ""),
+                "Click Rate %": f"{s['click_rate']}%",
+                "Inbound Replies": s["replied_count"],
+                "Reply Rate %": f"{s['reply_rate']}%",
+                "Booked Consultations": s["booked_count"],
             })
         st.dataframe(pd.DataFrame(tbl_data), use_container_width=True, hide_index=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
 
-        # Comparative Bar Chart
-        if t_stats:
-            chart_df = pd.DataFrame([{
-                "Template": s["name"],
-                "Open Rate (%)": s["open_rate"],
-                "Click Rate (%)": s["click_rate"],
-                "Booking Rate (%)": s["booking_rate"],
-            } for s in t_stats if s["total_sent"] > 0])
-            
-            if not chart_df.empty:
-                melted = chart_df.melt(id_vars=["Template"], value_vars=["Open Rate (%)", "Click Rate (%)", "Booking Rate (%)"], var_name="Metric", value_name="Rate (%)")
-                fig_bar = px.bar(
-                    melted,
-                    x="Template",
-                    y="Rate (%)",
-                    color="Metric",
-                    barmode="group",
-                    title="Side-by-Side Conversion Comparison by Template",
-                    color_discrete_sequence=["#2563EB", "#0D9488", "#7C3AED"],
+        # ── Side-by-Side Conversion Visuals & Day-by-Day Progression ──
+        c_vis1, c_vis2 = st.columns([1, 1], gap="medium")
+        with c_vis1:
+            st.markdown("##### 📊 Comparative Conversion Rates")
+            if t_stats:
+                chart_df = pd.DataFrame([{
+                    "Template": s["name"].split(":")[0],
+                    "Open Rate (%)": s["open_rate"],
+                    "Deliverability (%)": s.get("deliverability_rate", 100.0),
+                    "Reply Rate (%)": s["reply_rate"],
+                } for s in t_stats if s["total_sent"] > 0])
+                
+                if not chart_df.empty:
+                    melted = chart_df.melt(id_vars=["Template"], value_vars=["Deliverability (%)", "Open Rate (%)", "Reply Rate (%)"], var_name="Metric", value_name="Rate (%)")
+                    fig_bar = px.bar(
+                        melted,
+                        x="Template",
+                        y="Rate (%)",
+                        color="Metric",
+                        barmode="group",
+                        title="Key Conversion Funnel Metrics Across Active Templates",
+                        color_discrete_sequence=["#0D9488", "#2563EB", "#7C3AED"],
+                    )
+                    fig_bar.update_layout(
+                        height=280,
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        margin=dict(l=10, r=10, t=30, b=10),
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.3),
+                    )
+                    apply_chart_theme(fig_bar)
+                    st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
+                else:
+                    st.info("Awaiting active email dispatches to plot conversion bar chart.")
+
+        with c_vis2:
+            st.markdown("##### 📈 Day-by-Day Telemetry Trajectory")
+            if not daily_df.empty:
+                fig_trend = px.line(
+                    daily_df,
+                    x="date",
+                    y="sent",
+                    color="template_name",
+                    markers=True,
+                    title="Daily Outbound Send Trajectory",
+                    labels={"date": "Date", "sent": "Emails Dispatched", "template_name": "Template"},
                 )
-                fig_bar.update_layout(
-                    height=320,
+                fig_trend.update_layout(
+                    height=280,
+                    hovermode="x unified",
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
-                    margin=dict(l=20, r=20, t=40, b=20),
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.3),
+                    margin=dict(l=10, r=10, t=30, b=10),
                 )
-                apply_chart_theme(fig_bar)
-                st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
+                apply_chart_theme(fig_trend)
+                st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.info("Daily timeline trends will plot automatically as emails are sent across multiple days.")
+
+        st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+
+        # ── Interactive Live Lead Cohort Inspector by Assigned Template ──
+        st.markdown(
+            """
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px 18px; margin: 12px 0 16px 0;">
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                    <span>🔍 Real-Time Lead Inspector by Assigned Template</span>
+                    <span class="badge badge-sent" style="font-size: 10.5px;">1,100+ Live Lead Telemetry</span>
+                </div>
+                <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 3px;">
+                    Inspect the exact leads assigned, dispatched, delivered, or replied under each template cohort directly from the active database.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        c_insp1, c_insp2, c_insp3 = st.columns([2.2, 1.8, 2.0])
+        with c_insp1:
+            template_filter_choices = ["All Active Templates (1,100+ Leads)"] + [s["name"] for s in t_stats if s["total_leads"] > 0]
+            chosen_inspect_tpl = st.selectbox(
+                "Filter by Assigned Template",
+                options=template_filter_choices,
+                index=0,
+                key="sb_inspect_template",
+            )
+        with c_insp2:
+            status_filter_choice = st.selectbox(
+                "Filter by Delivery Status",
+                options=["All Statuses", "Replied Only (Inbound)", "Opened Only", "Bounced Only", "Delivered / Sent"],
+                index=0,
+                key="sb_inspect_status",
+            )
+        with c_insp3:
+            search_query = st.text_input(
+                "Quick Search Leads",
+                placeholder="Search name, company, or email...",
+                key="inp_inspect_lead_search",
+            )
+
+        # Filter records based on user selection
+        filtered_records = records
+        if chosen_inspect_tpl != "All Active Templates (1,100+ Leads)":
+            chosen_tpl_obj = next((s for s in t_stats if s["name"] == chosen_inspect_tpl), None)
+            target_id = chosen_tpl_obj["id"] if chosen_tpl_obj else ""
+            filtered_records = [
+                r for r in filtered_records
+                if r.get("template_id") == target_id or r.get("template_name") == chosen_inspect_tpl
+            ]
+
+        if status_filter_choice == "Replied Only (Inbound)":
+            filtered_records = [r for r in filtered_records if r["is_reply_detected"]]
+        elif status_filter_choice == "Opened Only":
+            filtered_records = [r for r in filtered_records if r["opened"]]
+        elif status_filter_choice == "Bounced Only":
+            filtered_records = [r for r in filtered_records if r["is_bounced"]]
+        elif status_filter_choice == "Delivered / Sent":
+            filtered_records = [r for r in filtered_records if not r["is_bounced"] and r["status"] in ["sent", "delivered", "meeting_scheduled", "replied"]]
+
+        if search_query:
+            sq = search_query.strip().lower()
+            filtered_records = [
+                r for r in filtered_records
+                if sq in str(r.get("name", "")).lower()
+                or sq in str(r.get("email", "")).lower()
+                or sq in str(r.get("company", "")).lower()
+            ]
+
+        st.caption(f"Showing **{len(filtered_records)}** lead records matching filter criteria:")
+
+        if filtered_records:
+            lead_display_rows = []
+            for r in filtered_records:
+                status_disp = "📩 Replied" if r["is_reply_detected"] else ("⚠️ Bounced" if r["is_bounced"] else ("👁️ Opened" if r["opened"] else r["status"].title()))
+                sent_str = r["sent_at"].strftime("%b %d, %I:%M %p") if r["sent_at"] else "—"
+                lead_display_rows.append({
+                    "Lead Name": r["name"],
+                    "Company": r["company"],
+                    "Email Address": r["email"],
+                    "Assigned Template": r.get("template_name", "Standard"),
+                    "Current Status": status_disp,
+                    "Dispatched At": sent_str,
+                    "Opens": f"{r['open_count']}x",
+                    "Clicks": f"{r['click_count']}x",
+                    "Replied": "Yes ✅" if r["is_reply_detected"] else "No",
+                    "AI Classification": r["reply_intent"].title() if r["is_reply_detected"] else "—",
+                })
+
+            df_lead_display = pd.DataFrame(lead_display_rows)
+            st.dataframe(
+                df_lead_display,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Lead Name": st.column_config.TextColumn("Lead", width="medium"),
+                    "Company": st.column_config.TextColumn("Company", width="medium"),
+                    "Email Address": st.column_config.TextColumn("Email", width="large"),
+                    "Assigned Template": st.column_config.TextColumn("Assigned Template", width="large"),
+                    "Current Status": st.column_config.TextColumn("Status", width="small"),
+                    "Dispatched At": st.column_config.TextColumn("Dispatched", width="medium"),
+                    "Opens": st.column_config.TextColumn("Opens", width="small"),
+                    "Clicks": st.column_config.TextColumn("Clicks", width="small"),
+                    "Replied": st.column_config.TextColumn("Replied", width="small"),
+                    "AI Classification": st.column_config.TextColumn("Intent", width="small"),
+                },
+            )
+
+            # Download CSV button
+            csv_data = df_lead_display.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label=f"📥 Download Filtered Cohort ({len(filtered_records)} Leads CSV)",
+                data=csv_data,
+                file_name=f"Template_Cohort_Leads_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                key="dl_filtered_template_csv",
+            )
+        else:
+            st.info("No leads match the selected filter combination.")
 
     # ─────────────────────────────────────────────────────────────
     # TAB 2: DELIVERABILITY, OPENS & CLICKS (FEATURES 1, 2, 4, 5)

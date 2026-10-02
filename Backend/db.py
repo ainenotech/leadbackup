@@ -129,6 +129,7 @@ def init_db():
     import Backend.models  # Ensure all model tables are registered on Base
     import Backend.master_db_models  # Ensure Master DB tables are registered on Base
     import Backend.auth_models  # Multi-tenant foundation: organizations, users, memberships
+    import Backend.domain_models  # Sending-domain authentication tables
 
     new_cols = [
         ("phone", "VARCHAR"),

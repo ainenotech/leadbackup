@@ -7,14 +7,14 @@ load_dotenv()
 from Agent.graph import build_graph
 from Backend.crud import already_contacted, create_pending_entry, mark_failed, mark_sent
 from Backend.db import SessionLocal, init_db
-from Email import get_mailer
+from Email import get_mailer, get_mailer_for_org
 from leads import load_stale_leads
 from utils.token import generate_token
 
 init_db()
 
 composer_graph = build_graph()
-mailer = get_mailer()
+default_mailer = get_mailer()
 
 
 def run_campaign():
@@ -74,7 +74,10 @@ def run_campaign():
             print(f"Drafted email for {lead.email} (Awaiting approval in dashboard)")
         else:
             try:
-                mailer.send_email(to_email=lead.email, subject=result["subject"], body=result["body"], token=token)
+                # Resolve mailer: use SES if org has verified domain, else OutlookMailer
+                org_id = getattr(entry, 'organization_id', None) if entry else None
+                active_mailer = get_mailer_for_org(org_id, None) if org_id else default_mailer
+                active_mailer.send_email(to_email=lead.email, subject=result["subject"], body=result["body"], token=token)
                 mark_sent(db, entry.id)
                 sent_count += 1
                 try:

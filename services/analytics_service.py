@@ -140,7 +140,22 @@ def _parse_datetime(val: Any) -> Optional[datetime]:
                     return datetime.strptime(val[:19], fmt)
                 except Exception:
                     pass
-    return None
+def _safe_int(val: Any) -> int:
+    """Safely converts any value (including NaN, floats, strings) to integer without raising ValueError."""
+    if val is None or pd.isna(val):
+        return 0
+    try:
+        return int(float(val))
+    except Exception:
+        return 0
+
+
+def _clean_str(val: Any) -> str:
+    """Safely extracts a clean string without 'nan', 'None', or whitespace."""
+    if val is None or pd.isna(val):
+        return ""
+    s = str(val).strip()
+    return "" if s.lower() in ("nan", "none", "nat", "<na>") else s
 
 
 def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
@@ -152,26 +167,28 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
     leads_records: List[Dict[str, Any]] = []
 
     if df_logs is not None and not df_logs.empty:
-        valid_df_logs = df_logs[~df_logs["status"].astype(str).str.lower().isin(["rejected", "cancelled", "failed"])]
+        valid_df_logs = df_logs.copy()
         for idx, row in valid_df_logs.iterrows():
-            email = str(row.get("email") or f"lead_{idx}@example.com").strip()
-            name = str(row.get("name") or "").strip()
-            if not name or name.lower() in ["none", "nan"]:
+            email = _clean_str(row.get("email")) or f"lead_{idx}@example.com"
+            name = _clean_str(row.get("name"))
+            if not name:
                 name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
-            company = str(row.get("company") or "").strip()
-            if not company or company.lower() in ["none", "nan"]:
+            company = _clean_str(row.get("company"))
+            if not company:
                 domain = email.split("@")[-1].split(".")[0]
                 company = f"{domain.title()}" if domain else "Enterprise Client"
 
-            status = str(row.get("status") or "pending").lower()
-            subject = str(row.get("subject") or "Outreach Consultation & AI Solutions").strip()
-            reply_body = str(row.get("reply_body") or "").strip()
-            reply_intent = str(row.get("reply_intent") or "").strip().lower()
-            ai_reply_sent = str(row.get("ai_reply_sent") or "").strip()
-            booking_status = str(row.get("booking_status") or "").strip().lower()
+            status = _clean_str(row.get("status")).lower() or "pending"
+            subject = _clean_str(row.get("subject")) or "Outreach Consultation & AI Solutions"
+            reply_body = _clean_str(row.get("reply_body"))
+            reply_intent = _clean_str(row.get("reply_intent")).lower()
+            ai_reply_sent = _clean_str(row.get("ai_reply_sent"))
+            booking_status = _clean_str(row.get("booking_status")).lower()
             confirmed_slot = row.get("confirmed_slot")
-            send_error = str(row.get("send_error") or "").strip()
-            note = str(row.get("note") or "").strip()
+            if pd.isna(confirmed_slot) or str(confirmed_slot).strip().lower() in ("nan", "none", ""):
+                confirmed_slot = None
+            send_error = _clean_str(row.get("send_error"))
+            note = _clean_str(row.get("note"))
 
             created_at = _parse_datetime(row.get("created_at"))
             sent_at = _parse_datetime(row.get("email_sent_at"))
@@ -179,10 +196,10 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
             ai_reply_sent_at = _parse_datetime(row.get("ai_reply_sent_at"))
             form_filled_at = _parse_datetime(row.get("form_filled_at"))
 
-            # --- Feature 3: Reply Detection ---
+            # --- Feature 3: Reply Detection (Strict Real Telemetry Only) ---
             has_replied = bool(
                 reply_body
-                or (reply_intent and reply_intent not in ["none", "nan", "unresponsive"])
+                or (reply_intent and reply_intent not in ["none", "nan", "unresponsive", ""])
                 or (reply_at is not None)
                 or (status == "replied")
             )
@@ -194,12 +211,12 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
             )
 
             # --- Feature 4: Bounce Detection (Real errors / status) ---
-            raw_bounced = bool(row.get("bounced", False))
+            raw_bounced = bool(row.get("bounced", False)) if pd.notna(row.get("bounced")) else False
             is_bounced = (
                 raw_bounced
                 or (status in ["failed", "bounced"])
                 or ("bounce" in send_error.lower())
-                or ("550" in send_error or "554" in send_error or "452" in send_error)
+                or any(code in send_error for code in ["550", "554", "452"])
             )
             bounce_type = None
             bounce_code = None
@@ -215,7 +232,7 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
                     bounce_code = send_error[:40] if send_error else "SMTP Transport Error"
 
             # --- Feature 5: Unsubscribe Detection (Real opt-outs) ---
-            raw_unsub = bool(row.get("unsubscribed", False))
+            raw_unsub = bool(row.get("unsubscribed", False)) if pd.notna(row.get("unsubscribed")) else False
             is_unsubscribed = (
                 raw_unsub
                 or (status == "opted_out")
@@ -231,9 +248,20 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
                 else:
                     unsubscribe_reason = "Manual suppression request"
 
+            # Template identification (Strictly mapped to verified campaign templates)
+            template_id = str(row.get("template_id") or "").strip()
+            template_name = str(row.get("template_name") or "").strip()
+            if not template_name or template_name.lower() in ["none", "nan"]:
+                if "agentic" in subject.lower() or "hiring wait" in subject.lower() or "mohit" in subject.lower():
+                    template_id = "tpl_mohit_agentic_workflows"
+                    template_name = "Template 9: Custom Agentic Workflows & LLM Engineering (Mohit)"
+                else:
+                    template_id = "tpl_fde_velocity"
+                    template_name = "Template 1: Forward Deployed AI Engineers"
+
             # --- Feature 1: Email Open Tracking (Strict Real Telemetry Only) ---
             raw_opened = bool(row.get("opened", False))
-            raw_open_count = int(row.get("open_count") or 0)
+            raw_open_count = _safe_int(row.get("open_count"))
             first_open_at = _parse_datetime(row.get("first_open_at"))
             last_open_at = _parse_datetime(row.get("last_open_at"))
 
@@ -242,7 +270,7 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
 
             # --- Feature 2: Link Click Tracking (Strict Real Telemetry Only) ---
             raw_clicked = bool(row.get("clicked_link", False))
-            raw_click_count = int(row.get("click_count") or 0)
+            raw_click_count = _safe_int(row.get("click_count"))
             first_click_at = _parse_datetime(row.get("first_click_at"))
             last_click_at = _parse_datetime(row.get("last_click_at"))
             clicked_urls_str = str(row.get("clicked_urls") or "").strip()
@@ -468,6 +496,8 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
                 "sentiment_tone": sentiment_tone,
                 "has_booked": has_booked,
                 "booking_status": booking_status,
+                "template_id": template_id,
+                "template_name": template_name,
                 "timeline": timeline,
             })
 
@@ -630,9 +660,54 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
         else:
             sentiment_counts["Neutral"] += 1
 
+    # --- Real-Time Template Breakdown Across Verified Records ---
+    template_summary_map: Dict[str, Dict[str, Any]] = {}
+    for r in leads_records:
+        t_name = r.get("template_name") or "Standard Outreach"
+        t_id = r.get("template_id") or "tpl_standard"
+        if t_name not in template_summary_map:
+            template_summary_map[t_name] = {
+                "template_id": t_id,
+                "template_name": t_name,
+                "total_assigned": 0,
+                "total_sent": 0,
+                "delivered": 0,
+                "bounced": 0,
+                "unique_opens": 0,
+                "unique_clicks": 0,
+                "replies": 0,
+            }
+        item = template_summary_map[t_name]
+        item["total_assigned"] += 1
+        is_sent = (r["sent_at"] is not None or r["status"] in ["sent", "meeting_scheduled", "replied", "bounced"])
+        if is_sent:
+            item["total_sent"] += 1
+        if r["is_bounced"]:
+            item["bounced"] += 1
+        elif is_sent:
+            item["delivered"] += 1
+        if r["opened"]:
+            item["unique_opens"] += 1
+        if r["clicked_link"]:
+            item["unique_clicks"] += 1
+        if r["is_reply_detected"]:
+            item["replies"] += 1
+
+    template_breakdown = []
+    for t_name, d in template_summary_map.items():
+        t_sent = d["total_sent"]
+        d["deliverability_rate"] = round(d["delivered"] / t_sent * 100, 1) if t_sent else 0.0
+        d["open_rate"] = round(d["unique_opens"] / t_sent * 100, 1) if t_sent else 0.0
+        d["click_rate"] = round(d["unique_clicks"] / t_sent * 100, 1) if t_sent else 0.0
+        d["reply_rate"] = round(d["replies"] / t_sent * 100, 1) if t_sent else 0.0
+        template_breakdown.append(d)
+
+    template_breakdown.sort(key=lambda x: x["total_assigned"], reverse=True)
+
     return {
         "definitions": FEATURE_DEFINITIONS,
         "leads_records": leads_records,
+        "template_breakdown": template_breakdown,
         "totals": {
             "total_leads": total_leads_analyzed,
             "total_opens": total_opens,
@@ -660,7 +735,276 @@ def build_comprehensive_analytics(df_logs: pd.DataFrame) -> Dict[str, Any]:
             "hours": hours,
             "matrix": heatmap_matrix,
         },
+        "temporal_rollups": compute_temporal_rollups(df_logs),
         "subject_lines": subject_lines,
         "cta_variants": cta_variants,
         "sentiment_counts": sentiment_counts,
     }
+
+
+def _get_row_dates(row: Any) -> Dict[str, Optional[datetime]]:
+    """Helper to extract normalized UTC datetimes from various lead row columns."""
+    sent_dt = _parse_datetime(row.get("email_sent_at"))
+    created_dt = _parse_datetime(row.get("created_at"))
+    open_dt = _parse_datetime(row.get("last_open_at")) or _parse_datetime(row.get("first_open_at"))
+    click_dt = _parse_datetime(row.get("last_click_at")) or _parse_datetime(row.get("first_click_at"))
+    reply_dt = _parse_datetime(row.get("reply_received_at"))
+    primary = sent_dt or created_dt or open_dt or click_dt or reply_dt
+    return {
+        "primary": primary,
+        "sent": sent_dt,
+        "created": created_dt,
+        "open": open_dt,
+        "click": click_dt,
+        "reply": reply_dt,
+    }
+
+
+def get_available_timeframes(df_logs: pd.DataFrame) -> Dict[str, Any]:
+    """Scans all campaign records to extract unique days and months with activity counts."""
+    today_s = datetime.now().strftime("%Y-%m-%d")
+    month_s = datetime.now().strftime("%Y-%m")
+
+    if df_logs is None or df_logs.empty:
+        return {
+            "dates": [{"date": today_s, "label": f"Today ({today_s})", "count": 0}],
+            "months": [{"month": month_s, "label": datetime.now().strftime("%B %Y"), "count": 0}],
+            "latest_date": today_s,
+            "latest_month": month_s,
+        }
+
+    date_counts: Dict[str, int] = {}
+    month_counts: Dict[str, int] = {}
+
+    for _, row in df_logs.iterrows():
+        dts = _get_row_dates(row)
+        row_dates = set()
+        for k in ["sent", "created", "open", "click", "reply"]:
+            dt = dts.get(k)
+            if dt:
+                row_dates.add(dt.strftime("%Y-%m-%d"))
+
+        if not row_dates and dts.get("primary"):
+            row_dates.add(dts["primary"].strftime("%Y-%m-%d"))
+
+        for d_str in row_dates:
+            date_counts[d_str] = date_counts.get(d_str, 0) + 1
+            m_str = d_str[:7]
+            month_counts[m_str] = month_counts.get(m_str, 0) + 1
+
+    sorted_dates = sorted(date_counts.keys(), reverse=True)
+    sorted_months = sorted(month_counts.keys(), reverse=True)
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    date_options = []
+    for d_str in sorted_dates:
+        try:
+            d_obj = datetime.strptime(d_str, "%Y-%m-%d")
+            if d_str == today_str:
+                lbl = f"Today · {d_obj.strftime('%b %d, %Y')} ({date_counts[d_str]} leads)"
+            elif d_str == yesterday_str:
+                lbl = f"Yesterday · {d_obj.strftime('%b %d, %Y')} ({date_counts[d_str]} leads)"
+            else:
+                lbl = f"{d_obj.strftime('%b %d, %Y')} ({date_counts[d_str]} leads)"
+        except Exception:
+            lbl = f"{d_str} ({date_counts[d_str]} leads)"
+        date_options.append({"date": d_str, "label": lbl, "count": date_counts[d_str]})
+
+    month_options = []
+    for m_str in sorted_months:
+        try:
+            m_obj = datetime.strptime(m_str, "%Y-%m")
+            lbl = f"{m_obj.strftime('%B %Y')} ({month_counts[m_str]} leads)"
+        except Exception:
+            lbl = f"{m_str} ({month_counts[m_str]} leads)"
+        month_options.append({"month": m_str, "label": lbl, "count": month_counts[m_str]})
+
+    latest_date = sorted_dates[0] if sorted_dates else today_str
+    latest_month = sorted_months[0] if sorted_months else datetime.now().strftime("%Y-%m")
+
+    return {
+        "dates": date_options,
+        "months": month_options,
+        "latest_date": latest_date,
+        "latest_month": latest_month,
+    }
+
+
+def filter_logs_by_timeframe(
+    df_logs: pd.DataFrame,
+    scope_mode: str = "all",
+    selected_val: Optional[str] = None,
+) -> pd.DataFrame:
+    """Filters df_logs according to the chosen scope mode ('all', 'day', or 'month')."""
+    if df_logs is None or df_logs.empty:
+        return pd.DataFrame() if df_logs is None else df_logs
+
+    if scope_mode == "all" or not selected_val or selected_val in ["__all__", "all"]:
+        return df_logs
+
+    matched_indices = []
+
+    for idx, row in df_logs.iterrows():
+        dts = _get_row_dates(row)
+        if scope_mode == "day":
+            match = False
+            for k in ["sent", "created", "open", "click", "reply"]:
+                dt = dts.get(k)
+                if dt and dt.strftime("%Y-%m-%d") == selected_val:
+                    match = True
+                    break
+            if not match and dts.get("primary") and dts["primary"].strftime("%Y-%m-%d") == selected_val:
+                match = True
+            if match:
+                matched_indices.append(idx)
+
+        elif scope_mode == "month":
+            match = False
+            for k in ["sent", "created", "open", "click", "reply"]:
+                dt = dts.get(k)
+                if dt and dt.strftime("%Y-%m") == selected_val:
+                    match = True
+                    break
+            if not match and dts.get("primary") and dts["primary"].strftime("%Y-%m") == selected_val:
+                match = True
+            if match:
+                matched_indices.append(idx)
+
+    return df_logs.loc[matched_indices] if matched_indices else pd.DataFrame(columns=df_logs.columns)
+
+
+def compute_temporal_rollups(df_logs: pd.DataFrame) -> Dict[str, Any]:
+    """Generates day-by-day and month-by-month aggregated telemetry datasets for trends & tables."""
+    if df_logs is None or df_logs.empty:
+        return {
+            "daily_trends": pd.DataFrame(),
+            "monthly_trends": pd.DataFrame(),
+        }
+
+    daily_map: Dict[str, Dict[str, Any]] = {}
+    monthly_map: Dict[str, Dict[str, Any]] = {}
+
+    for _, row in df_logs.iterrows():
+        dts = _get_row_dates(row)
+        dt = dts.get("sent") or dts.get("created") or dts.get("primary")
+        if not dt:
+            continue
+
+        d_str = dt.strftime("%Y-%m-%d")
+        m_str = dt.strftime("%Y-%m")
+
+        status = _clean_str(row.get("status")).lower()
+        is_sent = status in ["sent", "replied", "meeting_scheduled", "delivered", "bounced"] or (row.get("email_sent_at") is not None)
+        raw_bounced = bool(row.get("bounced", False)) if pd.notna(row.get("bounced")) else False
+        is_bounced = raw_bounced or (status in ["failed", "bounced"])
+        is_delivered = is_sent and not is_bounced
+
+        raw_opened = bool(row.get("opened", False)) if pd.notna(row.get("opened")) else False
+        open_count = _safe_int(row.get("open_count"))
+        opened = raw_opened or (open_count > 0)
+
+        raw_clicked = bool(row.get("clicked_link", False)) if pd.notna(row.get("clicked_link")) else False
+        click_count = _safe_int(row.get("click_count"))
+        clicked = raw_clicked or (click_count > 0)
+
+        reply_body = _clean_str(row.get("reply_body"))
+        reply_intent = _clean_str(row.get("reply_intent")).lower()
+        reply_at = _parse_datetime(row.get("reply_received_at"))
+        has_replied = bool(
+            reply_body
+            or (reply_intent and reply_intent not in ["none", "nan", "unresponsive", ""])
+            or (reply_at is not None)
+            or (status == "replied")
+        )
+
+        # 1. Update Daily Map
+        if d_str not in daily_map:
+            try:
+                disp_d = dt.strftime("%b %d, %Y")
+            except Exception:
+                disp_d = d_str
+            daily_map[d_str] = {
+                "date": d_str,
+                "display_date": disp_d,
+                "sent": 0,
+                "delivered": 0,
+                "bounces": 0,
+                "opens": 0,
+                "total_open_count": 0,
+                "clicks": 0,
+                "replies": 0,
+            }
+        d_entry = daily_map[d_str]
+        if is_sent:
+            d_entry["sent"] += 1
+        if is_delivered:
+            d_entry["delivered"] += 1
+        if is_bounced:
+            d_entry["bounces"] += 1
+        if opened:
+            d_entry["opens"] += 1
+            d_entry["total_open_count"] += max(1, open_count)
+        if clicked:
+            d_entry["clicks"] += max(1, click_count)
+        if has_replied:
+            d_entry["replies"] += 1
+
+        # 2. Update Monthly Map
+        if m_str not in monthly_map:
+            try:
+                disp_m = dt.strftime("%B %Y")
+            except Exception:
+                disp_m = m_str
+            monthly_map[m_str] = {
+                "month": m_str,
+                "display_month": disp_m,
+                "sent": 0,
+                "delivered": 0,
+                "bounces": 0,
+                "opens": 0,
+                "total_open_count": 0,
+                "clicks": 0,
+                "replies": 0,
+            }
+        m_entry = monthly_map[m_str]
+        if is_sent:
+            m_entry["sent"] += 1
+        if is_delivered:
+            m_entry["delivered"] += 1
+        if is_bounced:
+            m_entry["bounces"] += 1
+        if opened:
+            m_entry["opens"] += 1
+            m_entry["total_open_count"] += max(1, open_count)
+        if clicked:
+            m_entry["clicks"] += max(1, click_count)
+        if has_replied:
+            m_entry["replies"] += 1
+
+    daily_rows = []
+    for d_str in sorted(daily_map.keys(), reverse=True):
+        it = daily_map[d_str]
+        s = it["sent"]
+        it["open_rate"] = round(it["opens"] / s * 100, 1) if s else 0.0
+        it["click_rate"] = round(it["clicks"] / s * 100, 1) if s else 0.0
+        it["reply_rate"] = round(it["replies"] / s * 100, 1) if s else 0.0
+        it["deliverability_rate"] = round(it["delivered"] / s * 100, 1) if s else 100.0
+        daily_rows.append(it)
+
+    monthly_rows = []
+    for m_str in sorted(monthly_map.keys(), reverse=True):
+        it = monthly_map[m_str]
+        s = it["sent"]
+        it["open_rate"] = round(it["opens"] / s * 100, 1) if s else 0.0
+        it["click_rate"] = round(it["clicks"] / s * 100, 1) if s else 0.0
+        it["reply_rate"] = round(it["replies"] / s * 100, 1) if s else 0.0
+        it["deliverability_rate"] = round(it["delivered"] / s * 100, 1) if s else 100.0
+        monthly_rows.append(it)
+
+    return {
+        "daily_trends": pd.DataFrame(daily_rows) if daily_rows else pd.DataFrame(),
+        "monthly_trends": pd.DataFrame(monthly_rows) if monthly_rows else pd.DataFrame(),
+    }
+

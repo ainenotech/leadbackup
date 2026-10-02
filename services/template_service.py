@@ -1074,12 +1074,31 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
         
         t_df = df_copy[df_copy["resolved_template_id"] == tid]
         total_leads = t_df["email"].astype(str).str.strip().str.lower().nunique() if not t_df.empty else 0
-        sent_df = t_df[t_df["status"].isin(["sent", "meeting_scheduled"])]
+        sent_df = t_df[
+            t_df["status"].isin(["sent", "meeting_scheduled", "replied", "bounced", "delivered"])
+            | (t_df["email_sent_at"].notna() if "email_sent_at" in t_df.columns else False)
+        ]
         total_sent = sent_df["email"].astype(str).str.strip().str.lower().nunique() if not sent_df.empty else 0
         
         opened_count = int(t_df["opened"].sum()) if "opened" in t_df.columns else 0
         clicked_count = int(t_df["clicked_link"].sum()) if "clicked_link" in t_df.columns else 0
-        replied_count = int(t_df["reply_received_at"].notna().sum()) if "reply_received_at" in t_df.columns else 0
+        if "reply_received_at" in t_df.columns and "status" in t_df.columns:
+            clean_reply_at = t_df["reply_received_at"].astype(str).str.lower().isin(["nan", "none", "nat", ""])
+            replied_count = int(((t_df["status"] == "replied") | (t_df["reply_received_at"].notna() & ~clean_reply_at)).sum())
+        elif "status" in t_df.columns:
+            replied_count = int((t_df["status"] == "replied").sum())
+        else:
+            replied_count = 0
+
+        bounced_count = 0
+        if "status" in t_df.columns:
+            bounced_count = int(t_df["status"].isin(["bounced", "failed"]).sum())
+        if "bounced" in t_df.columns:
+            bounced_count = max(bounced_count, int((t_df["bounced"] == True).sum()))
+
+        delivered_count = max(0, total_sent - bounced_count)
+        deliverability_rate = round(delivered_count / total_sent * 100, 1) if total_sent > 0 else 100.0
+
         booked_count = int(t_df["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed"]).sum()) if "booking_status" in t_df.columns else 0
 
         open_rate = round((opened_count / total_sent * 100), 1) if total_sent > 0 else 0.0
@@ -1097,6 +1116,9 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
             "accent_color": color,
             "total_leads": total_leads,
             "total_sent": total_sent,
+            "delivered_count": delivered_count,
+            "bounced_count": bounced_count,
+            "deliverability_rate": deliverability_rate,
             "opened_count": opened_count,
             "clicked_count": clicked_count,
             "replied_count": replied_count,
@@ -1118,7 +1140,10 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
             if not t_df_dated.empty:
                 t_df_dated["date_str"] = t_df_dated["date_dt"].dt.strftime("%Y-%m-%d")
                 for d_str, g in t_df_dated.groupby("date_str"):
-                    g_sent = len(g[g["status"].isin(["sent", "meeting_scheduled"])])
+                    g_sent = len(g[
+                        g["status"].isin(["sent", "meeting_scheduled", "replied", "bounced", "delivered"])
+                        | (g["email_sent_at"].notna() if "email_sent_at" in g.columns else False)
+                    ])
                     g_open = int(g["opened"].sum()) if "opened" in g.columns else 0
                     g_click = int(g["clicked_link"].sum()) if "clicked_link" in g.columns else 0
                     g_book = int(g["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed"]).sum()) if "booking_status" in g.columns else 0
@@ -1135,6 +1160,9 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
                         "click_rate": round(g_click / g_sent * 100, 1) if g_sent else 0.0,
                         "booking_rate": round(g_book / g_sent * 100, 1) if g_sent else 0.0,
                     })
+
+    # Sort template_stats so active templates appear first
+    template_stats.sort(key=lambda x: (x["total_sent"], x["total_leads"]), reverse=True)
 
     daily_df = pd.DataFrame(daily_records)
     if not daily_df.empty:

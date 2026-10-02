@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from .db import Base, SessionLocal, engine, init_db
 from .models import CampaignLog
 from .auth_endpoints import router as auth_router
+from .domain_endpoints import router as domain_router
 
 load_dotenv()
 
@@ -20,6 +21,7 @@ init_db()
 
 app = FastAPI(title="AINeotechnology — Lead Outreach & Analytics API")
 app.include_router(auth_router)
+app.include_router(domain_router)
 
 
 @app.on_event("startup")

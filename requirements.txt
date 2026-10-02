@@ -39,3 +39,8 @@ reportlab
 # Multi-Tenant SaaS Infrastructure
 alembic
 bcrypt
+
+# Sending-Domain Authentication (AWS SES)
+boto3
+dnspython
+cryptography

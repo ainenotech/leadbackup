@@ -13,8 +13,9 @@ from Backend.auth_service import (
 def render_super_admin_portal():
     """Renders platform-wide super admin control center with crisp, executive box UI."""
     user = st.session_state.get("user", {})
-    if user.get("platform_role") != "platform_super_admin":
-        st.error("⛔ Access Denied: You must be a Platform Super Administrator to view this portal.")
+    user_email = user.get("email", "").lower().strip()
+    if user.get("platform_role") != "platform_super_admin" or user_email not in ["support@nenotechnology.com", "mohit@nenotechnology.us"]:
+        st.error("⛔ Access Denied: You must be the Platform Super Administrator to view this portal.")
         return
 
     db = SessionLocal()

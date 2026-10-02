@@ -195,7 +195,9 @@ def _send_graph_reply(
 
     # 2. Fallback to standard outbound dispatch (sends full HTML MIME with quoted thread)
     try:
-        mailer = get_mailer()
+        from Email import get_mailer, get_mailer_for_org
+        # Try to resolve org-specific mailer based on the target mailbox domain
+        mailer = get_mailer_for_org(None, target_mailbox) if target_mailbox else get_mailer()
         mailer.send_email(
             to_email=to_email,
             subject=_format_reply_subject(subject),

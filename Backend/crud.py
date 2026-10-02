@@ -148,7 +148,12 @@ def mark_failed(db: Session, entry_id: str, error: str) -> None:
         db.commit()
 
 
-def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
+def approve_and_send_entry(
+    db: Session,
+    entry_id: str,
+    sender_email: Optional[str] = None,
+    **kwargs,
+) -> CampaignLog:
     """Approves a drafted email and dispatches it via the Outlook mailer (Microsoft Graph).
     Enforces strict pre-send deduplication so already-emailed leads are never resent.
     """
@@ -217,20 +222,33 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
             entry.body,
         )
 
-    sender_to_use = None
-    current_tid = getattr(entry, "template_id", None)
-    if current_tid:
+    sender_to_use = sender_email
+    if not sender_to_use and getattr(entry, "organization_id", None):
         try:
-            from services.template_service import get_template_by_id
-            tpl = get_template_by_id(str(current_tid))
-            if tpl and tpl.get("sender_email"):
-                sender_to_use = tpl["sender_email"]
+            from Backend.auth_models import Organization
+            _org = db.query(Organization).filter(Organization.id == entry.organization_id).first()
+            if _org and _org.settings and _org.settings.get("sender_email"):
+                sender_to_use = _org.settings["sender_email"]
+            elif _org and _org.email:
+                sender_to_use = _org.email
         except Exception:
             pass
     if not sender_to_use:
+        current_tid = getattr(entry, "template_id", None)
+        if current_tid:
+            try:
+                from services.template_service import get_template_by_id
+                tpl = get_template_by_id(str(current_tid))
+                if tpl and tpl.get("sender_email"):
+                    sender_to_use = tpl["sender_email"]
+            except Exception:
+                pass
+    if not sender_to_use:
         sender_to_use = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
 
-    mailer = get_mailer()
+    from Email import get_mailer_for_org
+    org_id = getattr(entry, 'organization_id', None)
+    mailer = get_mailer_for_org(org_id, sender_to_use) if org_id else get_mailer()
     try:
         mailer.send_email(
             to_email=str(entry.email),
@@ -360,6 +378,8 @@ def bulk_approve_and_send_entries(
     max_workers: int = 2,
     force_resend: bool = False,
     progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
+    sender_email: Optional[str] = None,
+    **kwargs,
 ) -> dict:
     """Dispatches multiple drafts concurrently with connection-pooled Microsoft Graph calls,
     isolated main-thread database updates, and single-pass lead sheet synchronization.
@@ -480,16 +500,27 @@ def bulk_approve_and_send_entries(
                     curr_b,
                 )
 
-            task_sender = None
-            t_id = getattr(entry, "template_id", None)
-            if t_id:
+            task_sender = sender_email
+            if not task_sender and getattr(entry, "organization_id", None):
                 try:
-                    from services.template_service import get_template_by_id
-                    tpl = get_template_by_id(str(t_id))
-                    if tpl and tpl.get("sender_email"):
-                        task_sender = tpl["sender_email"]
+                    from Backend.auth_models import Organization
+                    _org = db.query(Organization).filter(Organization.id == entry.organization_id).first()
+                    if _org and _org.settings and _org.settings.get("sender_email"):
+                        task_sender = _org.settings["sender_email"]
+                    elif _org and _org.email:
+                        task_sender = _org.email
                 except Exception:
                     pass
+            if not task_sender:
+                t_id = getattr(entry, "template_id", None)
+                if t_id:
+                    try:
+                        from services.template_service import get_template_by_id
+                        tpl = get_template_by_id(str(t_id))
+                        if tpl and tpl.get("sender_email"):
+                            task_sender = tpl["sender_email"]
+                    except Exception:
+                        pass
             if not task_sender:
                 task_sender = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
 
@@ -502,6 +533,7 @@ def bulk_approve_and_send_entries(
                 "body": curr_b,
                 "token": str(entry.token) if entry.token else None,
                 "sender_email": task_sender,
+                "organization_id": getattr(entry, "organization_id", None),
             })
 
         db.commit()
@@ -524,7 +556,11 @@ def bulk_approve_and_send_entries(
         try:
             # Space out requests slightly (300ms) to respect Exchange Online burst rates
             time.sleep(0.3)
-            mailer.send_email(
+            # Resolve mailer per-task: SES if org has verified domain, else OutlookMailer
+            from Email import get_mailer_for_org
+            task_org_id = task.get("organization_id")
+            task_mailer = get_mailer_for_org(task_org_id, task.get("sender_email")) if task_org_id else mailer
+            task_mailer.send_email(
                 to_email=str(task.get("email") or ""),
                 subject=str(task.get("subject") or ""),
                 body=str(task.get("body") or ""),

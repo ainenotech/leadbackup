@@ -37,14 +37,20 @@ Email.outlook_mailer.MS_SENDER_EMAIL = _current_sender
 if hasattr(Email, "config"):
     Email.config.MS_SENDER_EMAIL = _current_sender
 
-if os.getenv("DASHBOARD_DEV_RELOAD", "").lower() in {"1", "true", "yes"}:
-    import importlib
+# Automatically sanitize any stale session state holding the legacy support address
+if "active_workspace_sender" in st.session_state and st.session_state.active_workspace_sender == "support@nenotechnology.com":
+    st.session_state.active_workspace_sender = _current_sender
+if "active_sender_email" in st.session_state and st.session_state.active_sender_email == "support@nenotechnology.com":
+    st.session_state.active_sender_email = _current_sender
+if "current_org" in st.session_state and isinstance(st.session_state.current_org, dict):
+    _s = st.session_state.current_org.get("settings", {})
+    if _s and _s.get("sender_email") == "support@nenotechnology.com":
+        _s["sender_email"] = _current_sender
+        if "sender" in _s and isinstance(_s["sender"], dict):
+            _s["sender"]["sender_email"] = _current_sender
+            _s["sender"]["sender_name"] = "Mohit Patel"
 
-    importlib.reload(utils.microsoft_auth)
-    importlib.reload(Email.outlook_mailer)
-    importlib.reload(Email)
-    importlib.reload(Backend.crud)
-    importlib.reload(Email.draft_options)
+# Module constants synchronized
 
 from Agent.agents.composer import compose_email
 from Backend.crud import (
@@ -61,7 +67,7 @@ from Backend.crud import (
 )
 from Backend.db import Base, SessionLocal, engine, init_db
 from Backend.models import CampaignLog
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from Email import get_mailer
 from Email.draft_options import get_draft_template_option, OPTIONS_METADATA
 
@@ -104,11 +110,7 @@ import org_settings_view
 import team_view
 import super_admin_view
 
-for _mod in [master_db_view, knowledge_base_view, template_hub_view, analytics_view, auth_view, org_settings_view, team_view, super_admin_view]:
-    try:
-        importlib.reload(_mod)
-    except Exception:
-        pass
+# Modules loaded cleanly without reload storm
 
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
@@ -195,42 +197,60 @@ st.markdown(get_complete_theme_css(is_dark_mode()), unsafe_allow_html=True)
 if "authenticated" not in st.session_state:
     db_init_session = SessionLocal()
     try:
-        default_org = db_init_session.query(Organization).filter(Organization.status == "active").first()
-        default_user = db_init_session.query(User).filter(User.email == "mohit@nenotechnology.us").first()
-        if default_org and default_user:
+        default_user = (
+            db_init_session.query(User).filter(User.email == "mohit@nenotechnology.us").first()
+            or db_init_session.query(User).filter(User.email == "support@nenotechnology.com").first()
+            or db_init_session.query(User).filter(User.platform_role == "platform_super_admin").first()
+            or db_init_session.query(User).first()
+        )
+        if default_user:
             user_memberships = (
                 db_init_session.query(OrganizationMember, Organization)
                 .join(Organization, OrganizationMember.organization_id == Organization.id)
                 .filter(OrganizationMember.user_id == default_user.id, Organization.status == "active")
                 .all()
             )
-            st.session_state.authenticated = True
-            st.session_state.user = {
-                "id": default_user.id,
-                "email": default_user.email,
-                "full_name": default_user.full_name,
-                "platform_role": default_user.platform_role,
-            }
-            st.session_state.current_org = {
-                "id": default_org.id,
-                "name": default_org.name,
-                "slug": default_org.slug,
-                "role": "organization_owner",
-                "logo_url": default_org.logo_url,
-                "brand_name": default_org.brand_name or default_org.name,
-                "settings": default_org.settings or {},
-            }
-            st.session_state.current_org_id = default_org.id
-            st.session_state.user_organizations = [
-                {
-                    "id": o.id,
-                    "name": o.name,
-                    "slug": o.slug,
-                    "role": m.role,
-                    "is_default": bool(m.is_default),
+            # Find default organization or Neno Technology
+            active_membership, default_org = None, None
+            for m, o in user_memberships:
+                if o.slug == "nenotechnology" or m.is_default:
+                    active_membership, default_org = m, o
+                    break
+            if not default_org and user_memberships:
+                active_membership, default_org = user_memberships[0]
+
+            if default_org:
+                st.session_state.authenticated = True
+                st.session_state.user = {
+                    "id": default_user.id,
+                    "email": default_user.email,
+                    "full_name": default_user.full_name,
+                    "platform_role": default_user.platform_role,
                 }
-                for m, o in user_memberships
-            ]
+                if "active_sender_email" not in st.session_state or not st.session_state.active_sender_email:
+                    st.session_state.active_sender_email = default_user.email
+                st.session_state.current_org = {
+                    "id": default_org.id,
+                    "name": default_org.name,
+                    "slug": default_org.slug,
+                    "role": active_membership.role if active_membership else "organization_owner",
+                    "logo_url": default_org.logo_url,
+                    "brand_name": default_org.brand_name or default_org.name,
+                    "settings": default_org.settings or {},
+                }
+                st.session_state.current_org_id = default_org.id
+                st.session_state.user_organizations = [
+                    {
+                        "id": o.id,
+                        "name": o.name,
+                        "slug": o.slug,
+                        "role": m.role,
+                        "is_default": bool(m.is_default),
+                    }
+                    for m, o in user_memberships
+                ]
+            else:
+                st.session_state.authenticated = False
         else:
             st.session_state.authenticated = False
     except Exception:
@@ -241,6 +261,42 @@ if "authenticated" not in st.session_state:
 if not st.session_state.get("authenticated"):
     render_auth_page()
     st.stop()
+
+
+def sync_sender_env(sender_email: str):
+    """Synchronizes in-memory and environment sender constants across all mail modules."""
+    os.environ["MS_SENDER_EMAIL"] = sender_email
+    utils.microsoft_auth.MS_SENDER_EMAIL = sender_email
+    Email.outlook_mailer.MS_SENDER_EMAIL = sender_email
+    if hasattr(Email, "config"):
+        Email.config.MS_SENDER_EMAIL = sender_email
+
+
+def get_active_outreach_sender() -> str:
+    """Dynamically resolves outbound sender mailbox from workspace sender selection, current organization settings, or authenticated user."""
+    curr_org = st.session_state.get("current_org", {})
+    org_settings = curr_org.get("settings", {})
+    org_sender = (
+        org_settings.get("sender_email")
+        or org_settings.get("sender", {}).get("sender_email")
+    )
+    ws_sender = st.session_state.get("active_workspace_sender")
+    if ws_sender == "support@nenotechnology.com":
+        ws_sender = org_sender or os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+        st.session_state.active_workspace_sender = ws_sender
+        st.session_state.active_sender_email = ws_sender
+
+    if ws_sender:
+        sync_sender_env(ws_sender)
+        return ws_sender
+
+    user_email = st.session_state.get("user", {}).get("email")
+    if user_email == "support@nenotechnology.com":
+        user_email = "mohit@nenotechnology.us"
+
+    sender = org_sender or user_email or os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+    sync_sender_env(sender)
+    return sender
 
 
 # ─────────────────────────────────────────────────────────────
@@ -326,7 +382,7 @@ def load_campaign_logs(organization_id: Optional[str] = None):
     try:
         q = db.query(CampaignLog)
         if organization_id:
-            q = q.filter(CampaignLog.organization_id == organization_id)
+            q = q.filter(or_(CampaignLog.organization_id == organization_id, CampaignLog.organization_id.is_(None)))
         rows = q.order_by(CampaignLog.created_at.desc()).all()
     finally:
         db.close()
@@ -474,11 +530,17 @@ with st.sidebar:
     logo_name = "logo-dark.png"
     logo_file = os.path.join(os.path.dirname(__file__), logo_name)
     logo_b64 = get_image_base64(logo_file)
-    if logo_b64:
-        logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" alt="Neno Technology" class="sidebar-brand-logo-img" />'
+
+    curr_org = st.session_state.get("current_org", {})
+    curr_org_name = curr_org.get("name", "Neno Technology")
+    is_neno = "neno" in curr_org_name.lower()
+
+    if is_neno and logo_b64:
+        logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" alt="{curr_org_name}" class="sidebar-brand-logo-img" />'
+    elif "super" in curr_org_name.lower() or "ai" in curr_org_name.lower():
+        logo_img_tag = f'<div style="display:flex; align-items:center; gap:8px;"><span style="font-size:22px;">🤖</span><span style="color:#0F172A; font-weight:800; font-size:16px; letter-spacing:-0.02em;">{curr_org_name}</span></div>'
     else:
-        logo_fallback_color = "#0F172A"
-        logo_img_tag = f'<span style="color: {logo_fallback_color}; font-weight: 700; font-size: 15px;">⚡ Neno Technology</span>'
+        logo_img_tag = f'<div style="display:flex; align-items:center; gap:8px;"><span style="font-size:20px;">🏢</span><span style="color:#0F172A; font-weight:800; font-size:16px; letter-spacing:-0.02em;">{curr_org_name}</span></div>'
 
     st.markdown(
         f"""
@@ -495,8 +557,12 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # ── Platform Super Admin Portal Link (Top Side - Simple, Standard Clean Button) ──
-    is_platform_admin = st.session_state.get("user", {}).get("platform_role") == "platform_super_admin"
+    # ── Platform Super Admin Portal Link (Restricted to Super Admins) ──
+    user_email = st.session_state.get("user", {}).get("email", "").lower().strip()
+    is_platform_admin = (
+        st.session_state.get("user", {}).get("platform_role") == "platform_super_admin"
+        and user_email in ["support@nenotechnology.com", "mohit@nenotechnology.us"]
+    )
     if is_platform_admin:
         is_admin_active = st.session_state.active_page == "super_admin"
         if st.button(
@@ -541,8 +607,6 @@ with st.sidebar:
 
     # ── Live System Health & Render Keep-Alive in Sidebar ──
     api_endpoint = os.getenv("API_BASE_URL", "http://localhost:8000").replace("https://", "").replace("http://", "").split("/")[0] or "localhost:8000"
-    current_outreach_sender = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
-    sender_short = current_outreach_sender[:17] + "..." if len(current_outreach_sender) > 19 else current_outreach_sender
     st.markdown(
         f"""
         <div class="sidebar-health-card">
@@ -557,10 +621,6 @@ with st.sidebar:
             <div class="sidebar-health-row">
                 <span>Render Keep-Alive</span>
                 <span style="font-size: 11px; color: #059669; font-weight: 600;">● Active (24/7)</span>
-            </div>
-            <div class="sidebar-health-row">
-                <span>Outreach Sender</span>
-                <span style="font-size: 11px; color: #475569;" title="{current_outreach_sender}">{sender_short}</span>
             </div>
             <div class="sidebar-health-row">
                 <span>AI Engine</span>
@@ -856,17 +916,19 @@ def render_overview(df: pd.DataFrame) -> None:
         valid_has_email = valid_df[valid_df["clean_email"] != ""]
 
         total_leads = valid_has_email["clean_email"].nunique() if not valid_has_email.empty else len(valid_df)
-        sent_leads = valid_has_email[valid_has_email["status"] == "sent"]["clean_email"].nunique()
+        sent_leads = valid_has_email[valid_has_email["status"].isin(["sent", "replied", "bounced", "delivered", "meeting_scheduled"])]["clean_email"].nunique()
         drafted_leads = valid_has_email[valid_has_email["status"].isin(["drafted", "pending", "draft"])]["clean_email"].nunique()
-        replied_leads = valid_has_email[valid_has_email["reply_received_at"].notna()]["clean_email"].nunique()
-        forms_filled = valid_has_email[valid_has_email["form_filled_at"].notna()]["clean_email"].nunique()
+        clean_rep_mask = valid_has_email["reply_received_at"].notna() & ~valid_has_email["reply_received_at"].astype(str).str.lower().isin(["nan", "none", "nat", ""])
+        replied_leads = valid_has_email[(valid_has_email["status"] == "replied") | clean_rep_mask]["clean_email"].nunique()
+        clean_form_mask = valid_has_email["form_filled_at"].notna() & ~valid_has_email["form_filled_at"].astype(str).str.lower().isin(["nan", "none", "nat", ""])
+        forms_filled = valid_has_email[clean_form_mask]["clean_email"].nunique()
         scheduled_leads = valid_has_email[valid_has_email["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed"])]["clean_email"].nunique()
 
         draft_pct = round((drafted_leads / total_leads * 100) if total_leads else 0)
         sent_pct = round((sent_leads / total_leads * 100) if total_leads else 0)
-        reply_pct = round((replied_leads / sent_leads * 100) if sent_leads else 0)
-        form_pct = round((forms_filled / total_leads * 100) if total_leads else 0)
-        booked_pct = round((scheduled_leads / forms_filled * 100) if forms_filled else (round(scheduled_leads / total_leads * 100) if total_leads else 0))
+        reply_pct = round((replied_leads / sent_leads * 100) if sent_leads else 0, 1)
+        form_pct = round((forms_filled / total_leads * 100) if total_leads else 0, 1)
+        booked_pct = round((scheduled_leads / forms_filled * 100) if forms_filled else (round(scheduled_leads / total_leads * 100) if total_leads else 0), 1)
 
     # ── 6 Custom Rich KPI Cards (Unified Grid with Pixel-Perfect Gaps) ──
     st.markdown(
@@ -1390,6 +1452,7 @@ def render_upload() -> None:
                                     status="drafted",
                                     template_id=chosen_tpl_obj["id"],
                                     template_name=chosen_tpl_obj["name"],
+                                    organization_id=st.session_state.get("current_org_id"),
                                 )
                             created_count += 1
                             successfully_drafted_rows.append(row)
@@ -1816,7 +1879,7 @@ def clean_natural_email_body(html_text: str) -> str:
 # DIALOGS: EMAIL DISPATCH CONFIRMATION
 # ─────────────────────────────────────────────────────────────
 @st.dialog("Confirm Email Dispatch")
-def confirm_approve_send_dialog(entry_id: str, email: str, subject: str, body: str):
+def confirm_approve_send_dialog(entry_id: str, email: str, subject: str, body: str, sender_email: Optional[str] = None):
     st.markdown(
         f"""
         <div style="margin-bottom: 12px;">
@@ -1843,6 +1906,18 @@ def confirm_approve_send_dialog(entry_id: str, email: str, subject: str, body: s
         """
         st.iframe(wrapped_preview, height=480)
 
+    active_single_sender = sender_email or get_active_outreach_sender()
+    org_name = st.session_state.get("current_org", {}).get("name", "Organization")
+
+    st.markdown(
+        f"""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #334155;">
+            ✉️ <strong>Company Sender:</strong> <code style="color: #2563EB; font-weight: 600;">{active_single_sender}</code> ({org_name})
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown("<br>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
@@ -1850,8 +1925,15 @@ def confirm_approve_send_dialog(entry_id: str, email: str, subject: str, body: s
             db = SessionLocal()
             try:
                 update_draft_content(db, entry_id, subject, body)
-                approve_and_send_entry(db, entry_id)
-                st.session_state["send_success_banner"] = f"🎉 Email successfully approved and dispatched to {email}!"
+                try:
+                    approve_and_send_entry(db, entry_id, sender_email=active_single_sender)
+                except TypeError as te:
+                    if "sender_email" in str(te):
+                        sync_sender_env(active_single_sender)
+                        approve_and_send_entry(db, entry_id)
+                    else:
+                        raise
+                st.session_state["send_success_banner"] = f"🎉 Email successfully dispatched to {email} from {active_single_sender}!"
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
@@ -1898,6 +1980,18 @@ def confirm_approve_all_dialog(drafts_data, template_id: Optional[int] = None):
         help="Check this if you are re-sending or testing leads that were already marked sent in previous campaigns.",
     )
 
+    active_blast_sender = get_active_outreach_sender()
+    org_name = st.session_state.get("current_org", {}).get("name", "Organization")
+
+    st.markdown(
+        f"""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #334155;">
+            ✉️ <strong>Campaign Outbound Mailbox:</strong> <code style="color: #2563EB; font-weight: 600;">{active_blast_sender}</code> ({org_name})
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     with st.expander(f"📋 Review Recipients & Active Subjects ({count})", expanded=False):
         for d in drafts_data:
             s_clean = (d.get("subject") or "Outreach Invitation").replace("\ufffd", "-").replace("—", "-").strip()
@@ -1910,33 +2004,47 @@ def confirm_approve_all_dialog(drafts_data, template_id: Optional[int] = None):
         if st.button(f"🚀 Send All {count} Emails", type="primary", use_container_width=True, key="dlg_confirm_send_all"):
             progress_bar = st.progress(0.0)
             status_label = st.empty()
-            status_label.markdown(f"⚡ **Preparing high-reliability dispatch for {count} recipients...**")
+            status_label.markdown(f"⚡ **Preparing high-reliability dispatch for {count} recipients via `{active_blast_sender}`...**")
 
             def _update_progress(completed_cnt, total_cnt, email_str, status_type):
                 pct = min(1.0, completed_cnt / max(1, total_cnt))
                 progress_bar.progress(pct)
                 if status_type == "sent":
-                    status_label.markdown(f"🚀 **[{completed_cnt}/{total_cnt}]** Dispatched to `{email_str}`")
+                    status_label.markdown(f"🚀 **[{completed_cnt}/{total_cnt}]** Dispatched to `{email_str}` via `{active_blast_sender}`")
                 elif status_type == "skipped":
                     status_label.markdown(f"🛡️ **[{completed_cnt}/{total_cnt}]** Duplicate skipped: `{email_str}`")
                 else:
                     status_label.markdown(f"⚠️ **[{completed_cnt}/{total_cnt}]** Failed: `{email_str}`")
 
             try:
-                res = bulk_approve_and_send_entries(
-                    entry_ids=[d["id"] for d in drafts_data],
-                    template_id=template_id,
-                    max_workers=2,
-                    force_resend=force_send,
-                    progress_callback=_update_progress,
-                )
+                try:
+                    res = bulk_approve_and_send_entries(
+                        entry_ids=[d["id"] for d in drafts_data],
+                        template_id=template_id,
+                        max_workers=2,
+                        force_resend=force_send,
+                        progress_callback=_update_progress,
+                        sender_email=active_blast_sender,
+                    )
+                except TypeError as te:
+                    if "sender_email" in str(te):
+                        sync_sender_env(active_blast_sender)
+                        res = bulk_approve_and_send_entries(
+                            entry_ids=[d["id"] for d in drafts_data],
+                            template_id=template_id,
+                            max_workers=2,
+                            force_resend=force_send,
+                            progress_callback=_update_progress,
+                        )
+                    else:
+                        raise
 
                 approved_count = res.get("approved_count", 0)
                 skipped_count = res.get("skipped_count", 0)
                 error_details = res.get("error_details", [])
 
                 progress_bar.progress(1.0)
-                msg = f"🎉 Successfully dispatched {approved_count} of {count} emails!"
+                msg = f"🎉 Successfully dispatched {approved_count} of {count} emails from {active_blast_sender}!"
                 if skipped_count > 0:
                     msg += f" (Skipped {skipped_count} duplicate/already sent. Enable 'Bypass duplicate protection' to force send.)"
                 if error_details:
@@ -2341,11 +2449,11 @@ def render_email_review(df: pd.DataFrame) -> None:
 
     # ── Superhuman / Apple Mail Style Live Preview (Pixel-Perfect Without Extra Space) ──
     st.markdown("##### 👁️ Live Email Client Preview")
-    sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+    sender_email = get_active_outreach_sender()
 
     # Outlook Client Header
     from_display_email = chosen_tpl.get("sender_email") or sender_email
-    from_display_name = chosen_tpl.get("sender_name") or ("Mohit Patel" if "mohit" in from_display_email.lower() else "AINeotechnology Team")
+    from_display_name = chosen_tpl.get("sender_name") or ("Mohit Patel" if "mohit" in from_display_email.lower() else "Neno Support")
     st.markdown(
         f"""
         <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top-left-radius: 10px; border-top-right-radius: 10px; padding: 12px 16px; border-bottom: 1px solid #CBD5E1;">
@@ -2409,7 +2517,7 @@ def render_email_review(df: pd.DataFrame) -> None:
             subj_comp = comp if comp != "your team" else "Your Business"
             final_subj = interpolate_lead_placeholders(edit_subject, first_name=f_name, company_name=subj_comp)
             final_body = interpolate_lead_placeholders(edit_body, first_name=f_name, company_name=comp)
-            confirm_approve_send_dialog(row["id"], row["email"], final_subj, final_body)
+            confirm_approve_send_dialog(row["id"], row["email"], final_subj, final_body, sender_email=from_display_email)
 
     with btn_save:
         if st.button("💾 Save Draft", key=f"save_{row['id']}", use_container_width=True, help="Save changes to database without sending"):
@@ -3555,10 +3663,14 @@ def render_main_view(page_name: str):
     elif page_name == "team":
         render_team_view(organization_id=org_id)
     elif page_name == "super_admin":
-        if st.session_state.get("user", {}).get("platform_role") == "platform_super_admin":
+        user_email = st.session_state.get("user", {}).get("email", "").lower().strip()
+        if (
+            st.session_state.get("user", {}).get("platform_role") == "platform_super_admin"
+            and user_email in ["support@nenotechnology.com", "mohit@nenotechnology.us"]
+        ):
             render_super_admin_portal()
         else:
-            st.error("⛔ Access restricted to Platform Super Administrators only.")
+            st.error("⛔ Access restricted: Only Platform Super Admin can access this portal.")
             st.session_state.active_page = "overview"
             render_overview(get_campaign_logs_df())
 

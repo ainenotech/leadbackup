@@ -132,9 +132,10 @@ class OutlookMailer(Mailer):
             unsub_mailto = f"mailto:{sender_email}?subject=Unsubscribe%20Request"
             unsub_link = f'<a href="{unsub_mailto}" style="color: #64748B; text-decoration: underline;">unsubscribe safely here</a>'
 
+        company_display = "Super AI" if "man@" in effective_sender.lower() else "Nenotechnology"
         telemetry_html = f"""
         <div style="margin-top: 24px; padding-top: 14px; border-top: 1px solid #E2E8F0; font-size: 11px; color: #94A3B8;">
-            If you no longer wish to receive updates from Nenotechnology, you can {unsub_link}.
+            If you no longer wish to receive updates from {company_display}, you can {unsub_link}.
         </div>
         {pixel_img}
         """

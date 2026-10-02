@@ -78,30 +78,31 @@ def render_auth_page():
             login_email = st.text_input("Work Email", value="mohit@nenotechnology.us", key="auth_login_email")
             login_pwd = st.text_input("Password", type="password", value="Admin@12345", key="auth_login_pwd", help="Default initial admin password or your custom password.")
 
-            col_btn, col_demo = st.columns([1, 1])
-            with col_btn:
-                if st.button("Sign In to Workspace", type="primary", use_container_width=True, key="btn_do_login"):
-                    if not login_email or not login_pwd:
-                        st.error("Please enter both email and password.")
-                    else:
-                        db = SessionLocal()
-                        try:
-                            res = authenticate_user(db, login_email, login_pwd)
-                            st.session_state.authenticated = True
-                            st.session_state.user = res["user"]
-                            st.session_state.current_org = res["organization"]
-                            st.session_state.current_org_id = res["organization"]["id"]
-                            st.session_state.user_organizations = res["organizations"]
-                            st.session_state.access_token = res["access_token"]
-                            st.toast(f"Welcome back, {res['user'].get('full_name')}!", icon="👋")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Login failed: {str(e)}")
-                        finally:
-                            db.close()
+            if st.button("Sign In to Workspace", type="primary", use_container_width=True, key="btn_do_login"):
+                if not login_email or not login_pwd:
+                    st.error("Please enter both email and password.")
+                else:
+                    db = SessionLocal()
+                    try:
+                        res = authenticate_user(db, login_email, login_pwd)
+                        st.session_state.authenticated = True
+                        st.session_state.user = res["user"]
+                        st.session_state.current_org = res["organization"]
+                        st.session_state.current_org_id = res["organization"]["id"]
+                        st.session_state.user_organizations = res["organizations"]
+                        st.session_state.access_token = res["access_token"]
+                        st.session_state.active_sender_email = res["user"]["email"]
+                        st.toast(f"Welcome back, {res['user'].get('full_name')}!", icon="👋")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Login failed: {str(e)}")
+                    finally:
+                        db.close()
 
-            with col_demo:
-                if st.button("⚡ Quick 1-Click Login", type="secondary", use_container_width=True, key="btn_quick_login", help="Logs in directly as Neno Technology Admin"):
+            st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+            col_demo1, col_demo2, col_demo3 = st.columns(3)
+            with col_demo1:
+                if st.button("👑 Neno: Mohit Patel", type="secondary", use_container_width=True, key="btn_quick_mohit", help="Sign in as Neno Technology Owner (mohit@nenotechnology.us)"):
                     db = SessionLocal()
                     try:
                         res = authenticate_user(db, "mohit@nenotechnology.us", "Admin@12345")
@@ -111,7 +112,49 @@ def render_auth_page():
                         st.session_state.current_org_id = res["organization"]["id"]
                         st.session_state.user_organizations = res["organizations"]
                         st.session_state.access_token = res["access_token"]
-                        st.toast("Authenticated as Neno Technology Owner", icon="⚡")
+                        st.session_state.active_workspace_sender = "mohit@nenotechnology.us"
+                        st.session_state.active_sender_email = "mohit@nenotechnology.us"
+                        st.toast("Authenticated as Mohit Patel (👑 Owner)", icon="🏢")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Quick login failed: {str(e)}")
+                    finally:
+                        db.close()
+
+            with col_demo2:
+                if st.button("🛡️ Neno: Mit Patel", type="secondary", use_container_width=True, key="btn_quick_mitpatel", help="Sign in as Neno Technology Admin (mitpatel@nenotechnology.com)"):
+                    db = SessionLocal()
+                    try:
+                        res = authenticate_user(db, "mitpatel@nenotechnology.com", "Admin@12345")
+                        st.session_state.authenticated = True
+                        st.session_state.user = res["user"]
+                        st.session_state.current_org = res["organization"]
+                        st.session_state.current_org_id = res["organization"]["id"]
+                        st.session_state.user_organizations = res["organizations"]
+                        st.session_state.access_token = res["access_token"]
+                        st.session_state.active_workspace_sender = "mitpatel@nenotechnology.com"
+                        st.session_state.active_sender_email = "mitpatel@nenotechnology.com"
+                        st.toast("Authenticated as Mit Patel (🛡️ Admin)", icon="🛡️")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Quick login failed: {str(e)}")
+                    finally:
+                        db.close()
+
+            with col_demo3:
+                if st.button("🤖 Super AI: Mann", type="secondary", use_container_width=True, key="btn_quick_superai", help="Sign in as Super AI Owner (man@nenotechnology.com)"):
+                    db = SessionLocal()
+                    try:
+                        res = authenticate_user(db, "man@nenotechnology.com", "Admin@12345")
+                        st.session_state.authenticated = True
+                        st.session_state.user = res["user"]
+                        st.session_state.current_org = res["organization"]
+                        st.session_state.current_org_id = res["organization"]["id"]
+                        st.session_state.user_organizations = res["organizations"]
+                        st.session_state.access_token = res["access_token"]
+                        st.session_state.active_workspace_sender = "man@nenotechnology.com"
+                        st.session_state.active_sender_email = "man@nenotechnology.com"
+                        st.toast("Authenticated into Super AI (Owner: Mann)", icon="🤖")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Quick login failed: {str(e)}")
@@ -170,6 +213,60 @@ def render_auth_page():
                         db.close()
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_workspace_senders(organization_id: str):
+    """Retrieves all active sending identities for the given workspace, sorted by role priority."""
+    if not organization_id:
+        return []
+    db = SessionLocal()
+    try:
+        from Backend.auth_models import Organization, OrganizationMember, User
+        org = db.query(Organization).filter(Organization.id == organization_id).first()
+        preferred_email = ""
+        if org and org.settings:
+            preferred_email = (
+                org.settings.get("sender_email")
+                or org.settings.get("sender", {}).get("sender_email")
+                or ""
+            ).lower().strip()
+        if not preferred_email:
+            preferred_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us").lower().strip()
+
+        members = (
+            db.query(OrganizationMember, User)
+            .join(User, OrganizationMember.user_id == User.id)
+            .filter(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.status == "active",
+                User.status == "active",
+            )
+            .all()
+        )
+
+        def _sender_priority(item):
+            m, u = item
+            u_email = (u.email or "").lower().strip()
+            is_preferred = 0 if u_email == preferred_email or ("mohit" in u_email and "mohit" in preferred_email) else 1
+            is_def = 0 if m.is_default else 1
+            role_prio = 0 if m.role == "organization_owner" else (1 if m.role == "organization_admin" else 2)
+            return (is_preferred, is_def, role_prio)
+
+        sorted_members = sorted(members, key=_sender_priority)
+        senders = []
+        for m, u in sorted_members:
+            if m.role in ("organization_owner", "organization_admin", "campaign_manager"):
+                senders.append({
+                    "email": u.email,
+                    "name": u.full_name or u.email.split("@")[0],
+                    "role": m.role,
+                })
+        return senders
+    except Exception:
+        return []
+    finally:
+        db.close()
+
+
 def render_org_switcher():
     """Renders tenant organization dropdown in the sidebar with dedicated workspace settings and team management inside a clean container box."""
     if not st.session_state.get("authenticated"):
@@ -215,28 +312,48 @@ def render_org_switcher():
             unsafe_allow_html=True,
         )
 
-        selected_org_id = st.selectbox(
-            "Active Organization",
-            options=[o["id"] for o in user_orgs],
-            index=current_idx,
-            format_func=lambda x: org_names.get(x, x),
-            label_visibility="collapsed",
-            key="sb_tenant_select",
-        )
+        if len(user_orgs) > 1:
+            selected_org_id = st.selectbox(
+                "Active Organization",
+                options=[o["id"] for o in user_orgs],
+                index=current_idx,
+                format_func=lambda x: org_names.get(x, x),
+                label_visibility="collapsed",
+                key="sb_tenant_select",
+            )
 
-        if selected_org_id != current_org_id:
-            db = SessionLocal()
-            try:
-                res = switch_organization(db, st.session_state.user["id"], selected_org_id)
-                st.session_state.current_org = res["organization"]
-                st.session_state.current_org_id = res["organization"]["id"]
-                st.session_state.access_token = res["access_token"]
-                st.toast(f"Switched to {res['organization']['name']}", icon="🏢")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to switch organization: {e}")
-            finally:
-                db.close()
+            if selected_org_id != current_org_id:
+                db = SessionLocal()
+                try:
+                    res = switch_organization(db, st.session_state.user["id"], selected_org_id)
+                    st.session_state.current_org = res["organization"]
+                    st.session_state.current_org_id = res["organization"]["id"]
+                    st.session_state.access_token = res["access_token"]
+                    if "active_workspace_sender" in st.session_state:
+                        del st.session_state["active_workspace_sender"]
+                    st.toast(f"Switched to {res['organization']['name']}", icon="🏢")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to switch organization: {e}")
+                finally:
+                    db.close()
+        else:
+            st.markdown(
+                f"""
+                <div style="font-size: 13.5px; font-weight: 700; color: #0F172A; padding: 2px 0 6px 0;">
+                    {current_org_obj.get('name')}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ── Workspace Sender Setup (Silently Initialized) ──
+        ws_senders = get_workspace_senders(current_org_id)
+        if ws_senders:
+            curr_active_ws = st.session_state.get("active_workspace_sender")
+            if not curr_active_ws or curr_active_ws == "support@nenotechnology.com":
+                st.session_state.active_workspace_sender = ws_senders[0]["email"]
+                st.session_state.active_sender_email = ws_senders[0]["email"]
 
         # Workspace Management Actions inside the box (Full-width buttons with complete labels)
         active_page = st.session_state.get("active_page", "overview")
