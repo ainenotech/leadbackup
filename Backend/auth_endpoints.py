@@ -601,3 +601,13 @@ def oauth_callback_alias(provider: str, req: Request, db: Session = Depends(get_
     """Alias for /api/oauth/{provider}/callback redirect URIs matching Google/Microsoft configurations."""
     from Backend.channels_endpoints import oauth_callback
     return oauth_callback(provider, req, db)
+
+
+@router.post("/auth/logout")
+@router.get("/auth/logout")
+def logout_endpoint():
+    """Sign out endpoint that invalidates session and clears the session_token cookie."""
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={"status": "success", "message": "Successfully signed out."})
+    response.delete_cookie(key="session_token", path="/")
+    return response

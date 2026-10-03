@@ -19,6 +19,25 @@ from Backend.auth_models import Organization, User
 
 def render_auth_page():
     """Renders the executive, high-contrast, centered login & register card in pristine light theme."""
+    # If the user explicitly signed out, ensure client-side session cookie is cleared
+    if st.session_state.get("logged_out"):
+        import streamlit.components.v1 as components
+        components.html(
+            """
+            <script>
+            document.cookie = "session_token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+            try {
+                window.parent.document.cookie = "session_token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+            } catch(e) {}
+            try {
+                window.parent.localStorage.removeItem("session_token");
+                window.parent.sessionStorage.removeItem("session_token");
+            } catch(e) {}
+            </script>
+            """,
+            height=0,
+        )
+
     # ── 1. Handle OAuth SSO Ticket Exchange (if returning from Microsoft / Google) ──
     ticket = st.query_params.get("login_ticket")
     if ticket:
@@ -34,6 +53,7 @@ def render_auth_page():
                 if resp.status_code == 200:
                     res = resp.json()["data"]
                     st.session_state.authenticated = True
+                    st.session_state.logged_out = False
                     st.session_state.user = res["user"]
                     st.session_state.current_org = res["organization"]
                     st.session_state.current_org_id = res["organization"]["id"]
@@ -289,6 +309,7 @@ def render_auth_page():
                         try:
                             res = authenticate_user(db, login_email.strip(), login_pwd)
                             st.session_state.authenticated = True
+                            st.session_state.logged_out = False
                             st.session_state.user = res["user"]
                             st.session_state.current_org = res["organization"]
                             st.session_state.current_org_id = res["organization"]["id"]
@@ -362,6 +383,7 @@ def render_auth_page():
                                 full_name=reg_name.strip(),
                             )
                             st.session_state.authenticated = True
+                            st.session_state.logged_out = False
                             st.session_state.user = res["user"]
                             st.session_state.current_org = res["organization"]
                             st.session_state.current_org_id = res["organization"]["id"]

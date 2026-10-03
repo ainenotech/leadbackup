@@ -181,11 +181,25 @@ st.markdown(get_complete_theme_css(is_dark_mode()), unsafe_allow_html=True)
 # ─────────────────────────────────────────────────────────────
 # MULTI-TENANT SAAS AUTHENTICATION & WORKSPACE STATE
 # ─────────────────────────────────────────────────────────────
-if "authenticated" not in st.session_state or not st.session_state.authenticated:
+if "logged_out" not in st.session_state:
+    st.session_state.logged_out = False
+
+# Support query-param triggered logout (e.g. /?logout=true or ?action=logout)
+if st.query_params.get("logout") in ["1", "true", "yes"] or st.query_params.get("action") == "logout":
+    st.session_state.logged_out = True
+    st.session_state.authenticated = False
+    for k in ["user", "current_org", "current_org_id", "access_token", "user_organizations"]:
+        st.session_state.pop(k, None)
+    if "logout" in st.query_params:
+        del st.query_params["logout"]
+    if "action" in st.query_params:
+        del st.query_params["action"]
+
+if not st.session_state.get("authenticated"):
     st.session_state.authenticated = False
 
-    # Try restoring session from cookie
-    session_token = st.context.cookies.get("session_token")
+    # Only attempt restoring session from cookie if user has NOT explicitly logged out
+    session_token = None if st.session_state.get("logged_out") else st.context.cookies.get("session_token")
     if session_token:
         # Fast path: instant local token decode (zero network lag)
         try:
@@ -771,9 +785,14 @@ with st.sidebar:
     )
     if st.button("🚪 Sign Out", key="sb_btn_logout", type="secondary", use_container_width=True):
         st.session_state.authenticated = False
+        st.session_state.logged_out = True
         st.session_state.user = None
         st.session_state.current_org = None
         st.session_state.current_org_id = None
+        st.session_state.access_token = None
+        st.session_state.user_organizations = []
+        st.session_state.active_page = "overview"
+        st.cache_data.clear()
         st.rerun()
 
 
