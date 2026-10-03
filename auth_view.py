@@ -568,7 +568,6 @@ def render_org_switcher():
             key="ws_box_settings_btn",
             type="primary" if is_settings else "secondary",
             use_container_width=True,
-            help="Configure Workspace Settings, Branding & AI BYOK",
         ):
             st.session_state.active_page = "org_settings"
             st.query_params["page"] = "org_settings"
@@ -584,7 +583,6 @@ def render_org_switcher():
             key="ws_box_team_btn",
             type="primary" if is_team else "secondary",
             use_container_width=True,
-            help="Manage Team Members & Access Roles",
         ):
             st.session_state.active_page = "team"
             st.query_params["page"] = "team"

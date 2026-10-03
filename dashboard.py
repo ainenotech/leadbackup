@@ -631,7 +631,6 @@ with st.sidebar:
             key="top_admin_super_portal",
             type="primary" if is_admin_active else "secondary",
             use_container_width=True,
-            help="Global SaaS Operations, Cross-Tenant Telemetry & Workspace Controls",
         ):
             st.session_state.active_page = "super_admin"
             st.query_params["page"] = "super_admin"
@@ -717,7 +716,7 @@ with st.sidebar:
     with sync_cols[0]:
         st.caption("⚡ **Live Sync Speed**")
     with sync_cols[1]:
-        if st.button("🔄 Sync", key="sync_now_sidebar_btn", use_container_width=True, help="Force immediate data refresh"):
+        if st.button("🔄 Sync", key="sync_now_sidebar_btn", use_container_width=True):
             load_campaign_logs.clear()
             st.rerun()
 
