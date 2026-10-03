@@ -261,3 +261,20 @@ class OTPCode(Base):
     __table_args__ = (
         Index("ix_otp_email_purpose", "email", "purpose"),
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# 7. LOGIN TICKETS — short-lived session handoff tokens
+# ─────────────────────────────────────────────────────────────
+
+class LoginTicket(Base):
+    """Short-lived, single-use ticket to securely handoff sessions from the OAuth callback to Streamlit."""
+    __tablename__ = "login_tickets"
+
+    ticket_hash = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+

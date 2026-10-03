@@ -10,4 +10,4 @@ font = "sans serif"
 fastReruns = true
 
 [server]
-runOnSave = false
+runOnSave = true

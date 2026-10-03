@@ -293,18 +293,34 @@ def authenticate_user(
     if not active_org:
         default_membership, active_org = memberships[0]
 
-    org_list = [
-        {
-            "id": o.id,
-            "name": o.name,
-            "slug": o.slug,
-            "role": m.role,
-            "is_default": bool(m.is_default),
-            "logo_url": o.logo_url,
-            "brand_name": o.brand_name or o.name,
-        }
-        for m, o in memberships
-    ]
+    if user.platform_role == "platform_super_admin":
+        all_active_orgs = db.query(Organization).filter(Organization.status == "active").all()
+        user_roles = {m.organization_id: m.role for m, _ in memberships}
+        org_list = [
+            {
+                "id": o.id,
+                "name": o.name,
+                "slug": o.slug,
+                "role": user_roles.get(o.id, "organization_owner"),
+                "is_default": (o.id == active_org.id),
+                "logo_url": o.logo_url,
+                "brand_name": o.brand_name or o.name,
+            }
+            for o in all_active_orgs
+        ]
+    else:
+        org_list = [
+            {
+                "id": o.id,
+                "name": o.name,
+                "slug": o.slug,
+                "role": m.role,
+                "is_default": bool(m.is_default),
+                "logo_url": o.logo_url,
+                "brand_name": o.brand_name or o.name,
+            }
+            for m, o in memberships
+        ]
 
     token = create_access_token(
         user_id=user.id,
@@ -343,6 +359,10 @@ def switch_organization(
     target_org_id: str,
 ) -> Dict[str, Any]:
     """Switch active organization for a user and return a new JWT token."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise ValueError("User not found.")
+
     membership = (
         db.query(OrganizationMember)
         .filter(
@@ -354,13 +374,23 @@ def switch_organization(
     )
 
     if not membership:
-        raise ValueError("User does not have access to this organization.")
+        if user.platform_role == "platform_super_admin":
+            membership = OrganizationMember(
+                id=str(uuid.uuid4()),
+                organization_id=target_org_id,
+                user_id=user_id,
+                role="organization_owner",
+                is_default=True,
+                status="active",
+            )
+            db.add(membership)
+            db.commit()
+        else:
+            raise ValueError("User does not have access to this organization.")
 
     org = db.query(Organization).filter(Organization.id == target_org_id).first()
     if not org or org.status != "active":
         raise ValueError("Target organization is inactive or not found.")
-
-    user = db.query(User).filter(User.id == user_id).first()
 
     # Update is_default flags
     db.query(OrganizationMember).filter(OrganizationMember.user_id == user_id).update({"is_default": False})

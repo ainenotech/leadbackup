@@ -1,10 +1,14 @@
 from datetime import date
+import os
 import pandas as pd
 import streamlit as st
 from Backend.db import SessionLocal
 from Backend.auth_service import get_organization_by_id, update_organization_settings
 from Backend.auth_models import OrganizationMember, User
+
+from Backend.channels_models import OrgMailConnection, OrgDomainSnapshot
 from Backend.domain_models import (
+
     OrgSendingDomain,
     OrgDomainRecord,
     OrgDomainStats,
@@ -21,7 +25,237 @@ from services.domain_auth_service import (
     delete_domain,
     get_dns_instructions,
     get_check_history,
+    is_mock_provider,
 )
+
+
+
+def render_email_channels_chooser(organization_id: str, context: str = "settings"):
+    st.markdown("### 📬 Email Channels")
+    st.markdown("Select or connect your preferred email delivery channel for outreach.")
+    
+    email = st.text_input("Enter your sender email address to detect the best connection method", key=f"detect_email_{context}")
+    
+    if st.button("Detect Method", key=f"btn_detect_{context}"):
+        if not email or "@" not in email:
+            st.error("Please enter a valid email address.")
+            return
+            
+        try:
+            from services.dns_health import full_dns_check
+            
+            domain = email.split("@")[1].lower()
+            dns_report = full_dns_check(domain)
+            mx_records = dns_report.mx.records if dns_report.mx else []
+            spf_record = dns_report.spf.raw_records[0] if dns_report.spf and dns_report.spf.raw_records else None
+            dmarc_record = dns_report.dmarc.raw_record if dns_report.dmarc else None
+            
+            recommendation = "unknown, choose manually"
+            is_consumer = False
+            
+            if domain in ("gmail.com", "outlook.com", "hotmail.com", "yahoo.com"):
+                is_consumer = True
+                recommendation = "own_domain" if domain in ("yahoo.com",) else ("google_oauth" if domain == "gmail.com" else "microsoft_oauth")
+            elif not mx_records:
+                recommendation = "own_domain"
+            else:
+                mx_text = " ".join([mx.lower() for mx in mx_records])
+                if "google.com" in mx_text or "googlemail.com" in mx_text:
+                    recommendation = "google_oauth"
+                elif "protection.outlook.com" in mx_text:
+                    recommendation = "microsoft_oauth"
+                elif "mimecast.com" in mx_text or "proofpoint.com" in mx_text or "messagelabs.com" in mx_text:
+                    recommendation = "unknown, choose manually"
+                else:
+                    recommendation = "smtp_imap"
+
+            db = SessionLocal()
+            try:
+                db.add(OrgDomainSnapshot(
+                    organization_id=organization_id,
+                    domain=domain,
+                    results={
+                        "mx": mx_records,
+                        "spf": spf_record,
+                        "dkim_detected": False,
+                        "dmarc": dmarc_record,
+                    }
+                ))
+                db.commit()
+            except Exception:
+                pass
+            finally:
+                db.close()
+                
+            st.session_state[f"detected_channel_{context}"] = recommendation
+            st.session_state[f"detected_consumer_{context}"] = is_consumer
+        except Exception as e:
+            st.error(f"Detection failed: {e}")
+
+    recommendation = st.session_state.get(f"detected_channel_{context}")
+    if recommendation:
+        st.success(f"Recommended Method: **{recommendation}**")
+        if st.session_state.get(f"detected_consumer_{context}"):
+            st.warning("This looks like a personal mailbox. Strict daily caps will apply to protect your reputation.")
+            
+        st.markdown("#### Connect a Channel")
+        selected = st.radio(
+            "Select Channel Method", 
+            ["microsoft_oauth", "google_oauth", "smtp_imap", "own_domain", "customer_domain"],
+            index=["microsoft_oauth", "google_oauth", "smtp_imap", "own_domain", "customer_domain"].index(recommendation) if recommendation in ["microsoft_oauth", "google_oauth", "smtp_imap", "own_domain", "customer_domain"] else 0,
+            key=f"radio_{context}"
+        )
+        
+        if selected == "microsoft_oauth":
+            st.markdown("#### Microsoft 365 / Outlook Integration")
+            st.markdown("We will request the following permissions from your Microsoft account:")
+            st.markdown("- **Mail.Send**: To dispatch outreach emails from your mailbox.")
+            st.markdown("- **Mail.Read**: To read replies specifically matching our campaigns.")
+            st.markdown("- **User.Read**: To verify your identity.")
+            
+            if st.button("Generate Connection Link", key=f"btn_gen_{context}"):
+                if not email or "@" not in email:
+                    st.error("Please enter a valid sender email address above first.")
+                else:
+                    import requests
+                    token = st.session_state.get("access_token")
+                    if not token and st.session_state.get("user"):
+                        from Backend.auth_service import create_access_token
+                        u = st.session_state.get("user", {})
+                        token = create_access_token(
+                            user_id=u.get("id"),
+                            org_id=organization_id,
+                            role=st.session_state.get("current_org", {}).get("role", "organization_owner"),
+                            email=u.get("email", ""),
+                            platform_role=u.get("platform_role", "user"),
+                        )
+                        st.session_state.access_token = token
+                    
+                    base_url = (os.getenv("FORM_BASE_URL") or "http://localhost:8000").rstrip('/')
+                    
+                    try:
+                        resp = requests.post(
+                            f"{base_url}/api/channels/oauth/microsoft/start",
+                            json={"email": email.strip()},
+                            headers={"Authorization": f"Bearer {token}"} if token else {},
+                            timeout=15
+                        )
+                        if resp.status_code == 200:
+                            auth_url = resp.json().get("auth_url")
+                            st.markdown(f'<a href="{auth_url}" target="_blank" style="display: inline-block; background-color: #0f172a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 500;">Connect with Microsoft</a>', unsafe_allow_html=True)
+                            st.info("Click the button above to sign in. It will open in a new tab. Once you see the success message, click below to refresh.")
+                            if st.button("Refresh Connection Status"):
+                                st.rerun()
+                        else:
+                            st.error(f"Failed to start connection ({resp.status_code}): {resp.text}")
+                    except Exception as e:
+                        st.error(f"Could not reach API server: {e}")
+        elif selected == "google_oauth":
+            st.markdown("#### Google Workspace / Gmail Integration")
+            st.markdown("We will request the following permissions from your Google account:")
+            st.markdown("- **Send Emails**: To dispatch outreach emails from your mailbox (gmail.send).")
+            st.markdown("- **Read Emails**: To read replies specifically matching our campaigns (gmail.readonly).")
+            st.markdown("- **Basic Profile**: To verify your email identity.")
+            
+            if st.button("Generate Connection Link", key=f"btn_gen_{context}"):
+                if not email or "@" not in email:
+                    st.error("Please enter a valid sender email address above first.")
+                else:
+                    import requests
+                    token = st.session_state.get("access_token")
+                    if not token and st.session_state.get("user"):
+                        from Backend.auth_service import create_access_token
+                        u = st.session_state.get("user", {})
+                        token = create_access_token(
+                            user_id=u.get("id"),
+                            org_id=organization_id,
+                            role=st.session_state.get("current_org", {}).get("role", "organization_owner"),
+                            email=u.get("email", ""),
+                            platform_role=u.get("platform_role", "user"),
+                        )
+                        st.session_state.access_token = token
+
+                    base_url = (os.getenv("FORM_BASE_URL") or "http://localhost:8000").rstrip('/')
+                    
+                    try:
+                        resp = requests.post(
+                            f"{base_url}/api/channels/oauth/google/start",
+                            json={"email": email.strip()},
+                            headers={"Authorization": f"Bearer {token}"} if token else {},
+                            timeout=15
+                        )
+                        if resp.status_code == 200:
+                            auth_url = resp.json().get("auth_url")
+                            st.markdown(f'<a href="{auth_url}" target="_blank" style="display: inline-block; background-color: #0f172a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 500;">Connect with Google</a>', unsafe_allow_html=True)
+                            st.info("Click the button above to sign in. It will open in a new tab. Once you see the success message, click below to refresh.")
+                            if st.button("Refresh Connection Status"):
+                                st.rerun()
+                        else:
+                            st.error(f"Failed to start connection ({resp.status_code}): {resp.text}")
+                    except Exception as e:
+                        st.error(f"Could not reach API server: {e}")
+        else:
+            if st.button("Connect Selected Channel", key=f"btn_connect_{context}"):
+                st.info(f"The {selected} channel is registered but not yet available.")
+            
+    if context == "settings":
+        db = SessionLocal()
+        try:
+            connections = db.query(OrgMailConnection).filter(OrgMailConnection.organization_id == organization_id).all()
+            if connections:
+                st.markdown("#### Configured Connections")
+                for c in connections:
+                    st.markdown(f"**{c.email}** ({c.channel})")
+                    if c.status == "needs_reconnect":
+                        st.error("Status: Needs Reconnect (Authentication expired or revoked)")
+                    elif c.status == "active":
+                        st.success(f"Status: Active (Sent today: {c.sent_today}/{c.daily_cap})")
+                    else:
+                        st.info(f"Status: {c.status}")
+                        
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        if c.channel in ("microsoft_oauth", "google_oauth") and c.status == "active":
+                            if st.button("Test Send", key=f"btn_test_{c.id}"):
+                                from Email.channels import get_channel_handler
+                                try:
+                                    handler = get_channel_handler(c.channel)
+                                    # Send to self
+                                    res = handler.send_email(
+                                        db=db, 
+                                        connection=c, 
+                                        to_email=c.email, 
+                                        subject="Connection Test", 
+                                        body_html="<p>This is a test email confirming your channel is connected.</p>",
+                                        body_text="This is a test email confirming your channel is connected."
+                                    )
+                                    st.toast("Test email sent!", icon="✅")
+                                except Exception as e:
+                                    st.error(f"Test send failed: {e}")
+                    with col_b:
+                        new_cap = st.number_input("Daily Cap", value=c.daily_cap, min_value=1, key=f"cap_{c.id}")
+                        if new_cap != c.daily_cap:
+                            c.daily_cap = new_cap
+                            db.commit()
+                            st.toast("Daily cap updated", icon="💾")
+                            st.rerun()
+                    with col_c:
+                        if st.button("Disconnect", key=f"btn_disc_{c.id}", help="Remove connection and secrets"):
+                            db.delete(c)
+                            db.commit()
+                            st.toast("Connection removed.", icon="🗑️")
+                            if c.channel == "microsoft_oauth":
+                                st.info("To fully revoke access, visit https://myaccount.microsoft.com/permissions and remove this app.")
+                            elif c.channel == "google_oauth":
+                                st.info("To fully revoke access, visit https://myaccount.google.com/permissions and remove this app.")
+                            st.rerun()
+                    st.markdown("---")
+            else:
+                st.info("No connections configured.")
+        finally:
+            db.close()
+            
+        st.markdown("Looking for Enterprise Sending Domains? View the **🌐 Sending Domains** tab.")
 
 
 def _render_sending_domains_tab(db, org, organization_id: str):
@@ -55,6 +289,9 @@ def _render_sending_domains_tab(db, org, organization_id: str):
 
     if not is_admin_or_owner:
         st.info("ℹ️ You are viewing sending domains in read-only mode. Only organization owners and administrators can register or modify domains.")
+
+    if is_mock_provider():
+        st.info("💡 **Development / Simulation Mode**: Live AWS credentials (`AWS_ACCESS_KEY_ID` & `AWS_SECRET_ACCESS_KEY`) are not set in `.env`. A simulated SES provider is active so you can register domains, view DNS instructions, and test the full flow. To connect live Amazon SES, configure your AWS keys in `.env`.")
 
     # Fetch existing domains
     domains = db.query(OrgSendingDomain).filter(
@@ -254,58 +491,119 @@ def _render_sending_domains_tab(db, org, organization_id: str):
 
     # Register New Domain Section
     if is_admin_or_owner:
-        with st.expander("➕ Register New Sending Domain", expanded=(len(domains) == 0)):
+        with st.expander("➕ Register Sending Domain(s)", expanded=(len(domains) == 0)):
             st.markdown(
-                "Enter your company email or domain to generate AWS SES DKIM tokens and MAIL FROM DNS records. "
-                "You will receive 3 CNAME records and a subdomain MX/TXT record to add to your DNS host."
+                "Authenticate your company domains to generate AWS SES DKIM tokens and MAIL FROM DNS records. "
+                "You can register an individual domain or batch-register 4–5 domains simultaneously."
             )
-            col_r1, col_r2 = st.columns(2)
-            with col_r1:
-                reg_email = st.text_input(
-                    "Sender Work Email Address*",
-                    placeholder="outreach@customer.com",
-                    key="reg_domain_email",
-                    help="Email address used as default From sender (e.g. outreach@acme.com)",
+            reg_mode = st.radio(
+                "Registration Mode",
+                ["Single Domain", "Batch Register (Multiple Domains)"],
+                horizontal=True,
+                key="dom_reg_mode"
+            )
+
+            if reg_mode == "Single Domain":
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    reg_email = st.text_input(
+                        "Sender Work Email Address*",
+                        placeholder="outreach@customer.com",
+                        key="reg_domain_email",
+                        help="Email address used as default From sender (e.g. outreach@acme.com)",
+                    )
+                    reg_name = st.text_input(
+                        "Default Sender Display Name",
+                        value=org.brand_name or org.name or "",
+                        placeholder="Acme Outreach Team",
+                        key="reg_domain_name",
+                    )
+                with col_r2:
+                    reg_reply = st.text_input(
+                        "Default Reply-To Email",
+                        value=org.email or "",
+                        placeholder="replies@customer.com",
+                        key="reg_domain_reply",
+                    )
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    if st.button("🚀 Register Domain with AWS SES", type="primary", key="btn_reg_domain_submit", use_container_width=True):
+                        if not reg_email or "@" not in reg_email:
+                            st.error("Please provide a valid sender work email address (e.g. outreach@customer.com).")
+                        elif not current_user_id:
+                            st.error("User context missing. Unable to authenticate request.")
+                        else:
+                            with st.spinner("Registering domain identity with AWS SES..."):
+                                try:
+                                    result = register_domain(
+                                        db=db,
+                                        user_id=current_user_id,
+                                        organization_id=organization_id,
+                                        email_address=reg_email,
+                                        from_name=reg_name,
+                                        reply_to=reg_reply or reg_email,
+                                    )
+                                    st.success(f"Domain '{result['domain']}' successfully registered! DNS records generated.")
+                                    st.toast(f"Domain {result['domain']} registered!", icon="🌐")
+                                    st.rerun()
+                                except ValueError as ve:
+                                    st.error(str(ve))
+                                except PermissionError as pe:
+                                    st.error(str(pe))
+                                except Exception as exc:
+                                    st.error(f"Domain registration failed: {exc}")
+            else:
+                st.markdown(
+                    "Paste 4–5 sender emails or domains (one per line). The system will register each domain identity and generate all DNS records at once."
                 )
-                reg_name = st.text_input(
-                    "Default Sender Display Name",
-                    value=org.brand_name or org.name or "",
-                    placeholder="Acme Outreach Team",
-                    key="reg_domain_name",
-                )
-            with col_r2:
-                reg_reply = st.text_input(
-                    "Default Reply-To Email",
-                    value=org.email or "",
-                    placeholder="replies@customer.com",
-                    key="reg_domain_reply",
-                )
-                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("🚀 Register Domain with AWS SES", type="primary", key="btn_reg_domain_submit", use_container_width=True):
-                    if not reg_email or "@" not in reg_email:
-                        st.error("Please provide a valid sender work email address (e.g. outreach@customer.com).")
-                    elif not current_user_id:
-                        st.error("User context missing. Unable to authenticate request.")
-                    else:
-                        with st.spinner("Registering domain identity with AWS SES..."):
-                            try:
-                                result = register_domain(
-                                    db=db,
-                                    user_id=current_user_id,
-                                    organization_id=organization_id,
-                                    email_address=reg_email,
-                                    from_name=reg_name,
-                                    reply_to=reg_reply or reg_email,
-                                )
-                                st.success(f"Domain '{result['domain']}' successfully registered! DNS records generated.")
-                                st.toast(f"Domain {result['domain']} registered!", icon="🌐")
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    batch_text = st.text_area(
+                        "Sender Emails or Domains (one per line)*",
+                        placeholder="outreach@superai-hq.com\nsales@superaimail.com\ncontact@getsuperai.com\nteam@superai-tech.com",
+                        height=130,
+                        key="reg_batch_domains_text",
+                    )
+                with col_b2:
+                    batch_name = st.text_input(
+                        "Default Sender Display Name",
+                        value=org.brand_name or org.name or "",
+                        placeholder="Acme Outreach Team",
+                        key="reg_batch_domain_name",
+                    )
+                    batch_reply = st.text_input(
+                        "Default Reply-To Email",
+                        value=org.email or "",
+                        placeholder="replies@customer.com",
+                        key="reg_batch_domain_reply",
+                    )
+                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                    if st.button("🚀 Batch Register All Domains", type="primary", key="btn_reg_batch_submit", use_container_width=True):
+                        lines = [l.strip() for l in batch_text.splitlines() if l.strip()]
+                        if not lines:
+                            st.error("Please enter at least one email address or domain.")
+                        elif not current_user_id:
+                            st.error("User context missing. Unable to authenticate request.")
+                        else:
+                            success_count = 0
+                            with st.spinner(f"Registering {len(lines)} domains with AWS SES..."):
+                                for line in lines:
+                                    addr = line if "@" in line else f"outreach@{line}"
+                                    try:
+                                        res = register_domain(
+                                            db=db,
+                                            user_id=current_user_id,
+                                            organization_id=organization_id,
+                                            email_address=addr,
+                                            from_name=batch_name,
+                                            reply_to=batch_reply or addr,
+                                        )
+                                        success_count += 1
+                                        st.toast(f"Registered {res['domain']}!", icon="🌐")
+                                    except Exception as exc:
+                                        st.warning(f"Could not register '{line}': {exc}")
+                            if success_count > 0:
+                                st.success(f"Successfully registered {success_count} domain(s)! DNS records generated below.")
                                 st.rerun()
-                            except ValueError as ve:
-                                st.error(str(ve))
-                            except PermissionError as pe:
-                                st.error(str(pe))
-                            except Exception as exc:
-                                st.error(f"Domain registration failed: {exc}")
 
     # Deliverability & Policy Information
     with st.expander("🛡️ Deliverability Architecture & Acceptable Use Policy", expanded=False):
@@ -357,10 +655,11 @@ def render_org_settings(organization_id: str):
                 st.query_params["page"] = "team"
                 st.rerun()
 
-        tab_branding, tab_ai, tab_sender, tab_domains, tab_booking, tab_team = st.tabs([
+        tab_branding, tab_ai, tab_sender, tab_channels, tab_domains, tab_booking, tab_team = st.tabs([
             "🎨 Branding & Identity",
             "🤖 AI & BYOK Intelligence",
             "✉️ Email Sender & Outbound",
+            "📬 Email Channels",
             "🌐 Sending Domains",
             "📅 Calendar & Bookings",
             "👥 Team Members & RBAC",
@@ -470,6 +769,9 @@ def render_org_settings(organization_id: str):
                 )
                 st.toast("AI settings saved successfully!", icon="🤖")
                 st.rerun()
+
+        with tab_channels:
+            render_email_channels_chooser(organization_id, context="settings")
 
         with tab_sender:
             st.markdown("### Outbound Sender Configuration")

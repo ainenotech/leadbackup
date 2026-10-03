@@ -195,16 +195,42 @@ def _send_graph_reply(
 
     # 2. Fallback to standard outbound dispatch (sends full HTML MIME with quoted thread)
     try:
-        from Email import get_mailer, get_mailer_for_org
-        # Try to resolve org-specific mailer based on the target mailbox domain
-        mailer = get_mailer_for_org(None, target_mailbox) if target_mailbox else get_mailer()
-        mailer.send_email(
-            to_email=to_email,
-            subject=_format_reply_subject(subject),
-            body=body_html,
-            sender_email=target_mailbox,
-        )
-        return True
+        from Email import dispatch_outreach_email
+        from Backend.db import SessionLocal
+        from Backend.channels_models import OrgMailConnection
+        
+        org_id = None
+        db = SessionLocal()
+        try:
+            if target_mailbox:
+                conn = db.query(OrgMailConnection).filter(OrgMailConnection.email == target_mailbox).first()
+                if conn:
+                    org_id = conn.organization_id
+            
+            if org_id:
+                success = dispatch_outreach_email(
+                    db=db,
+                    organization_id=org_id,
+                    campaign_name="auto_reply",
+                    lead_id=str(message_id) if message_id else "unknown_lead",
+                    to_email=to_email,
+                    subject=_format_reply_subject(subject),
+                    body_html=body_html,
+                    requested_sender=target_mailbox
+                )
+                return success
+            else:
+                from Email import get_mailer
+                mailer = get_mailer()
+                mailer.send_email(
+                    to_email=to_email,
+                    subject=_format_reply_subject(subject),
+                    body=body_html,
+                    sender_email=target_mailbox,
+                )
+                return True
+        finally:
+            db.close()
     except Exception as e:
         print(f"[Error] send_email fallback failed for {to_email}: {e}")
         return False
@@ -409,6 +435,24 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
             return results
 
         messages = resp.json().get("value", [])
+        
+        try:
+            from Backend.channels_models import OrgMailConnection
+            from Email.channels import get_channel_handler
+            active_channels = db.query(OrgMailConnection).filter(OrgMailConnection.status == "active").all()
+            for ch in active_channels:
+                try:
+                    handler = get_channel_handler(ch.channel, ch.config)
+                    polled_msgs = handler.poll_replies()
+                    if polled_msgs:
+                        messages.extend(polled_msgs)
+                except NotImplementedError:
+                    pass
+                except Exception as e:
+                    print(f"[Warning] Failed to poll replies for channel {ch.email}: {e}")
+        except Exception as e:
+            print(f"[Warning] Channels polling failed: {e}")
+
         if not messages:
             return results
 

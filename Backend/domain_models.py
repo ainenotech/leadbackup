@@ -13,6 +13,7 @@ from sqlalchemy import (
     Boolean, Column, Date, DateTime, Float, ForeignKey,
     Index, Integer, JSON, String, Text, UniqueConstraint,
 )
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from .db import Base
@@ -71,6 +72,11 @@ class OrgSendingDomain(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    # Relationships
+    records = relationship("OrgDomainRecord", backref="sending_domain", cascade="all, delete-orphan", passive_deletes=True)
+    check_history = relationship("OrgDomainCheckHistory", backref="sending_domain", cascade="all, delete-orphan", passive_deletes=True)
+    stats = relationship("OrgDomainStats", backref="sending_domain", cascade="all, delete-orphan", passive_deletes=True)
 
 
 # ─────────────────────────────────────────────────────────────

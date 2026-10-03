@@ -11,6 +11,7 @@ from .db import Base, SessionLocal, engine, init_db
 from .models import CampaignLog
 from .auth_endpoints import router as auth_router
 from .domain_endpoints import router as domain_router
+from .channels_endpoints import router as channels_router
 
 load_dotenv()
 
@@ -22,6 +23,7 @@ init_db()
 app = FastAPI(title="AINeotechnology — Lead Outreach & Analytics API")
 app.include_router(auth_router)
 app.include_router(domain_router)
+app.include_router(channels_router)
 
 
 @app.on_event("startup")
@@ -35,12 +37,7 @@ def start_background_services():
         print(f"[API Startup Warning] Could not start ReplyDaemonManager: {e}")
 
     # 2. Start Render Keep-Alive Daemon to prevent 15-minute idle spin-down
-    try:
-        from .keepalive import RenderKeepAliveDaemon
-        if not RenderKeepAliveDaemon.is_running():
-            RenderKeepAliveDaemon.start(interval_minutes=9)
-    except Exception as e:
-        print(f"[API Startup Warning] Could not start RenderKeepAliveDaemon: {e}")
+    # (Removed Keep-Alive Daemon)
 
 
 @app.get("/logo-dark.png")
@@ -101,11 +98,6 @@ def health_check():
 
     # 3. Render Keep-Alive Daemon metrics
     keepalive_stats = {}
-    try:
-        from .keepalive import RenderKeepAliveDaemon
-        keepalive_stats = RenderKeepAliveDaemon.get_stats()
-    except Exception:
-        pass
 
     return {
         "status": "healthy" if db_status["connected"] else "degraded",
@@ -124,13 +116,7 @@ def health_check():
     }
 
 
-@app.get("/api/keepalive/ping")
-@app.post("/api/keepalive/ping")
-def trigger_keepalive_ping():
-    """Manual trigger to immediately test or execute a Render keep-alive ping."""
-    from .keepalive import RenderKeepAliveDaemon
-    result = RenderKeepAliveDaemon.ping_now()
-    return result
+
 
 
 @app.get("/api/realtime/summary")

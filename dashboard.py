@@ -86,8 +86,6 @@ from utils.text_cleaner import extract_text_from_ai_message
 from utils.token import generate_token
 import services.analytics_service
 import services.analytics_export
-import analytics_view
-
 import reply_worker
 from reply_worker import ReplyDaemonManager, check_and_reply_inbox
 from services.rag import (
@@ -100,24 +98,13 @@ from services.rag import (
 from Agent.reply_agent import process_incoming_reply
 import services.template_service
 from services.template_service import load_all_templates, render_template
-import importlib
-import template_hub_view
-import master_db_view
-import knowledge_base_view
-import analytics_view
-import auth_view
-import org_settings_view
-import team_view
-import super_admin_view
-
-# Modules loaded cleanly without reload storm
 
 from analytics_view import render_analytics
 from template_hub_view import render_template_hub
 from knowledge_base_view import render_knowledge_base_hub
 from master_db_view import render_master_db, _render_tab_leads_directory
 from auth_view import render_auth_page, render_org_switcher
-from org_settings_view import render_org_settings
+from org_settings_view import render_org_settings, render_email_channels_chooser
 from team_view import render_team_view
 from super_admin_view import render_super_admin_portal
 from Backend.auth_models import Organization, User, OrganizationMember
@@ -194,72 +181,112 @@ st.markdown(get_complete_theme_css(is_dark_mode()), unsafe_allow_html=True)
 # ─────────────────────────────────────────────────────────────
 # MULTI-TENANT SAAS AUTHENTICATION & WORKSPACE STATE
 # ─────────────────────────────────────────────────────────────
-if "authenticated" not in st.session_state:
-    db_init_session = SessionLocal()
-    try:
-        default_user = (
-            db_init_session.query(User).filter(User.email == "mohit@nenotechnology.us").first()
-            or db_init_session.query(User).filter(User.email == "support@nenotechnology.com").first()
-            or db_init_session.query(User).filter(User.platform_role == "platform_super_admin").first()
-            or db_init_session.query(User).first()
-        )
-        if default_user:
-            user_memberships = (
-                db_init_session.query(OrganizationMember, Organization)
-                .join(Organization, OrganizationMember.organization_id == Organization.id)
-                .filter(OrganizationMember.user_id == default_user.id, Organization.status == "active")
-                .all()
-            )
-            # Find default organization or Neno Technology
-            active_membership, default_org = None, None
-            for m, o in user_memberships:
-                if o.slug == "nenotechnology" or m.is_default:
-                    active_membership, default_org = m, o
-                    break
-            if not default_org and user_memberships:
-                active_membership, default_org = user_memberships[0]
+if "authenticated" not in st.session_state or not st.session_state.authenticated:
+    st.session_state.authenticated = False
 
-            if default_org:
-                st.session_state.authenticated = True
-                st.session_state.user = {
-                    "id": default_user.id,
-                    "email": default_user.email,
-                    "full_name": default_user.full_name,
-                    "platform_role": default_user.platform_role,
-                }
-                if "active_sender_email" not in st.session_state or not st.session_state.active_sender_email:
-                    st.session_state.active_sender_email = default_user.email
-                st.session_state.current_org = {
-                    "id": default_org.id,
-                    "name": default_org.name,
-                    "slug": default_org.slug,
-                    "role": active_membership.role if active_membership else "organization_owner",
-                    "logo_url": default_org.logo_url,
-                    "brand_name": default_org.brand_name or default_org.name,
-                    "settings": default_org.settings or {},
-                }
-                st.session_state.current_org_id = default_org.id
-                st.session_state.user_organizations = [
-                    {
-                        "id": o.id,
-                        "name": o.name,
-                        "slug": o.slug,
-                        "role": m.role,
-                        "is_default": bool(m.is_default),
-                    }
-                    for m, o in user_memberships
-                ]
-            else:
-                st.session_state.authenticated = False
-        else:
-            st.session_state.authenticated = False
-    except Exception:
-        st.session_state.authenticated = False
-    finally:
-        db_init_session.close()
+    # Try restoring session from cookie
+    session_token = st.context.cookies.get("session_token")
+    if session_token:
+        # Fast path: instant local token decode (zero network lag)
+        try:
+            from Backend.auth_service import decode_access_token
+            payload = decode_access_token(session_token)
+            if payload:
+                user_id = payload.get("sub")
+                org_id = payload.get("org_id")
+                db_auth = SessionLocal()
+                try:
+                    user_obj = db_auth.query(User).filter(User.id == user_id).first()
+                    if user_obj:
+                        memberships = (
+                            db_auth.query(OrganizationMember, Organization)
+                            .join(Organization, OrganizationMember.organization_id == Organization.id)
+                            .filter(OrganizationMember.user_id == user_obj.id, Organization.status == "active")
+                            .all()
+                        )
+                        org_obj = None
+                        active_role = payload.get("role", "regular_user")
+                        for m, o in memberships:
+                            if o.id == org_id:
+                                org_obj = o
+                                active_role = m.role
+                                break
+                        if not org_obj and memberships:
+                            active_m, org_obj = memberships[0]
+                            org_id = org_obj.id
+                            active_role = active_m.role
+
+                        if org_obj:
+                            st.session_state.authenticated = True
+                            st.session_state.user = {
+                                "id": user_obj.id,
+                                "email": user_obj.email,
+                                "full_name": user_obj.full_name,
+                                "platform_role": user_obj.platform_role,
+                            }
+                            st.session_state.current_org = {
+                                "id": org_obj.id,
+                                "name": org_obj.name,
+                                "slug": org_obj.slug,
+                                "role": active_role,
+                                "logo_url": org_obj.logo_url,
+                                "brand_name": org_obj.brand_name or org_obj.name,
+                                "settings": org_obj.settings or {},
+                            }
+                            st.session_state.current_org_id = org_id
+                            st.session_state.user_organizations = [
+                                {
+                                    "id": o.id,
+                                    "name": o.name,
+                                    "slug": o.slug,
+                                    "role": m.role,
+                                    "is_default": bool(m.is_default),
+                                }
+                                for m, o in memberships
+                            ]
+                            st.session_state.access_token = session_token
+                            st.session_state.active_sender_email = user_obj.email
+                finally:
+                    db_auth.close()
+        except Exception:
+            pass
+
+        # Network fallback if local decode didn't succeed
+        if not st.session_state.get("authenticated"):
+            import requests
+            try:
+                resp = requests.get(
+                    "http://localhost:8000/api/auth/me",
+                    headers={"Authorization": f"Bearer {session_token}"},
+                    timeout=2,
+                )
+                if resp.status_code == 200:
+                    res = resp.json()["data"]
+                    st.session_state.authenticated = True
+                    st.session_state.user = res["user"]
+                    st.session_state.current_org = res.get("organization") or res.get("active_organization", {})
+                    st.session_state.current_org_id = st.session_state.current_org.get("id")
+                    st.session_state.user_organizations = res.get("organizations", [])
+                    st.session_state.access_token = session_token
+                    st.session_state.active_sender_email = res["user"]["email"]
+            except Exception:
+                pass
 
 if not st.session_state.get("authenticated"):
     render_auth_page()
+    st.stop()
+
+if not st.session_state.get("onboarding_checked"):
+    st.session_state.onboarding_checked = True
+    st.session_state.show_onboarding = False
+
+if st.session_state.get("show_onboarding", False):
+    st.markdown("## Welcome to AINeotechnology!")
+    st.markdown("Before you start sending outreach, let's configure your email channel.")
+    render_email_channels_chooser(st.session_state.current_org_id, context="onboarding")
+    if st.button("Continue to Dashboard", key="btn_skip_onboarding"):
+        st.session_state.show_onboarding = False
+        st.rerun()
     st.stop()
 
 
@@ -297,6 +324,23 @@ def get_active_outreach_sender() -> str:
     sender = org_sender or user_email or os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
     sync_sender_env(sender)
     return sender
+
+
+def render_sender_selector(campaign_name: str = "unknown") -> str:
+    """Renders active outbound mailbox indicator / selector for outreach dialogs and returns active sender."""
+    active_blast_sender = get_active_outreach_sender()
+    curr_org = st.session_state.get("current_org", {})
+    org_name = curr_org.get("name", "Organization") if isinstance(curr_org, dict) else "Organization"
+    st.markdown(
+        f"""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #334155;">
+            ✉️ <strong>Campaign Outbound Mailbox:</strong> <code style="color: #2563EB; font-weight: 600;">{active_blast_sender}</code> ({org_name})
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return active_blast_sender
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -377,63 +421,66 @@ def get_cached_excel_df(file_path: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def load_campaign_logs(organization_id: Optional[str] = None):
+def load_campaign_logs(organization_id: Optional[str] = None) -> pd.DataFrame:
     db = SessionLocal()
     try:
         q = db.query(CampaignLog)
         if organization_id:
             q = q.filter(or_(CampaignLog.organization_id == organization_id, CampaignLog.organization_id.is_(None)))
         rows = q.order_by(CampaignLog.created_at.desc()).all()
+        if not rows:
+            return pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
+        data = [
+            {
+                "id": r.id,
+                "campaign": r.campaign_name,
+                "lead_id": r.lead_id,
+                "email": r.email,
+                "name": r.name,
+                "company": r.company,
+                "phone": getattr(r, "phone", "") or "",
+                "status": r.status or "pending",
+                "subject": r.subject or "",
+                "body": r.body or "",
+                "email_sent_at": r.email_sent_at,
+                "send_error": r.send_error or "",
+                "opened": bool(getattr(r, "opened", False)),
+                "open_count": getattr(r, "open_count", 0) or 0,
+                "first_open_at": getattr(r, "first_open_at", None),
+                "last_open_at": getattr(r, "last_open_at", None),
+                "clicked_link": bool(getattr(r, "clicked_link", False)),
+                "click_count": getattr(r, "click_count", 0) or 0,
+                "first_click_at": getattr(r, "first_click_at", None),
+                "last_click_at": getattr(r, "last_click_at", None),
+                "clicked_urls": getattr(r, "clicked_urls", "") or "",
+                "unsubscribed": bool(getattr(r, "unsubscribed", False)),
+                "unsubscribed_at": getattr(r, "unsubscribed_at", None),
+                "bounced": bool(getattr(r, "bounced", False)),
+                "bounce_reason": getattr(r, "bounce_reason", "") or "",
+                "engagement_score": getattr(r, "engagement_score", 0.0) or 0.0,
+                "form_filled_at": r.form_filled_at,
+                "submitted_availability": r.submitted_availability or "",
+                "note": r.note or "",
+                "reply_body": r.reply_body or "",
+                "reply_intent": r.reply_intent or "",
+                "reply_received_at": r.reply_received_at,
+                "ai_reply_sent": r.ai_reply_sent or "",
+                "ai_reply_sent_at": r.ai_reply_sent_at,
+                "proposed_slot": r.proposed_slot or "",
+                "confirmed_slot": r.confirmed_slot or "",
+                "meet_link": r.meet_link or "",
+                "booking_status": r.booking_status or "",
+                "token": r.token or "",
+                "tracking_link": r.tracking_link or "",
+                "template_id": getattr(r, "template_id", "") or "",
+                "template_name": getattr(r, "template_name", "") or "",
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ]
+        return pd.DataFrame(data, columns=CAMPAIGN_LOG_COLUMNS)
     finally:
         db.close()
-    return [
-        {
-            "id": r.id,
-            "campaign": r.campaign_name,
-            "lead_id": r.lead_id,
-            "email": r.email,
-            "name": r.name,
-            "company": r.company,
-            "phone": getattr(r, "phone", "") or "",
-            "status": r.status or "pending",
-            "subject": r.subject or "",
-            "body": r.body or "",
-            "email_sent_at": r.email_sent_at,
-            "send_error": r.send_error or "",
-            "opened": bool(getattr(r, "opened", False)),
-            "open_count": getattr(r, "open_count", 0) or 0,
-            "first_open_at": getattr(r, "first_open_at", None),
-            "last_open_at": getattr(r, "last_open_at", None),
-            "clicked_link": bool(getattr(r, "clicked_link", False)),
-            "click_count": getattr(r, "click_count", 0) or 0,
-            "first_click_at": getattr(r, "first_click_at", None),
-            "last_click_at": getattr(r, "last_click_at", None),
-            "clicked_urls": getattr(r, "clicked_urls", "") or "",
-            "unsubscribed": bool(getattr(r, "unsubscribed", False)),
-            "unsubscribed_at": getattr(r, "unsubscribed_at", None),
-            "bounced": bool(getattr(r, "bounced", False)),
-            "bounce_reason": getattr(r, "bounce_reason", "") or "",
-            "engagement_score": getattr(r, "engagement_score", 0.0) or 0.0,
-            "form_filled_at": r.form_filled_at,
-            "submitted_availability": r.submitted_availability or "",
-            "note": r.note or "",
-            "reply_body": r.reply_body or "",
-            "reply_intent": r.reply_intent or "",
-            "reply_received_at": r.reply_received_at,
-            "ai_reply_sent": r.ai_reply_sent or "",
-            "ai_reply_sent_at": r.ai_reply_sent_at,
-            "proposed_slot": r.proposed_slot or "",
-            "confirmed_slot": r.confirmed_slot or "",
-            "meet_link": r.meet_link or "",
-            "booking_status": r.booking_status or "",
-            "token": r.token or "",
-            "tracking_link": r.tracking_link or "",
-            "template_id": getattr(r, "template_id", "") or "",
-            "template_name": getattr(r, "template_name", "") or "",
-            "created_at": r.created_at,
-        }
-        for r in rows
-    ]
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -601,6 +648,25 @@ with st.sidebar:
                     del st.query_params["tab"]
                 if "feature" in st.query_params:
                     del st.query_params["feature"]
+            st.rerun()
+
+    st.markdown("<hr style='border: none; border-top: 1px solid #E2E8F0; margin: 12px 0 10px 0;'>", unsafe_allow_html=True)
+    st.markdown("""<div style='font-family: "JetBrains Mono", monospace; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 8px 6px;'>Workspace Management</div>""", unsafe_allow_html=True)
+
+    for key, nav in WORKSPACE_NAV_ITEMS.items():
+        btn_type = "primary" if st.session_state.active_page == key else "secondary"
+        if st.button(
+            f"{nav['icon']}  {nav['label']}",
+            key=f"nav_{key}",
+            type=btn_type,
+            use_container_width=True,
+        ):
+            st.session_state.active_page = key
+            st.query_params["page"] = key
+            if "tab" in st.query_params:
+                del st.query_params["tab"]
+            if "feature" in st.query_params:
+                del st.query_params["feature"]
             st.rerun()
 
     st.markdown("<hr style='border: none; border-top: 1px solid #E2E8F0; margin: 16px 0 12px 0;'>", unsafe_allow_html=True)
@@ -1733,9 +1799,10 @@ def render_leads(df: pd.DataFrame) -> None:
         ]
 
     # ── Tabs: Unique Leads vs All Logs ──
-    tab_unique, tab_logs = st.tabs([
+    tab_unique, tab_logs, tab_dispatch = st.tabs([
         f"👥 Unique Leads & Templates History ({len(filtered_unique)})",
         f"📨 All Outreach Records ({len(active_df)})",
+        "📮 Dispatch Logs",
     ])
 
     with tab_unique:
@@ -1815,6 +1882,41 @@ def render_leads(df: pd.DataFrame) -> None:
                 "email_sent_at": "Sent At",
             },
         )
+        
+    with tab_dispatch:
+        st.markdown(
+            "<p style='color: #64748B; font-size: 13px; font-weight: 500; margin-bottom: 8px;'>Chronological dispatch logs from <b>send_attempts</b> for this campaign.</p>",
+            unsafe_allow_html=True,
+        )
+        try:
+            from Backend.db import SessionLocal
+            from Backend.channels_models import SendAttempt
+            db_dispatch = SessionLocal()
+            try:
+                # We need the current campaign string... It's active_campaign
+                campaign_str = str(active_campaign) if active_campaign else "unknown"
+                attempts = db_dispatch.query(SendAttempt).filter(
+                    SendAttempt.organization_id == st.session_state.current_org_id,
+                    SendAttempt.campaign_name == campaign_str
+                ).order_by(SendAttempt.created_at.desc()).limit(500).all()
+                
+                if attempts:
+                    attempts_data = [{
+                        "time": a.created_at,
+                        "lead_id": a.lead_id,
+                        "status": "🟢 " + a.status if a.status == "sent" else ("🟡 " + a.status if a.status == "skipped" else "🔴 " + a.status),
+                        "channel": a.channel,
+                        "from_address": a.from_address,
+                        "reason": a.reason or ""
+                    } for a in attempts]
+                    st.dataframe(attempts_data, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No dispatch logs found for this campaign.")
+            finally:
+                db_dispatch.close()
+        except Exception as e:
+            st.error(f"Failed to load dispatch logs: {e}")
+
 
 
 LOGO_URL = "https://res.cloudinary.com/dqreqsjas/image/upload/v1790076736/logo-light.png"
@@ -1980,17 +2082,9 @@ def confirm_approve_all_dialog(drafts_data, template_id: Optional[int] = None):
         help="Check this if you are re-sending or testing leads that were already marked sent in previous campaigns.",
     )
 
-    active_blast_sender = get_active_outreach_sender()
-    org_name = st.session_state.get("current_org", {}).get("name", "Organization")
+    campaign_name_for_dialog = drafts_data[0].get("campaign_name", "unknown") if drafts_data else "unknown"
+    active_blast_sender = render_sender_selector(campaign_name_for_dialog)
 
-    st.markdown(
-        f"""
-        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #334155;">
-            ✉️ <strong>Campaign Outbound Mailbox:</strong> <code style="color: #2563EB; font-weight: 600;">{active_blast_sender}</code> ({org_name})
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     with st.expander(f"📋 Review Recipients & Active Subjects ({count})", expanded=False):
         for d in drafts_data:
@@ -2152,8 +2246,8 @@ def render_email_review(df: pd.DataFrame) -> None:
             if db_pending:
                 load_campaign_logs.clear()
                 st.cache_data.clear()
-                fresh_rows = load_campaign_logs()
-                df = pd.DataFrame(fresh_rows, columns=CAMPAIGN_LOG_COLUMNS)
+                fresh_rows = load_campaign_logs(st.session_state.get("current_org_id"))
+                df = fresh_rows if isinstance(fresh_rows, pd.DataFrame) else pd.DataFrame(fresh_rows, columns=CAMPAIGN_LOG_COLUMNS)
                 drafts = df[df["status"].astype(str).str.lower().isin(["drafted", "pending", "draft"])].copy()
         finally:
             db_fb.close()
@@ -3629,18 +3723,17 @@ page = st.session_state.active_page
 
 def get_campaign_logs_df() -> pd.DataFrame:
     org_id = st.session_state.get("current_org_id")
-    rows = load_campaign_logs(org_id)
-    return pd.DataFrame(rows, columns=CAMPAIGN_LOG_COLUMNS) if rows else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
+    res = load_campaign_logs(org_id)
+    if isinstance(res, pd.DataFrame):
+        return res
+    return pd.DataFrame(res, columns=CAMPAIGN_LOG_COLUMNS) if res else pd.DataFrame(columns=CAMPAIGN_LOG_COLUMNS)
 
 def render_main_view(page_name: str):
     org_id = st.session_state.get("current_org_id")
     if page_name == "overview":
         render_overview(get_campaign_logs_df())
     elif page_name == "master_db":
-        try:
-            render_master_db(get_campaign_logs_df(), organization_id=org_id)
-        except TypeError:
-            render_master_db(get_campaign_logs_df())
+        render_master_db(get_campaign_logs_df(), organization_id=org_id)
     elif page_name == "analytics":
         render_analytics(get_campaign_logs_df())
     elif page_name == "replies":
@@ -3654,10 +3747,7 @@ def render_main_view(page_name: str):
     elif page_name == "upload":
         render_upload()
     elif page_name == "knowledge_base":
-        try:
-            render_knowledge_base_hub(organization_id=org_id)
-        except TypeError:
-            render_knowledge_base_hub()
+        render_knowledge_base_hub(organization_id=org_id)
     elif page_name == "org_settings":
         render_org_settings(organization_id=org_id)
     elif page_name == "team":

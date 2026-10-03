@@ -77,8 +77,17 @@ def _extract_domain(email_or_domain: str) -> str:
     return value
 
 
+def is_mock_provider() -> bool:
+    """Return True if running with simulated/mock SES provider."""
+    from Email.providers.ses_provider import has_aws_credentials
+    return os.getenv("MOCK_SES", "").lower() in ("true", "1") or not has_aws_credentials()
+
+
 def _get_provider():
     """Return the configured SendingProvider instance."""
+    if is_mock_provider():
+        from Email.providers.mock_provider import MockSESProvider
+        return MockSESProvider()
     from Email.providers.ses_provider import SESProvider
     return SESProvider()
 
@@ -173,6 +182,7 @@ def register_domain(
         claim_expires_at=datetime.now(timezone.utc) + timedelta(days=_PENDING_EXPIRY_DAYS),
     )
     db.add(sending_domain)
+    db.flush()
 
     # Store DKIM records
     for dkim in result.dkim_records:

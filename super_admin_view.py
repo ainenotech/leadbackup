@@ -99,7 +99,7 @@ def render_super_admin_portal():
                 badge_text = "● Active" if is_active else "● Suspended"
 
                 with st.container(border=True):
-                    col_info, col_status, col_stats, col_action = st.columns([3.8, 1.4, 3.4, 1.4], vertical_alignment="center")
+                    col_info, col_status, col_stats, col_enter, col_action = st.columns([3.4, 1.2, 2.8, 1.3, 1.3], vertical_alignment="center")
                     with col_info:
                         root_tag = ""
                         if o.get("is_platform_org"):
@@ -128,6 +128,23 @@ def render_super_admin_portal():
                             f'</div>',
                             unsafe_allow_html=True,
                         )
+                    with col_enter:
+                        is_current_org = (o["id"] == st.session_state.get("current_org_id"))
+                        if is_current_org:
+                            st.markdown('<div style="text-align: center; font-size: 12px; color: #16A34A; font-weight: 700; padding: 6px 0;">Active</div>', unsafe_allow_html=True)
+                        else:
+                            if st.button("Enter 🏢", key=f"sa_btn_enter_{o['id']}", help="Switch workspace to this organization", use_container_width=True):
+                                from Backend.auth_service import switch_organization
+                                try:
+                                    res = switch_organization(db, user["id"], o["id"])
+                                    st.session_state.current_org = res["organization"]
+                                    st.session_state.current_org_id = res["organization"]["id"]
+                                    st.session_state.access_token = res["access_token"]
+                                    st.session_state.active_page = "org_settings"
+                                    st.toast(f"Switched into {res['organization']['name']}!", icon="🏢")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(str(exc))
                     with col_action:
                         if not o.get("is_platform_org"):
                             new_target_status = "suspended" if is_active else "active"

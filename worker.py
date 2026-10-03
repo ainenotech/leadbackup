@@ -10,6 +10,9 @@ from Backend.db import SessionLocal, init_db
 from Email import get_mailer, get_mailer_for_org
 from leads import load_stale_leads
 from utils.token import generate_token
+import itertools
+from Backend.channels_models import OrgMailConnection
+from Backend.domain_models import OrgSendingDomain
 
 init_db()
 
@@ -26,6 +29,34 @@ def run_campaign():
     print(f"Found {len(leads)} stale leads")
 
     db = SessionLocal()
+    
+    org_id = os.getenv("ORG_ID")
+    if not org_id:
+        print("WARNING: ORG_ID not set. Autonomous multi-tenant dispatch will fail.")
+        
+    active_senders = []
+    if org_id:
+        conns = db.query(OrgMailConnection).filter(
+            OrgMailConnection.organization_id == org_id,
+            OrgMailConnection.status == "active"
+        ).all()
+        for c in conns:
+            active_senders.append(c.email)
+            
+        doms = db.query(OrgSendingDomain).filter(
+            OrgSendingDomain.organization_id == org_id,
+            OrgSendingDomain.status.in_(["ready", "limited"])
+        ).all()
+        for d in doms:
+            active_senders.append(f"{d.from_local_part or 'hello'}@{d.domain}")
+            
+    if active_senders:
+        print(f"Found {len(active_senders)} active sending channels/domains for round-robin.")
+    else:
+        print("WARNING: No active senders found for this org. Will fallback to default.")
+        
+    sender_cycle = itertools.cycle(active_senders) if active_senders else None
+
     sent_count = 0
     drafted_count = 0
     skipped_count = 0
@@ -67,6 +98,7 @@ def run_campaign():
             subject=result["subject"],
             body=result["body"],
             status=initial_status,
+            organization_id=org_id,
         )
 
         if require_approval:
@@ -74,22 +106,38 @@ def run_campaign():
             print(f"Drafted email for {lead.email} (Awaiting approval in dashboard)")
         else:
             try:
-                # Resolve mailer: use SES if org has verified domain, else OutlookMailer
-                org_id = getattr(entry, 'organization_id', None) if entry else None
-                active_mailer = get_mailer_for_org(org_id, None) if org_id else default_mailer
-                active_mailer.send_email(to_email=lead.email, subject=result["subject"], body=result["body"], token=token)
-                mark_sent(db, entry.id)
-                sent_count += 1
-                try:
-                    from leads import update_lead_sheet_status
-                    from datetime import datetime, timezone
-                    update_lead_sheet_status(
-                        email=lead.email,
-                        status="sent",
-                        sent_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                entry_org_id = getattr(entry, 'organization_id', None) if entry else None
+                from Email import dispatch_outreach_email
+                
+                if entry_org_id:
+                    sender_to_use = next(sender_cycle) if sender_cycle else None
+                    success = dispatch_outreach_email(
+                        db=db,
+                        organization_id=entry_org_id,
+                        campaign_name=campaign_name,
+                        lead_id=lead.lead_id,
+                        to_email=lead.email,
+                        subject=result["subject"],
+                        body_html=result["body"],
+                        requested_sender=sender_to_use
                     )
-                except Exception:
-                    pass
+                else:
+                    success = False
+                    raise Exception("No organization_id available for autonomous send")
+                
+                if success:
+                    mark_sent(db, entry.id)
+                    sent_count += 1
+                    try:
+                        from leads import update_lead_sheet_status
+                        from datetime import datetime, timezone
+                        update_lead_sheet_status(
+                            email=lead.email,
+                            status="sent",
+                            sent_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        )
+                    except Exception:
+                        pass
                 print(f"Sent email to {lead.email}")
             except Exception as e:
                 mark_failed(db, entry.id, str(e))

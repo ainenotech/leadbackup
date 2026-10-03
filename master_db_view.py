@@ -549,12 +549,12 @@ def _render_tab_overview(organization_id: Optional[str] = None, *args, **kwargs)
     is_dark = is_dark_mode()
     metrics = fetch_cached_dashboard_metrics(organization_id=organization_id)
 
-    total_leads = metrics.get("total_leads", 0)
-    new_this_week = metrics.get("new_this_week", 0)
-    duplicate_records = metrics.get("duplicate_records", 0)
-    total_emails_sent = metrics.get("total_emails_sent", 0)
-    total_replies = metrics.get("total_replies", 0)
-    total_booked = metrics.get("total_booked", 0)
+    total_leads = metrics.get("total_leads") or 0
+    new_this_week = metrics.get("new_this_week") or 0
+    duplicate_records = metrics.get("duplicate_records") or 0
+    total_emails_sent = metrics.get("total_emails_sent") or 0
+    total_replies = metrics.get("total_replies") or 0
+    total_booked = metrics.get("total_booked") or 0
 
     # ── Executive 6-Card KPI Grid (matches analytics_view.py) ──
     reply_rate = round((total_replies / max(total_emails_sent, 1)) * 100, 1)
@@ -1776,12 +1776,11 @@ def _render_tab_chunks(organization_id: Optional[str] = None, *args, **kwargs):
         chunk = chunks[sel_chunk_idx]
         chunk_id = chunk["id"]
         status_badge = render_status_badge(chunk["processing_status"])
-
         c_info, c_action = st.columns([1.2, 1.2])
 
         with c_info:
-            sent = chunk.get("sent_count", 0)
-            total = max(chunk.get("eligible_leads", 1), 1)
+            sent = chunk.get("sent_count") or 0
+            total = max(chunk.get("eligible_leads") or 1, 1)
             pct = min(100, int((sent / total) * 100))
 
             card_html = f"""
@@ -1954,11 +1953,11 @@ def _render_tab_templates(organization_id: Optional[str] = None, *args, **kwargs
             if tname not in tpl_map:
                 tpl_map[tname] = {"chunks": 0, "leads": 0, "sent": 0, "replies": 0, "opens": 0, "booked": 0}
             tpl_map[tname]["chunks"] += 1
-            tpl_map[tname]["leads"] += c.get("total_leads", 0)
-            tpl_map[tname]["sent"] += c.get("sent_count", 0)
-            tpl_map[tname]["replies"] += c.get("reply_count", 0)
-            tpl_map[tname]["opens"] += c.get("open_count", 0)
-            tpl_map[tname]["booked"] += c.get("booking_count", 0)
+            tpl_map[tname]["leads"] += (c.get("total_leads") or 0)
+            tpl_map[tname]["sent"] += (c.get("sent_count") or 0)
+            tpl_map[tname]["replies"] += (c.get("reply_count") or 0)
+            tpl_map[tname]["opens"] += (c.get("open_count") or 0)
+            tpl_map[tname]["booked"] += (c.get("booking_count") or 0)
 
         matrix_rows = []
         for tname, stats in tpl_map.items():

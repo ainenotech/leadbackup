@@ -29,13 +29,37 @@ def _get_region() -> str:
     return os.getenv("AWS_SES_REGION", _DEFAULT_REGION)
 
 
+def has_aws_credentials() -> bool:
+    """Check if AWS credentials are available in environment or boto3 chain."""
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+        return True
+    try:
+        import boto3
+        session = boto3.Session(region_name=_get_region())
+        credentials = session.get_credentials()
+        return credentials is not None and credentials.access_key is not None
+    except Exception:
+        return False
+
+
 def _get_client():
     """Lazy-import boto3 and create a SESv2 client.
-    Credentials come from the standard AWS chain only.
+    Supports AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from .env or standard AWS chain.
     """
     import boto3  # noqa: local import — boto3 is optional until actually used
 
-    return boto3.client("sesv2", region_name=_get_region())
+    region = _get_region()
+    kwargs = {"region_name": region}
+    aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if aws_access_key and aws_secret_key:
+        kwargs["aws_access_key_id"] = aws_access_key
+        kwargs["aws_secret_access_key"] = aws_secret_key
+    aws_session_token = os.getenv("AWS_SESSION_TOKEN")
+    if aws_session_token:
+        kwargs["aws_session_token"] = aws_session_token
+
+    return boto3.client("sesv2", **kwargs)
 
 
 class SESProvider(SendingProvider):

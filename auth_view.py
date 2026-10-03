@@ -1,9 +1,12 @@
 """SaaS Authentication & Tenant Selection View for Streamlit.
 
-Provides executive Sign In, Sign Up / Onboarding, and Organization Switcher.
+Provides executive Sign In, Sign Up / Organization Registration, and Organization Switcher.
+Engineered specifically for pristine light-theme visibility, high contrast, and responsive centered card design.
 """
 
+import os
 import streamlit as st
+import requests
 from Backend.db import SessionLocal
 from Backend.auth_service import (
     authenticate_user,
@@ -15,202 +18,381 @@ from Backend.auth_models import Organization, User
 
 
 def render_auth_page():
-    """Renders the executive login/signup screen if user is not authenticated."""
+    """Renders the executive, high-contrast, centered login & register card in pristine light theme."""
+    # ── 1. Handle OAuth SSO Ticket Exchange (if returning from Microsoft / Google) ──
+    ticket = st.query_params.get("login_ticket")
+    if ticket:
+        if "login_ticket" in st.query_params:
+            del st.query_params["login_ticket"]
+        with st.spinner("Completing secure sign in..."):
+            try:
+                resp = requests.post(
+                    "http://localhost:8000/api/auth/oauth/exchange-ticket",
+                    json={"login_ticket": ticket},
+                    timeout=5,
+                )
+                if resp.status_code == 200:
+                    res = resp.json()["data"]
+                    st.session_state.authenticated = True
+                    st.session_state.user = res["user"]
+                    st.session_state.current_org = res["organization"]
+                    st.session_state.current_org_id = res["organization"]["id"]
+                    st.session_state.user_organizations = res.get("organizations", [res["organization"]])
+                    st.session_state.access_token = res["access_token"]
+                    st.session_state.active_sender_email = res["user"]["email"]
+                    st.session_state.active_workspace_sender = res["user"]["email"]
+                    st.session_state.show_onboarding = False
+                    st.toast(f"Welcome back, {res['user'].get('full_name')}!", icon="👋")
+
+                    import streamlit.components.v1 as components
+                    components.html(
+                        f"<script>document.cookie = 'session_token={res['access_token']}; path=/; max-age=2592000'; window.parent.location.href='/';</script>",
+                        height=0,
+                    )
+                    st.rerun()
+                else:
+                    st.error(f"Sign in failed: {resp.json().get('detail', 'Unknown error')}")
+            except Exception as e:
+                st.error(f"Failed to communicate with authentication server: {str(e)}")
+
+    # ── 2. Master Executive Light-Theme CSS ──
     st.markdown(
         """
         <style>
-        .auth-container {
-            max-width: 480px;
-            margin: 40px auto 20px auto;
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            border-radius: 16px;
-            padding: 36px 32px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+        /* Hide sidebar and Streamlit headers during login */
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stSidebarNav"] { display: none !important; }
+        [data-testid="stExpandSidebarButton"] { display: none !important; }
+        #MainMenu { visibility: hidden !important; }
+        header { visibility: hidden !important; }
+        footer { visibility: hidden !important; }
+
+        /* Canvas Backdrop with subtle ambient depth */
+        .stApp {
+            background: radial-gradient(at 0% 0%, #EEF2FF 0px, transparent 50%),
+                        radial-gradient(at 100% 0%, #F5F3FF 0px, transparent 50%),
+                        radial-gradient(at 50% 100%, #E2E8F0 0px, transparent 60%),
+                        #F8FAFC !important;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
         }
-        .auth-logo-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: #EEF2FF;
-            color: #4F46E5;
-            padding: 6px 14px;
-            border-radius: 9999px;
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 16px;
+
+        /* Center Card Box Constraints */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            background: #FFFFFF !important;
+            border: 1.5px solid #E2E8F0 !important;
+            border-radius: 22px !important;
+            padding: 34px 34px 30px 34px !important;
+            box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.08),
+                        0 1px 3px 0 rgba(0, 0, 0, 0.04),
+                        0 0 0 1px rgba(226, 232, 240, 0.8) !important;
+            max-width: 470px !important;
+            margin: 20px auto 40px auto !important;
         }
-        .auth-title {
-            font-size: 26px;
-            font-weight: 800;
-            color: #0F172A;
-            letter-spacing: -0.02em;
-            margin-bottom: 6px;
+
+        /* Segmented / Pill-Style Tabs */
+        div[data-testid="stTabs"] {
+            margin-bottom: 16px !important;
         }
-        .auth-subtitle {
-            font-size: 14px;
-            color: #64748B;
-            margin-bottom: 24px;
-            line-height: 1.5;
+
+        div[data-testid="stTabs"] [role="tablist"] {
+            background: #F1F5F9 !important;
+            padding: 4px !important;
+            border-radius: 12px !important;
+            border: 1px solid #E2E8F0 !important;
+            gap: 4px !important;
+            justify-content: center !important;
+        }
+
+        div[data-testid="stTabs"] button[role="tab"] {
+            flex: 1 !important;
+            text-align: center !important;
+            border-radius: 9px !important;
+            font-family: 'Inter', sans-serif !important;
+            font-size: 13.5px !important;
+            font-weight: 600 !important;
+            color: #64748B !important;
+            padding: 8px 16px !important;
+            border: none !important;
+            background: transparent !important;
+            transition: all 0.15s ease !important;
+        }
+
+        div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+            background: #FFFFFF !important;
+            color: #0F172A !important;
+            font-weight: 700 !important;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+        }
+
+        div[data-testid="stTabs"] button[role="tab"]:hover {
+            color: #0F172A !important;
+        }
+
+        /* High-Definition Input Labels */
+        div[data-testid="stTextInput"] label p {
+            font-family: 'Inter', sans-serif !important;
+            font-size: 13.5px !important;
+            font-weight: 700 !important;
+            color: #0F172A !important;
+            margin-bottom: 5px !important;
+            letter-spacing: -0.01em !important;
+        }
+
+        /* High-Visibility Crisp Inputs */
+        div[data-testid="stTextInput"] input {
+            background-color: #FFFFFF !important;
+            border: 1.5px solid #CBD5E1 !important;
+            border-radius: 10px !important;
+            color: #0F172A !important;
+            font-size: 14.5px !important;
+            font-weight: 500 !important;
+            padding: 11px 14px !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        div[data-testid="stTextInput"] input:focus {
+            background-color: #FFFFFF !important;
+            border-color: #2563EB !important;
+            box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.16) !important;
+            outline: none !important;
+        }
+
+        div[data-testid="stTextInput"] input::placeholder {
+            color: #94A3B8 !important;
+            font-size: 13.5px !important;
+        }
+
+        /* Primary High-Impact CTA Button */
+        button[kind="primary"] {
+            background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+            color: #FFFFFF !important;
+            font-family: 'Inter', sans-serif !important;
+            font-size: 14.5px !important;
+            font-weight: 700 !important;
+            padding: 12px 20px !important;
+            border-radius: 10px !important;
+            border: none !important;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28) !important;
+            letter-spacing: -0.01em !important;
+            margin-top: 6px !important;
+            transition: all 0.2s ease !important;
+        }
+
+        button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%) !important;
+            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.38) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* SSO Links */
+        .stLinkButton > a {
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            background: #FFFFFF !important;
+            color: #1E293B !important;
+            border: 1.5px solid #E2E8F0 !important;
+            border-radius: 10px !important;
+            font-family: 'Inter', sans-serif !important;
+            font-size: 12.5px !important;
+            font-weight: 600 !important;
+            padding: 9px 12px !important;
+            text-decoration: none !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+            transition: all 0.2s ease !important;
+        }
+
+        .stLinkButton > a:hover {
+            background: #F8FAFC !important;
+            border-color: #CBD5E1 !important;
+            color: #0F172A !important;
+            transform: translateY(-1px) !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown(
-            """
-            <div style="text-align: center; margin-top: 20px;">
-                <div class="auth-logo-badge">⚡ Universal Multi-Tenant SaaS</div>
-                <div class="auth-title">Lead Intelligence & Outreach</div>
-                <div class="auth-subtitle">Sign in to your organization workspace or create a new tenant</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    # ── 3. Centered Layout Column ──
+    col_l, col_center, col_r = st.columns([1, 1.4, 1])
 
-        tab_login, tab_signup = st.tabs(["🔑 Sign In", "🚀 Register Organization"])
+    with col_center:
+        with st.container(border=True):
+            # Brand Header inside Center Box
+            st.markdown(
+                """
+                <div style="text-align: center; margin-bottom: 4px;">
+                    <div style="display: inline-flex; align-items: center; gap: 6px; background: #EFF6FF; border: 1px solid #BFDBFE; color: #1D4ED8; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 4px 12px; border-radius: 9999px; margin-bottom: 12px;">
+                        ⚡ AINeotechnology Enterprise
+                    </div>
+                    <div style="font-size: 26px; font-weight: 800; color: #0F172A; letter-spacing: -0.03em; margin-bottom: 4px; line-height: 1.25;">
+                        Welcome to <span style="background: linear-gradient(135deg, #2563EB 0%, #7C3AED 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">AINeo</span>
+                    </div>
+                    <div style="font-size: 13.5px; color: #64748B; margin-bottom: 18px; line-height: 1.5;">
+                        Autonomous lead intelligence and high-deliverability outreach suite.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        with tab_login:
-            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-            login_email = st.text_input("Work Email", value="mohit@nenotechnology.us", key="auth_login_email")
-            login_pwd = st.text_input("Password", type="password", value="Admin@12345", key="auth_login_pwd", help="Default initial admin password or your custom password.")
+            # Navigation Tabs: Sign In vs Register
+            tab_signin, tab_register = st.tabs(["🔑 Sign In", "🚀 Register Workspace"])
 
-            if st.button("Sign In to Workspace", type="primary", use_container_width=True, key="btn_do_login"):
-                if not login_email or not login_pwd:
-                    st.error("Please enter both email and password.")
-                else:
-                    db = SessionLocal()
-                    try:
-                        res = authenticate_user(db, login_email, login_pwd)
-                        st.session_state.authenticated = True
-                        st.session_state.user = res["user"]
-                        st.session_state.current_org = res["organization"]
-                        st.session_state.current_org_id = res["organization"]["id"]
-                        st.session_state.user_organizations = res["organizations"]
-                        st.session_state.access_token = res["access_token"]
-                        st.session_state.active_sender_email = res["user"]["email"]
-                        st.toast(f"Welcome back, {res['user'].get('full_name')}!", icon="👋")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Login failed: {str(e)}")
-                    finally:
-                        db.close()
+            # ─────────────────────────────────────────────────────────────
+            # TAB 1: SIGN IN (Standard Credentials)
+            # ─────────────────────────────────────────────────────────────
+            with tab_signin:
+                st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
 
-            st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-            col_demo1, col_demo2, col_demo3 = st.columns(3)
-            with col_demo1:
-                if st.button("👑 Neno: Mohit Patel", type="secondary", use_container_width=True, key="btn_quick_mohit", help="Sign in as Neno Technology Owner (mohit@nenotechnology.us)"):
-                    db = SessionLocal()
-                    try:
-                        res = authenticate_user(db, "mohit@nenotechnology.us", "Admin@12345")
-                        st.session_state.authenticated = True
-                        st.session_state.user = res["user"]
-                        st.session_state.current_org = res["organization"]
-                        st.session_state.current_org_id = res["organization"]["id"]
-                        st.session_state.user_organizations = res["organizations"]
-                        st.session_state.access_token = res["access_token"]
-                        st.session_state.active_workspace_sender = "mohit@nenotechnology.us"
-                        st.session_state.active_sender_email = "mohit@nenotechnology.us"
-                        st.toast("Authenticated as Mohit Patel (👑 Owner)", icon="🏢")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Quick login failed: {str(e)}")
-                    finally:
-                        db.close()
+                # Organization Context Badge
+                st.markdown(
+                    """
+                    <div style="background: #F8FAFC; border: 1.5px solid #E2E8F0; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 16px;">🏢</span>
+                            <div>
+                                <div style="font-size: 13px; font-weight: 700; color: #0F172A;">Neno Technology</div>
+                                <div style="font-size: 11px; color: #64748B;">Workspace: nenotechnology</div>
+                            </div>
+                        </div>
+                        <span style="background: #EFF6FF; color: #1D4ED8; font-size: 10.5px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1px solid #BFDBFE; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">
+                            👑 Owner Active
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-            with col_demo2:
-                if st.button("🛡️ Neno: Mit Patel", type="secondary", use_container_width=True, key="btn_quick_mitpatel", help="Sign in as Neno Technology Admin (mitpatel@nenotechnology.com)"):
-                    db = SessionLocal()
-                    try:
-                        res = authenticate_user(db, "mitpatel@nenotechnology.com", "Admin@12345")
-                        st.session_state.authenticated = True
-                        st.session_state.user = res["user"]
-                        st.session_state.current_org = res["organization"]
-                        st.session_state.current_org_id = res["organization"]["id"]
-                        st.session_state.user_organizations = res["organizations"]
-                        st.session_state.access_token = res["access_token"]
-                        st.session_state.active_workspace_sender = "mitpatel@nenotechnology.com"
-                        st.session_state.active_sender_email = "mitpatel@nenotechnology.com"
-                        st.toast("Authenticated as Mit Patel (🛡️ Admin)", icon="🛡️")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Quick login failed: {str(e)}")
-                    finally:
-                        db.close()
+                login_email = st.text_input(
+                    "Work Email Address",
+                    value="mohit@nenotechnology.us",
+                    placeholder="name@company.com",
+                    key="auth_signin_email",
+                )
 
-            with col_demo3:
-                if st.button("🤖 Super AI: Mann", type="secondary", use_container_width=True, key="btn_quick_superai", help="Sign in as Super AI Owner (man@nenotechnology.com)"):
-                    db = SessionLocal()
-                    try:
-                        res = authenticate_user(db, "man@nenotechnology.com", "Admin@12345")
-                        st.session_state.authenticated = True
-                        st.session_state.user = res["user"]
-                        st.session_state.current_org = res["organization"]
-                        st.session_state.current_org_id = res["organization"]["id"]
-                        st.session_state.user_organizations = res["organizations"]
-                        st.session_state.access_token = res["access_token"]
-                        st.session_state.active_workspace_sender = "man@nenotechnology.com"
-                        st.session_state.active_sender_email = "man@nenotechnology.com"
-                        st.toast("Authenticated into Super AI (Owner: Mann)", icon="🤖")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Quick login failed: {str(e)}")
-                    finally:
-                        db.close()
+                login_pwd = st.text_input(
+                    "Password",
+                    type="password",
+                    value="Admin@12345",
+                    placeholder="••••••••••••",
+                    key="auth_signin_pwd",
+                    help="Enter your workspace password (Default: Admin@12345)",
+                )
 
-        with tab_signup:
-            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-            new_org_name = st.text_input("Organization / Company Name*", placeholder="e.g. Acme Corporation", key="reg_org_name")
-            new_email = st.text_input("Admin Work Email*", placeholder="admin@acme.com", key="reg_email")
-            new_pwd = st.text_input("Password*", type="password", key="reg_pwd")
-            new_name = st.text_input("Your Full Name", placeholder="Jane Doe", key="reg_name")
-            col_ind, col_sz = st.columns(2)
-            with col_ind:
-                new_industry = st.selectbox("Industry", ["Technology / SaaS", "Marketing & Agency", "Financial Services", "Healthcare", "Consulting", "Real Estate", "Other"], key="reg_industry")
-            with col_sz:
-                new_size = st.selectbox("Company Size", ["1-10", "11-50", "51-200", "201-500", "500+"], key="reg_size")
+                if st.button("Sign In to Workspace  →", type="primary", use_container_width=True, key="btn_signin_submit"):
+                    if not login_email or not login_pwd:
+                        st.error("Please enter both work email and password.")
+                    else:
+                        db = SessionLocal()
+                        try:
+                            res = authenticate_user(db, login_email.strip(), login_pwd)
+                            st.session_state.authenticated = True
+                            st.session_state.user = res["user"]
+                            st.session_state.current_org = res["organization"]
+                            st.session_state.current_org_id = res["organization"]["id"]
+                            st.session_state.user_organizations = res.get("organizations", [res["organization"]])
+                            st.session_state.access_token = res["access_token"]
+                            st.session_state.active_sender_email = res["user"]["email"]
+                            st.session_state.active_workspace_sender = res["user"]["email"]
+                            st.session_state.show_onboarding = False
+                            st.toast(f"Welcome back, {res['user'].get('full_name')}!", icon="👋")
 
-            if st.button("Create Organization Workspace", type="primary", use_container_width=True, key="btn_do_register"):
-                if not new_org_name or not new_email or not new_pwd:
-                    st.error("Please fill in Organization Name, Email, and Password.")
-                elif len(new_pwd) < 6:
-                    st.error("Password must be at least 6 characters.")
-                else:
-                    db = SessionLocal()
-                    try:
-                        res = register_organization_and_user(
-                            db=db,
-                            org_name=new_org_name,
-                            admin_email=new_email,
-                            password=new_pwd,
-                            full_name=new_name,
-                            industry=new_industry,
-                            company_size=new_size,
-                        )
-                        st.session_state.authenticated = True
-                        st.session_state.user = res["user"]
-                        st.session_state.current_org = res["organization"]
-                        st.session_state.current_org_id = res["organization"]["id"]
-                        st.session_state.user_organizations = [
-                            {
-                                "id": res["organization"]["id"],
-                                "name": res["organization"]["name"],
-                                "slug": res["organization"]["slug"],
-                                "role": "organization_owner",
-                                "is_default": True,
-                            }
-                        ]
-                        st.session_state.access_token = res["access_token"]
-                        st.balloons()
-                        st.toast(f"Workspace '{new_org_name}' created successfully!", icon="🎉")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Registration error: {str(e)}")
-                    finally:
-                        db.close()
+                            import streamlit.components.v1 as components
+                            components.html(
+                                f"<script>document.cookie = 'session_token={res['access_token']}; path=/; max-age=2592000'; window.parent.location.href='/';</script>",
+                                height=0,
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Sign in failed: {str(e)}")
+                        finally:
+                            db.close()
+
+                # SSO Divider & Buttons
+                st.markdown(
+                    """
+                    <div style="display: flex; align-items: center; text-align: center; margin: 20px 0 12px 0; color: #94A3B8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">
+                        <span style="flex: 1; border-bottom: 1px solid #E2E8F0;"></span>
+                        <span style="padding: 0 10px;">or continue with SSO</span>
+                        <span style="flex: 1; border-bottom: 1px solid #E2E8F0;"></span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                col_sso1, col_sso2 = st.columns(2)
+                with col_sso1:
+                    st.link_button("Microsoft 365", "http://localhost:8000/api/auth/oauth/microsoft/login", use_container_width=True)
+                with col_sso2:
+                    st.link_button("Google Workspace", "http://localhost:8000/api/auth/oauth/google/login", use_container_width=True)
+
+            # ─────────────────────────────────────────────────────────────
+            # TAB 2: REGISTER (Create New Workspace)
+            # ─────────────────────────────────────────────────────────────
+            with tab_register:
+                st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+
+                reg_name = st.text_input("Your Full Name *", placeholder="Mohit Patel", key="reg_full_name")
+                reg_email = st.text_input("Work Email Address *", placeholder="mohit@nenotechnology.us", key="reg_email")
+                reg_org_name = st.text_input("Company or Organization Name *", placeholder="Neno Technology", key="reg_org_name")
+
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    reg_pwd = st.text_input("Password *", type="password", placeholder="Min 6 chars", key="reg_pwd")
+                with col_p2:
+                    reg_pwd_confirm = st.text_input("Confirm Password *", type="password", placeholder="Re-enter password", key="reg_pwd_confirm")
+
+                if st.button("Create Account & Launch Workspace  →", type="primary", use_container_width=True, key="btn_register_submit"):
+                    if not reg_name or not reg_email or not reg_org_name or not reg_pwd:
+                        st.error("Please fill in all required fields marked with *.")
+                    elif len(reg_pwd) < 6:
+                        st.error("Password must be at least 6 characters long.")
+                    elif reg_pwd != reg_pwd_confirm:
+                        st.error("Passwords do not match. Please re-check.")
+                    else:
+                        db = SessionLocal()
+                        try:
+                            res = register_organization_and_user(
+                                db=db,
+                                org_name=reg_org_name.strip(),
+                                admin_email=reg_email.strip().lower(),
+                                password=reg_pwd,
+                                full_name=reg_name.strip(),
+                            )
+                            st.session_state.authenticated = True
+                            st.session_state.user = res["user"]
+                            st.session_state.current_org = res["organization"]
+                            st.session_state.current_org_id = res["organization"]["id"]
+                            st.session_state.user_organizations = [res["organization"]]
+                            st.session_state.access_token = res["access_token"]
+                            st.session_state.active_sender_email = res["user"]["email"]
+                            st.session_state.active_workspace_sender = res["user"]["email"]
+                            st.session_state.show_onboarding = False
+
+                            st.toast(f"Workspace '{reg_org_name}' created successfully!", icon="🎉")
+                            import streamlit.components.v1 as components
+                            components.html(
+                                f"<script>document.cookie = 'session_token={res['access_token']}; path=/; max-age=2592000'; window.parent.location.href='/';</script>",
+                                height=0,
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Registration failed: {str(e)}")
+                        finally:
+                            db.close()
+
+            # Enterprise Security Guarantee
+            st.markdown(
+                """
+                <div style="text-align: center; margin-top: 22px; padding-top: 14px; border-top: 1px solid #F1F5F9; font-size: 11.5px; color: #94A3B8; line-height: 1.5;">
+                    🔒 <strong>Enterprise Multi-Tenant Security</strong> · AES-256 Workspace Isolation<br>
+                    Protected by AINeotechnology Autonomous Infrastructure
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -355,7 +537,7 @@ def render_org_switcher():
                 st.session_state.active_workspace_sender = ws_senders[0]["email"]
                 st.session_state.active_sender_email = ws_senders[0]["email"]
 
-        # Workspace Management Actions inside the box (Full-width buttons with complete labels)
+        # Workspace Management Actions inside the box
         active_page = st.session_state.get("active_page", "overview")
 
         is_settings = active_page == "org_settings"
@@ -389,4 +571,3 @@ def render_org_switcher():
             if "feature" in st.query_params:
                 del st.query_params["feature"]
             st.rerun()
-

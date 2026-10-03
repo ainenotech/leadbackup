@@ -246,24 +246,29 @@ def approve_and_send_entry(
     if not sender_to_use:
         sender_to_use = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
 
-    from Email import get_mailer_for_org
+    from Email import dispatch_outreach_email
     org_id = getattr(entry, 'organization_id', None)
-    mailer = get_mailer_for_org(org_id, sender_to_use) if org_id else get_mailer()
-    try:
-        mailer.send_email(
-            to_email=str(entry.email),
-            subject=str(entry.subject or ""),
-            body=str(entry.body or ""),
-            token=str(entry.token) if entry.token else None,
-            sender_email=sender_to_use,
-        )
-    except Exception as send_err:
-        entry.status = "failed"
-        entry.send_error = str(send_err)[:500]
+    
+    if not org_id:
+        raise ValueError("Organization ID required for dispatch")
+        
+    success = dispatch_outreach_email(
+        db=db,
+        organization_id=org_id,
+        campaign_name=entry.campaign_name,
+        lead_id=entry.lead_id,
+        to_email=str(entry.email),
+        subject=str(entry.subject or ""),
+        body_html=str(entry.body or ""),
+        requested_sender=sender_to_use,
+        token=str(entry.token) if entry.token else None
+    )
+    
+    if not success:
+        entry.status = "skipped"
+        entry.send_error = "Skipped by dispatcher (unusable channel or recently contacted)"
         db.commit()
-        raise RuntimeError(
-            f"Email delivery failed for {entry.email}: {send_err}"
-        ) from send_err
+        # Not throwing an error because it's an expected skip
 
     entry.status = "sent"
     entry.email_sent_at = datetime.now(timezone.utc)
@@ -554,20 +559,31 @@ def bulk_approve_and_send_entries(
 
     def _worker_send(task: Dict[str, Any]) -> Tuple[Any, Any, bool, Optional[str]]:
         try:
-            # Space out requests slightly (300ms) to respect Exchange Online burst rates
             time.sleep(0.3)
-            # Resolve mailer per-task: SES if org has verified domain, else OutlookMailer
-            from Email import get_mailer_for_org
+            from Email import dispatch_outreach_email
             task_org_id = task.get("organization_id")
-            task_mailer = get_mailer_for_org(task_org_id, task.get("sender_email")) if task_org_id else mailer
-            task_mailer.send_email(
-                to_email=str(task.get("email") or ""),
-                subject=str(task.get("subject") or ""),
-                body=str(task.get("body") or ""),
-                token=task.get("token"),
-                sender_email=task.get("sender_email"),
-            )
-            return (task["id"], task["email"], True, None)
+            
+            if not task_org_id:
+                raise ValueError("Organization ID required for dispatch")
+                
+            # Create a separate short-lived session inside the thread pool for safety!
+            from Backend.db import SessionLocal
+            with SessionLocal() as worker_db:
+                success = dispatch_outreach_email(
+                    db=worker_db,
+                    organization_id=task_org_id,
+                    campaign_name=task.get("campaign_name", "unknown"),
+                    lead_id=task.get("lead_id", ""),
+                    to_email=str(task.get("email") or ""),
+                    subject=str(task.get("subject") or ""),
+                    body_html=str(task.get("body") or ""),
+                    requested_sender=task.get("sender_email"),
+                    token=task.get("token")
+                )
+            if success:
+                return (task["id"], task["email"], True, None)
+            else:
+                return (task["id"], task["email"], False, "Skipped by dispatcher (unusable channel or recently contacted)")
         except Exception as e:
             return (task["id"], task["email"], False, str(e))
 
