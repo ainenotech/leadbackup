@@ -83,42 +83,44 @@ Implements the end-to-end automated lead re-engagement workflow:
 
 ## Execution Flow
 
-### UI workflow (recommended)
+### Fullstack Next.js + FastAPI Workflow (Recommended)
 
-Start the API and dashboard in two PowerShell terminals:
+Start the FastAPI backend and Next.js frontend:
 
 ```powershell
+# Terminal 1: Start FastAPI REST API server (port 8000)
 python main_api.py
-streamlit run dashboard.py
+
+# Terminal 2: Start Next.js frontend (port 3000)
+npm run dev
 ```
 
-Then use the dashboard in this order:
+Then open `http://localhost:3000` in your browser.
 
-1. Open **Upload Leads** and upload a CSV or Excel sheet. The dashboard reads the lead details and excludes rows already sent or awaiting review.
-2. Click **Generate Drafts** for the new leads.
-3. Open **Email Review**, edit drafts if needed, then click **Approve & Send** for one lead or **Approve All**.
-4. Open **Replies & Bookings** and click **Check Outlook Inbox** to process replies.
-5. Click **Process Bookings** to check submitted availability, create Outlook/Teams meetings, and send confirmations or alternate-time messages.
-
-The API process must remain running while leads use the consultation links. The dashboard replaces the manual worker commands for normal operation.
+The Next.js suite provides 8 dedicated executive views:
+1. **Pipeline Overview**: Macro KPIs, conversion funnel, and real-time live telemetry stream.
+2. **Analytics Suite**: 14 multi-channel intelligence engines, day/hour heatmaps, AI intent classification, latency analysis, and instant PDF/Excel exports.
+3. **Master DB**: Live database segmentation with verified Hot, Warm, and Cold lead telemetry, search, and CSV export.
+4. **Template Review & Hub**: Responsive HTML email previews, real-time lead simulation, and batch cohort pairing.
+5. **Upload & Draft**: Drag-and-drop CSV/Excel lead sheet ingestion with automatic deduplication against previously sent and drafted contacts.
+6. **Leads Directory**: Campaign and status filtering with search and full metadata inspection.
+7. **Email Review Studio**: Human-in-the-loop review, inline subject/body editing, live HTML preview, and Microsoft Graph dispatch.
+8. **Replies & Bookings**: AI Auto-Reply Agent monitoring, RAG knowledge base attachments, customer conversation threads, and permanent Excel synchronization.
 
 ### Command-line worker workflow
 
 ```bash
-# 1. Start the contact form web server (and the Google Form webhook endpoint)
+# 1. Start the FastAPI REST API server
 python main_api.py
 
-# 2. Run the outreach worker (reads stale leads from Excel and sends re-engagement emails via Outlook)
+# 2. Start the Next.js development server
+npm run dev
+
+# 3. Optional: Run the manual batch outreach worker
 python worker.py
 
-# 3. Poll the Outlook inbox for lead replies and send AI-drafted, RAG-grounded responses
+# 4. Optional: Run standalone inbox reply worker
 python reply_worker.py
-
-# 4. Run the scheduler worker (processes form submissions and books Outlook calendar slots with Teams links)
-python scheduler_worker.py
-
-# 5. Launch the monitoring dashboard (also manages the knowledge base)
-streamlit run dashboard.py
 ```
 
 ---

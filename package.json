@@ -1,0 +1,13 @@
+{
+  "name": "aineno-lead-suite",
+  "version": "2.0.0",
+  "private": true,
+  "description": "AINeotechnology Lead Outreach, Analytics & Intelligence Suite - Next.js & FastAPI",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "start": "npm run start --prefix frontend",
+    "api": "python main_api.py",
+    "lint": "npm run lint --prefix frontend"
+  }
+}

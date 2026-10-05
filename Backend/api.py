@@ -5,10 +5,15 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from .db import Base, SessionLocal, engine, init_db
 from .models import CampaignLog
+from .routes import router as core_router
+from .auth_endpoints import router as auth_router
+from .domain_endpoints import router as domain_router
+from .channels_endpoints import router as channels_router
 
 load_dotenv()
 
@@ -18,6 +23,19 @@ SERVER_START_TIME = datetime.now(timezone.utc)
 init_db()
 
 app = FastAPI(title="AINeotechnology — Lead Outreach & Analytics API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(core_router)
+app.include_router(auth_router)
+app.include_router(domain_router)
+app.include_router(channels_router)
 
 
 @app.on_event("startup")

@@ -62,6 +62,82 @@ class Lead:
     last_deal_stage: Optional[str] = None
 
 
+# Smart Column Alias Mapping
+EMAIL_COLUMN_ALIASES = [
+    "email", "email_address", "email address", "company email", "work email",
+    "business email", "contact email", "e-mail", "mail", "to"
+]
+
+NAME_COLUMN_ALIASES = [
+    "full_name", "fullname", "full name", "contact_name", "contact name",
+    "name", "lead_name", "lead name", "client name", "person"
+]
+
+FIRST_NAME_COLUMN_ALIASES = [
+    "first_name", "firstname", "first name", "given name", "first"
+]
+
+LAST_NAME_COLUMN_ALIASES = [
+    "last_name", "lastname", "last name", "surname", "family name", "last"
+]
+
+COMPANY_COLUMN_ALIASES = [
+    "company", "company_name", "company name", "organization", "organisation",
+    "org_name", "org name", "org", "account_name", "account name", "account",
+    "business_name", "business name", "business", "firm", "agency"
+]
+
+LEAD_ID_COLUMN_ALIASES = [
+    "lead_id", "lead id", "id", "contact id", "contact_id", "record id", "record_id"
+]
+
+LAST_ACTIVITY_COLUMN_ALIASES = [
+    "last_activity_date", "last activity date", "last_activity", "last activity",
+    "activity date", "activity_date", "date"
+]
+
+COMMON_WEBMAIL_DOMAINS = {
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com",
+    "aol.com", "zoho.com", "protonmail.com", "mail.com", "gmx.com", "live.com"
+}
+
+
+def _find_col_by_alias(columns, aliases) -> Optional[str]:
+    lower_map = {str(c).strip().lower(): c for c in columns}
+    for a in aliases:
+        if a in lower_map:
+            return lower_map[a]
+    for a in aliases:
+        a_clean = a.replace(" ", "").replace("_", "")
+        for c_low, original in lower_map.items():
+            if a_clean == c_low.replace(" ", "").replace("_", ""):
+                return original
+    return None
+
+
+def infer_name_from_email(email: str) -> str:
+    import re
+    if "@" not in email:
+        return ""
+    user = email.split("@")[0]
+    parts = [p for p in re.split(r"[._\-+0-9]+", user) if p]
+    if parts:
+        return " ".join(parts).title()
+    return ""
+
+
+def infer_company_from_email(email: str) -> str:
+    if "@" not in email:
+        return ""
+    domain = email.split("@")[1].lower()
+    if domain in COMMON_WEBMAIL_DOMAINS:
+        return ""
+    root = domain.split(".")[0]
+    if root and len(root) > 1:
+        return root.title()
+    return ""
+
+
 def detect_lead_status_in_dataframe(
     df: pd.DataFrame,
     sent_emails: Optional[Set[str]] = None,
@@ -78,12 +154,8 @@ def detect_lead_status_in_dataframe(
 
     clean_df = df.copy()
 
-    # Find the email column
-    email_col = None
-    for col in clean_df.columns:
-        if str(col).strip().lower() in ["email", "email_address", "email address"]:
-            email_col = col
-            break
+    # Find the email column with aliases
+    email_col = _find_col_by_alias(clean_df.columns, EMAIL_COLUMN_ALIASES)
     if not email_col:
         for col in clean_df.columns:
             non_null = clean_df[col].dropna()
@@ -93,6 +165,14 @@ def detect_lead_status_in_dataframe(
 
     if not email_col:
         raise ValueError("Could not find an 'email' column in the uploaded sheet.")
+
+    # Find name, company, lead_id, last_activity columns
+    name_col = _find_col_by_alias(clean_df.columns, NAME_COLUMN_ALIASES)
+    first_name_col = _find_col_by_alias(clean_df.columns, FIRST_NAME_COLUMN_ALIASES)
+    last_name_col = _find_col_by_alias(clean_df.columns, LAST_NAME_COLUMN_ALIASES)
+    company_col = _find_col_by_alias(clean_df.columns, COMPANY_COLUMN_ALIASES)
+    lead_id_col = _find_col_by_alias(clean_df.columns, LEAD_ID_COLUMN_ALIASES)
+    last_activity_date_col = _find_col_by_alias(clean_df.columns, LAST_ACTIVITY_COLUMN_ALIASES)
 
     # Find status or sent date columns if present in the sheet
     status_col = None
@@ -117,10 +197,46 @@ def detect_lead_status_in_dataframe(
 
         email = str(raw_email).strip().lower()
 
+        # Resolve lead name
+        raw_name = ""
+        if name_col and pd.notna(row.get(name_col)):
+            raw_name = str(row.get(name_col)).strip()
+        elif first_name_col and pd.notna(row.get(first_name_col)):
+            first = str(row.get(first_name_col)).strip()
+            last = str(row.get(last_name_col)).strip() if last_name_col and pd.notna(row.get(last_name_col)) else ""
+            raw_name = f"{first} {last}".strip()
+        if not raw_name or raw_name.lower() in ("nan", "none", "-", "—"):
+            raw_name = infer_name_from_email(email)
+
+        # Resolve company
+        raw_company = ""
+        if company_col and pd.notna(row.get(company_col)):
+            raw_company = str(row.get(company_col)).strip()
+        if not raw_company or raw_company.lower() in ("nan", "none", "-", "—"):
+            raw_company = infer_company_from_email(email)
+
+        # Resolve lead_id
+        raw_lead_id = ""
+        if lead_id_col and pd.notna(row.get(lead_id_col)):
+            raw_lead_id = str(row.get(lead_id_col)).strip()
+        if not raw_lead_id or raw_lead_id.lower() in ("nan", "none"):
+            raw_lead_id = f"lead_{email.split('@')[0]}"
+
+        # Resolve last activity date
+        raw_activity = ""
+        if last_activity_date_col and pd.notna(row.get(last_activity_date_col)):
+            raw_activity = str(row.get(last_activity_date_col)).strip()
+        if not raw_activity or raw_activity.lower() in ("nan", "none"):
+            raw_activity = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
         # Check duplicate within this uploaded file itself
         if email in seen_in_this_file:
             row_dict = row.to_dict()
             row_dict["email"] = email
+            row_dict["name"] = raw_name
+            row_dict["company"] = raw_company
+            row_dict["lead_id"] = raw_lead_id
+            row_dict["last_activity_date"] = raw_activity
             row_dict["skip_reason"] = "Duplicate row in uploaded file"
             skipped_sent_rows.append(row_dict)
             continue
@@ -128,6 +244,10 @@ def detect_lead_status_in_dataframe(
         seen_in_this_file.add(email)
         row_dict = row.to_dict()
         row_dict["email"] = email
+        row_dict["name"] = raw_name
+        row_dict["company"] = raw_company
+        row_dict["lead_id"] = raw_lead_id
+        row_dict["last_activity_date"] = raw_activity
 
         # 1. Check if marked as sent in the sheet's status column
         sheet_sent_reason = None
@@ -161,6 +281,7 @@ def detect_lead_status_in_dataframe(
     skipped_drafted_df = pd.DataFrame(skipped_drafted_rows) if skipped_drafted_rows else pd.DataFrame()
 
     return new_leads_df, skipped_sent_df, skipped_drafted_df
+
 
 
 def update_lead_sheet_status(

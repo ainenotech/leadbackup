@@ -19,8 +19,14 @@ def _init_engine(url: str):
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
     try:
-        from sqlalchemy.pool import NullPool
-        eng = create_engine(url, poolclass=NullPool, pool_pre_ping=True)
+        eng = create_engine(
+            url,
+            pool_size=5,
+            max_overflow=10,
+            pool_recycle=60,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": 10},
+        )
         with eng.connect() as conn:
             pass
         return eng
@@ -95,5 +101,14 @@ def init_db():
                         conn.rollback()
 
     _DB_INITIALIZED = True
+
+
+def get_db():
+    """FastAPI dependency for yielding database session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
