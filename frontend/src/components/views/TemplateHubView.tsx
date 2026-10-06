@@ -23,7 +23,11 @@ import {
   ChevronUp,
 } from "lucide-react";
 
-export default function TemplateHubView() {
+export default function TemplateHubView({
+  activeSenderEmail,
+}: {
+  activeSenderEmail?: string;
+} = {}) {
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | number>("");
   const [loading, setLoading] = useState(true);
@@ -425,7 +429,7 @@ export default function TemplateHubView() {
                 </div>
                 <div className="flex flex-wrap gap-4 text-[12px] text-[#64748B] pt-1 border-t border-[#F8FAFC]">
                   <div>
-                    <strong className="text-[#334155]">From:</strong> Tirth Patel &lt;support@nenotechnology.com&gt;
+                    <strong className="text-[#334155]">From:</strong> Mohit &lt;{activeSenderEmail || "mohit@nenotechnology.us"}&gt;
                   </div>
                   <div>
                     <strong className="text-[#334155]">To:</strong> {simName} &lt;contact@{simCompany.toLowerCase().replace(/\s+/g, "")}.com&gt;

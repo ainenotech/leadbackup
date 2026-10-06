@@ -200,6 +200,26 @@ def get_overview_stats():
         db.close()
 
 
+
+# ── System Mailbox Configuration ──
+@router.get("/system/mailbox")
+def get_system_mailbox():
+    sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+    contact_email = os.getenv("CONTACT_EMAIL", "sales@nenotechnology.com")
+    booking_url = os.getenv(
+        "BOOKING_FORM_URL",
+        "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
+    )
+    api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
+    return {
+        "status": "success",
+        "sender_email": sender_email,
+        "contact_email": contact_email,
+        "booking_url": booking_url,
+        "api_base_url": api_base_url,
+    }
+
+
 # ── 2. All Campaign Logs with Filter/Search ──
 @router.get("/logs")
 def get_campaign_logs(

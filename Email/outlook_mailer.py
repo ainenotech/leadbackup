@@ -1,5 +1,7 @@
 import os
 import re
+import hashlib
+import hmac
 from typing import Optional
 
 import requests
@@ -9,6 +11,20 @@ from utils.microsoft_auth import MS_SENDER_EMAIL, get_graph_headers
 from .base import Mailer
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+def sign_tracking_url(token: str, destination_url: str) -> str:
+    secret = os.getenv("TRACKING_SIGNING_SECRET")
+
+    if not secret:
+        raise RuntimeError("TRACKING_SIGNING_SECRET is not configured")
+
+    message = f"{token}|{destination_url}".encode("utf-8")
+
+    return hmac.new(
+        secret.encode("utf-8"),
+        message,
+        hashlib.sha256,
+    ).hexdigest()
 
 
 class OutlookMailer(Mailer):
@@ -75,7 +91,12 @@ class OutlookMailer(Mailer):
                     return f'href="{orig_url}"'
                 import urllib.parse
                 encoded = urllib.parse.quote(orig_url, safe="")
-                return f'href="{api_base_url}/api/track/click/{token}?url={encoded}"'
+                signature = sign_tracking_url(token, orig_url)
+
+                return (
+                    f'href="{api_base_url}/api/track/click/'
+                    f'{token}?url={encoded}&sig={signature}"'
+                )
 
             clean_body = re.sub(r'href=["\'](https?://[^"\']+)["\']', _rewrite_link, clean_body)
 

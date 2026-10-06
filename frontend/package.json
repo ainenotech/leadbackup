@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "aineno-lead-suite": "file:..",
     "clsx": "^2.1.1",
     "lucide-react": "^1.52.0",
     "next": "16.3.8",

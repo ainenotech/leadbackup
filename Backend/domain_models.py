@@ -8,6 +8,7 @@ These tables are additive and do NOT modify any existing table schemas.
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, Float, ForeignKey,
@@ -50,7 +51,7 @@ class OrgSendingDomain(Base):
     # Sender identity
     from_local_part = Column(String, nullable=True)   # e.g. "john"
     from_name = Column(String, nullable=True)          # display name for From header
-    reply_to = Column(String, nullable=False)          # where replies go
+    reply_to = Column(String, nullable=True)           # where replies go
 
     # Custom MAIL FROM subdomain (e.g. "mail" → mail.customer.com)
     mail_from_subdomain = Column(String, nullable=True)
@@ -77,6 +78,54 @@ class OrgSendingDomain(Base):
     records = relationship("OrgDomainRecord", backref="sending_domain", cascade="all, delete-orphan", passive_deletes=True)
     check_history = relationship("OrgDomainCheckHistory", backref="sending_domain", cascade="all, delete-orphan", passive_deletes=True)
     stats = relationship("OrgDomainStats", backref="sending_domain", cascade="all, delete-orphan", passive_deletes=True)
+
+    @property
+    def verification_status(self) -> str:
+        if self.status in ("ready", "limited"):
+            return "verified"
+        if self.status == "paused":
+            return "disabled"
+        if self.status == "blocked":
+            return "failed"
+        return "pending"
+
+    @verification_status.setter
+    def verification_status(self, val: str):
+        mapping = {
+            "verified": "ready",
+            "disabled": "paused",
+            "failed": "blocked",
+            "pending": "pending",
+        }
+        self.status = mapping.get(val, val)
+
+    @property
+    def ses_identity_arn(self) -> Optional[str]:
+        return self.provider_identity_ref
+
+    @ses_identity_arn.setter
+    def ses_identity_arn(self, val: Optional[str]):
+        self.provider_identity_ref = val
+
+    @property
+    def verification_method(self) -> str:
+        return "dns_dkim"
+
+    @property
+    def can_send(self) -> bool:
+        return self.status in ("ready", "limited")
+
+    @can_send.setter
+    def can_send(self, val: bool):
+        if val:
+            if self.status not in ("ready", "limited"):
+                self.status = "ready"
+        else:
+            self.status = "paused"
+
+
+# Alias EmailDomain to OrgSendingDomain for conceptual architecture alignment
+EmailDomain = OrgSendingDomain
 
 
 # ─────────────────────────────────────────────────────────────

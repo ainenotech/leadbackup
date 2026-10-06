@@ -30,7 +30,8 @@ router = APIRouter(prefix="/api", tags=["Sending Domain Authentication"])
 # ─────────────────────────────────────────────────────────────
 
 class RegisterDomainRequest(BaseModel):
-    email_address: str
+    domain: Optional[str] = None
+    email_address: Optional[str] = None
     from_name: Optional[str] = None
     reply_to: Optional[str] = None
 
@@ -45,6 +46,10 @@ class PauseDomainRequest(BaseModel):
     reason: str = "Manually paused by admin"
 
 
+class EnableSendingRequest(BaseModel):
+    enabled: bool = True
+
+
 # ─────────────────────────────────────────────────────────────
 # DOMAIN MANAGEMENT ROUTES (authenticated)
 # ─────────────────────────────────────────────────────────────
@@ -54,8 +59,12 @@ def register_domain_endpoint(
     req: RegisterDomainRequest,
     context: Dict[str, Any] = Depends(get_current_user_and_tenant),
 ):
-    """Register a new sending domain extracted from the given email address."""
+    """Register a new sending domain extracted from the given email address or domain."""
     from services.domain_auth_service import register_domain
+
+    raw_input = req.domain or req.email_address
+    if not raw_input:
+        raise HTTPException(status_code=400, detail="Domain or email address is required")
 
     db = SessionLocal()
     try:
@@ -63,7 +72,7 @@ def register_domain_endpoint(
             db=db,
             user_id=context["user_id"],
             organization_id=context["org_id"],
-            email_address=req.email_address,
+            email_address=raw_input,
             from_name=req.from_name,
             reply_to=req.reply_to,
         )
@@ -147,7 +156,13 @@ def verify_domain_endpoint(
             organization_id=context["org_id"],
             domain_id=domain_id,
         )
-        return {"status": "success", "data": result}
+        return {
+            "status": "success",
+            "data": result,
+            "domain": result.get("domain"),
+            "verification_status": result.get("verification_status", "pending"),
+            "can_send": result.get("can_send", False),
+        }
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
@@ -155,6 +170,203 @@ def verify_domain_endpoint(
     except Exception as e:
         logger.error("Domain verification failed: %s", e)
         raise HTTPException(status_code=500, detail="Verification failed")
+    finally:
+        db.close()
+
+
+# ── Organization-Scoped Domain Routes (Universal Multi-Tenancy) ──
+
+@router.post("/organizations/{organization_id}/email-domains")
+def org_add_domain_endpoint(
+    organization_id: str,
+    req: RegisterDomainRequest,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Add a new sending domain for the given organization."""
+    from services.domain_auth_service import register_domain
+
+    raw_input = req.domain or req.email_address
+    if not raw_input:
+        raise HTTPException(status_code=400, detail="Domain or email address is required")
+
+    db = SessionLocal()
+    try:
+        # Validate that caller belongs to the organization
+        user_id = context["user_id"]
+        is_super = context.get("platform_role") == "platform_super_admin"
+        if not is_super:
+            from Backend.auth_models import OrganizationMember
+            membership = db.query(OrganizationMember).filter(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.status == "active",
+            ).first()
+            if not membership:
+                raise HTTPException(status_code=403, detail="Access denied to this organization.")
+
+        result = register_domain(
+            db=db,
+            user_id=user_id,
+            organization_id=organization_id,
+            email_address=raw_input,
+            from_name=req.from_name,
+            reply_to=req.reply_to,
+        )
+        return {"status": "success", "domain": result, "data": result}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Domain registration failed: %s", e)
+        raise HTTPException(status_code=500, detail="Domain registration failed")
+    finally:
+        db.close()
+
+
+@router.get("/organizations/{organization_id}/email-domains")
+def org_list_domains_endpoint(
+    organization_id: str,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """List all email domains for the given organization."""
+    from services.domain_auth_service import list_domains
+
+    db = SessionLocal()
+    try:
+        result = list_domains(
+            db=db,
+            user_id=context["user_id"],
+            organization_id=organization_id,
+        )
+        return {"status": "success", "data": result}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to list domains: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to list domains")
+    finally:
+        db.close()
+
+
+@router.get("/organizations/{organization_id}/email-domains/{domain_id}")
+def org_get_domain_endpoint(
+    organization_id: str,
+    domain_id: str,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Get domain details scoped to organization."""
+    from services.domain_auth_service import get_domain_detail
+
+    db = SessionLocal()
+    try:
+        result = get_domain_detail(
+            db=db,
+            user_id=context["user_id"],
+            organization_id=organization_id,
+            domain_id=domain_id,
+        )
+        return {"status": "success", "data": result}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Failed to get domain: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to get domain details")
+    finally:
+        db.close()
+
+
+@router.post("/organizations/{organization_id}/email-domains/{domain_id}/verify")
+def org_verify_domain_endpoint(
+    organization_id: str,
+    domain_id: str,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Verify SES and DNS status for a domain scoped to organization."""
+    from services.domain_auth_service import verify_domain
+
+    db = SessionLocal()
+    try:
+        result = verify_domain(
+            db=db,
+            user_id=context["user_id"],
+            organization_id=organization_id,
+            domain_id=domain_id,
+        )
+        return {
+            "status": "success",
+            "data": result,
+            "domain": result.get("domain"),
+            "verification_status": result.get("verification_status", "pending"),
+            "can_send": result.get("can_send", False),
+        }
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Domain verification failed: %s", e)
+        raise HTTPException(status_code=500, detail="Verification failed")
+    finally:
+        db.close()
+
+
+@router.delete("/organizations/{organization_id}/email-domains/{domain_id}")
+def org_delete_domain_endpoint(
+    organization_id: str,
+    domain_id: str,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Delete domain scoped to organization."""
+    from services.domain_auth_service import delete_domain
+
+    db = SessionLocal()
+    try:
+        delete_domain(
+            db=db,
+            user_id=context["user_id"],
+            organization_id=organization_id,
+            domain_id=domain_id,
+        )
+        return {"status": "success", "message": "Domain deleted successfully"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.post("/organizations/{organization_id}/email-domains/{domain_id}/sending")
+def org_toggle_sending_endpoint(
+    organization_id: str,
+    domain_id: str,
+    req: EnableSendingRequest,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Enable or disable sending for a domain."""
+    from services.domain_auth_service import resume_domain, pause_domain, get_domain_detail
+
+    db = SessionLocal()
+    try:
+        detail = get_domain_detail(db, user_id=context["user_id"], organization_id=organization_id, domain_id=domain_id)
+        if req.enabled:
+            if not detail.get("can_send") and detail.get("status") != "paused":
+                raise HTTPException(status_code=400, detail="Cannot enable sending on unverified domain")
+            result = resume_domain(db, user_id=context["user_id"], organization_id=organization_id, domain_id=domain_id)
+        else:
+            result = pause_domain(db, user_id=context["user_id"], organization_id=organization_id, domain_id=domain_id, reason="Disabled by admin")
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         db.close()
 

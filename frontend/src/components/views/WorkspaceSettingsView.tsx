@@ -51,46 +51,41 @@ export default function WorkspaceSettingsView({
   const [isDetecting, setIsDetecting] = useState(false);
 
   // Domains State
-  const [domains, setDomains] = useState<SendingDomain[]>([
-    {
-      id: "dom_1",
-      domain: "nenotechnology.us",
-      status: "verified",
-      reputation_score: 99,
-      records: [
-        { type: "TXT (SPF)", name: "@", value: "v=spf1 include:spf.protection.outlook.com -all", status: "verified" },
-        { type: "CNAME (DKIM)", name: "selector1._domainkey", value: "selector1-nenotechnology-us.domainkey.outlook.com", status: "verified" },
-        { type: "TXT (DMARC)", name: "_dmarc", value: "v=DMARC1; p=reject; sp=reject; pct=100", status: "verified" },
-        { type: "MX", name: "@", value: "nenotechnology-us.mail.protection.outlook.com", status: "verified" },
-      ],
-    },
-    {
-      id: "dom_2",
-      domain: "nenotechnology.com",
-      status: "verified",
-      reputation_score: 98,
-      records: [
-        { type: "TXT (SPF)", name: "@", value: "v=spf1 include:_spf.google.com ~all", status: "verified" },
-        { type: "TXT (DKIM)", name: "google._domainkey", value: "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBA...", status: "verified" },
-        { type: "TXT (DMARC)", name: "_dmarc", value: "v=DMARC1; p=quarantine; pct=100", status: "verified" },
-        { type: "MX", name: "@", value: "aspmx.l.google.com", status: "verified" },
-      ],
-    },
-  ]);
+  const [domains, setDomains] = useState<SendingDomain[]>([]);
+  const [isLoadingDomains, setIsLoadingDomains] = useState(false);
   const [newDomainInput, setNewDomainInput] = useState("");
-  const [isVerifyingDomain, setIsVerifyingDomain] = useState(false);
+  const [isAddingDomain, setIsAddingDomain] = useState(false);
+  const [domainError, setDomainError] = useState<string | null>(null);
+  const [domainSuccess, setDomainSuccess] = useState<string | null>(null);
+  const [verifyingDomainId, setVerifyingDomainId] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const orgId = currentOrg?.id || "";
 
+  // Load real domains for the active organization
+  const fetchOrgDomains = async () => {
+    if (!orgId) return;
+    try {
+      setIsLoadingDomains(true);
+      const res = await api.getEmailDomains(orgId);
+      setDomains(res);
+    } catch (err: any) {
+      console.warn("Failed to load domains:", err);
+    } finally {
+      setIsLoadingDomains(false);
+    }
+  };
+
   useEffect(() => {
     if (currentOrg) {
-      setOrgName(currentOrg.name || "Neno Technology");
+      setOrgName(currentOrg.name || "My Organization");
       if (currentOrg.settings) {
         if (currentOrg.settings.sender_name) setSenderName(currentOrg.settings.sender_name);
         if (currentOrg.settings.sender_email) setSenderEmail(currentOrg.settings.sender_email);
         if (currentOrg.settings.daily_limit) setDailyLimit(currentOrg.settings.daily_limit);
         if (currentOrg.settings.reply_to) setReplyTo(currentOrg.settings.reply_to);
       }
+      fetchOrgDomains();
     }
   }, [currentOrg]);
 
@@ -127,43 +122,90 @@ export default function WorkspaceSettingsView({
       const d = detectEmail.split("@")[1].toLowerCase();
       if (d.includes("gmail") || d.includes("google")) {
         setDetectedChannel("google_oauth");
-      } else if (d.includes("outlook") || d.includes("nenotechnology") || d.includes("microsoft")) {
+      } else if (d.includes("outlook") || d.includes("microsoft")) {
         setDetectedChannel("microsoft_oauth");
       } else {
-        setDetectedChannel("smtp_imap");
+        setDetectedChannel("ses_aws");
       }
       setIsDetecting(false);
     }, 600);
   };
 
-  const handleAddDomain = (e: React.FormEvent) => {
+  const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDomainInput.trim()) return;
+    setDomainError(null);
+    setDomainSuccess(null);
+    if (!orgId) {
+      setDomainError("No active organization found.");
+      return;
+    }
     const cleanDomain = newDomainInput.trim().toLowerCase().replace("https://", "").replace("http://", "").split("/")[0];
-    const newEntry: SendingDomain = {
-      id: "dom_" + Date.now(),
-      domain: cleanDomain,
-      status: "pending",
-      reputation_score: 85,
-      records: [
-        { type: "TXT (SPF)", name: "@", value: "v=spf1 include:spf.protection.outlook.com -all", status: "pending" },
-        { type: "TXT (DMARC)", name: "_dmarc", value: "v=DMARC1; p=quarantine; pct=100", status: "pending" },
-      ],
-    };
-    setDomains([...domains, newEntry]);
-    setNewDomainInput("");
+    if (!cleanDomain || !cleanDomain.includes(".")) {
+      setDomainError("Please enter a valid domain (e.g. acme.com or outreach.acme.com)");
+      return;
+    }
+
+    try {
+      setIsAddingDomain(true);
+      await api.addEmailDomain(orgId, cleanDomain);
+      setDomainSuccess(`Domain ${cleanDomain} registered in AWS SES! Add the DNS records below to complete verification.`);
+      setNewDomainInput("");
+      await fetchOrgDomains();
+    } catch (err: any) {
+      setDomainError(err.message || "Failed to add domain to AWS SES");
+    } finally {
+      setIsAddingDomain(false);
+    }
   };
 
-  const handleVerifyDomain = (domainId: string) => {
-    setIsVerifyingDomain(true);
-    setTimeout(() => {
-      setDomains(
-        domains.map((d) =>
-          d.id === domainId ? { ...d, status: "verified", reputation_score: 99 } : d
-        )
-      );
-      setIsVerifyingDomain(false);
-    }, 1200);
+  const handleVerifyDomain = async (domainId: string) => {
+    setDomainError(null);
+    setDomainSuccess(null);
+    if (!orgId) return;
+
+    try {
+      setVerifyingDomainId(domainId);
+      const res = await api.verifyEmailDomain(orgId, domainId);
+      if (res.can_send || res.verification_status === "verified" || res.status === "verified") {
+        setDomainSuccess(`Domain verified successfully! AWS SES high-deliverability sending is now ENABLED.`);
+      } else {
+        setDomainError("DNS records have not been detected yet. Please verify that the records were added correctly to your DNS provider and allow time for DNS propagation.");
+      }
+      await fetchOrgDomains();
+    } catch (err: any) {
+      setDomainError(err.message || "Verification check failed");
+    } finally {
+      setVerifyingDomainId(null);
+    }
+  };
+
+  const handleToggleSending = async (domainId: string, currentCanSend: boolean) => {
+    if (!orgId) return;
+    try {
+      await api.toggleDomainSending(orgId, domainId, !currentCanSend);
+      await fetchOrgDomains();
+    } catch (err: any) {
+      alert("Failed to update sending state: " + err.message);
+    }
+  };
+
+  const handleDeleteDomain = async (domainId: string, domainName: string) => {
+    if (!orgId) return;
+    if (!confirm(`Are you sure you want to remove ${domainName}? This will revoke AWS SES identity and stop outbound campaigns.`)) return;
+    try {
+      await api.deleteEmailDomain(orgId, domainId);
+      await fetchOrgDomains();
+    } catch (err: any) {
+      alert("Failed to delete domain: " + err.message);
+    }
+  };
+
+  const copyToClipboard = (text: string, key: string) => {
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    }
   };
 
   return (
@@ -410,17 +452,18 @@ export default function WorkspaceSettingsView({
         </div>
       )}
 
-      {/* TAB 3: SENDING DOMAINS & DNS */}
+      {/* TAB 3: SENDING DOMAINS & AWS SES DNS */}
       {activeTab === "domains" && (
         <div className="space-y-6">
           <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
-                <h2 className="text-lg font-bold text-[#0F172A]">
-                  Active Sending Domains &amp; DNS Records
+                <h2 className="text-lg font-bold text-[#0F172A] flex items-center gap-2">
+                  <span>🌐</span>
+                  <span>AWS SES Sending Domains &amp; DNS Verification</span>
                 </h2>
-                <p className="text-[13px] text-[#64748B]">
-                  Verified domains authorized for high-volume outreach with 99%+ deliverability.
+                <p className="text-[13px] text-[#64748B] mt-0.5">
+                  Verify arbitrary customer domains with AWS SES Easy DKIM. Works seamlessly with any DNS provider (Cloudflare, GoDaddy, Namecheap, Route53, etc.).
                 </p>
               </div>
 
@@ -431,86 +474,208 @@ export default function WorkspaceSettingsView({
                   required
                   value={newDomainInput}
                   onChange={(e) => setNewDomainInput(e.target.value)}
-                  placeholder="companyoutreach.com"
-                  className="px-3.5 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
+                  placeholder="e.g. acme.com or mail.acme.com"
+                  className="px-3.5 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB] min-w-[240px]"
                 />
                 <button
                   type="submit"
-                  className="py-2 px-3.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[13px] font-bold rounded-xl flex items-center gap-1.5"
+                  disabled={isAddingDomain}
+                  className="py-2 px-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[13px] font-bold rounded-xl flex items-center gap-1.5 transition-all disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Add Domain</span>
+                  <span>{isAddingDomain ? "Provisioning SES..." : "Add Domain"}</span>
                 </button>
               </form>
             </div>
 
-            {/* Domains List */}
-            <div className="space-y-4">
-              {domains.map((dom) => (
-                <div key={dom.id} className="border border-[#E2E8F0] rounded-xl p-5 bg-[#F8FAFC]">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-bold">
-                        <Globe className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="text-[15px] font-bold text-[#0F172A] font-mono">{dom.domain}</div>
-                        <div className="flex items-center gap-2 text-[11.5px] mt-0.5">
-                          <span
-                            className={`px-2 py-0.5 rounded font-bold ${
-                              dom.status === "verified"
-                                ? "bg-[#ECFDF5] text-[#059669]"
-                                : "bg-[#FEF3C7] text-[#D97706]"
-                            }`}
-                          >
-                            ● {dom.status.toUpperCase()}
-                          </span>
-                          <span className="text-[#64748B]">Reputation Score:</span>
-                          <strong className="text-[#059669] font-mono">{dom.reputation_score}%</strong>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleVerifyDomain(dom.id)}
-                        disabled={isVerifyingDomain}
-                        className="py-1.5 px-3 bg-white border border-[#CBD5E1] hover:bg-[#F1F5F9] rounded-lg text-[12px] font-bold text-[#334155] flex items-center gap-1.5"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isVerifyingDomain ? "animate-spin" : ""}`} />
-                        <span>Verify DNS</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* DNS Records Breakdown */}
-                  <div className="bg-white rounded-lg border border-[#E2E8F0] overflow-hidden text-[12px]">
-                    <div className="grid grid-cols-12 bg-[#F1F5F9] px-3.5 py-2 font-bold text-[#475569] uppercase tracking-wider text-[11px]">
-                      <div className="col-span-3">Record Type</div>
-                      <div className="col-span-2">Host Name</div>
-                      <div className="col-span-5">Target Value</div>
-                      <div className="col-span-2 text-right">Status</div>
-                    </div>
-                    {dom.records?.map((rec, rIdx) => (
-                      <div
-                        key={rIdx}
-                        className="grid grid-cols-12 px-3.5 py-2.5 border-t border-[#F1F5F9] items-center font-mono text-[11.5px]"
-                      >
-                        <div className="col-span-3 font-bold text-[#0F172A]">{rec.type}</div>
-                        <div className="col-span-2 text-[#475569]">{rec.name}</div>
-                        <div className="col-span-5 text-[#334155] truncate" title={rec.value}>
-                          {rec.value}
-                        </div>
-                        <div className="col-span-2 text-right">
-                          <span className="bg-[#ECFDF5] text-[#059669] px-2 py-0.5 rounded text-[10.5px] font-bold">
-                            ✓ Verified
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+            {/* Error & Success Alerts */}
+            {domainError && (
+              <div className="mb-5 p-3.5 bg-[#FEF2F2] border border-[#FECACA] rounded-xl text-[12.5px] text-[#DC2626] font-medium flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-[#DC2626]" />
+                  <span>{domainError}</span>
                 </div>
-              ))}
+                <button onClick={() => setDomainError(null)} className="text-[#DC2626] hover:underline font-bold text-[11.5px]">Dismiss</button>
+              </div>
+            )}
+
+            {domainSuccess && (
+              <div className="mb-5 p-3.5 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl text-[12.5px] text-[#15803D] font-medium flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-[#15803D]" />
+                  <span>{domainSuccess}</span>
+                </div>
+                <button onClick={() => setDomainSuccess(null)} className="text-[#15803D] hover:underline font-bold text-[11.5px]">Dismiss</button>
+              </div>
+            )}
+
+            {/* Universal DNS Provider Instructions Banner */}
+            <div className="mb-6 p-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl flex items-start gap-3">
+              <span className="text-xl">💡</span>
+              <div className="text-[12px] text-[#475569] leading-relaxed">
+                <strong className="text-[#0F172A] block mb-0.5">Universal DNS Provider Support:</strong>
+                Log in to your domain registrar or DNS hosting provider (<strong>GoDaddy, Cloudflare, Namecheap, Route 53, Hostinger, Squarespace, Bluehost</strong>, etc.), add the CNAME &amp; TXT records shown below, and click <strong>Verify DNS</strong>. Verification propagates worldwide within minutes.
+              </div>
+            </div>
+
+            {/* Loading state */}
+            {isLoadingDomains && (
+              <div className="py-8 text-center text-[#64748B] text-[13px] flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-[#2563EB]" />
+                <span>Loading sending domains...</span>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!isLoadingDomains && domains.length === 0 && (
+              <div className="py-10 text-center border-2 border-dashed border-[#E2E8F0] rounded-xl">
+                <Globe className="w-10 h-10 text-[#94A3B8] mx-auto mb-2 opacity-50" />
+                <div className="text-[14px] font-bold text-[#0F172A]">No Sending Domains Configured</div>
+                <p className="text-[12.5px] text-[#64748B] max-w-md mx-auto mt-1 mb-4">
+                  Add your corporate or campaign sending domain above to generate AWS SES Easy DKIM verification records.
+                </p>
+              </div>
+            )}
+
+            {/* Domains List */}
+            <div className="space-y-5">
+              {domains.map((dom) => {
+                const isVerified = dom.status === "verified" || dom.verification_status === "verified";
+                const canSend = dom.can_send ?? isVerified;
+                const isChecking = verifyingDomainId === dom.id;
+
+                return (
+                  <div key={dom.id} className="border border-[#E2E8F0] rounded-xl p-5 bg-[#F8FAFC]">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                          isVerified ? "bg-[#ECFDF5] text-[#059669]" : "bg-[#FEF3C7] text-[#D97706]"
+                        }`}>
+                          <Globe className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-[16px] font-extrabold text-[#0F172A] font-mono">{dom.domain}</span>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] ${
+                                isVerified
+                                  ? "bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]"
+                                  : "bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]"
+                              }`}
+                            >
+                              {isVerified ? "✓ VERIFIED" : "⏳ VERIFICATION PENDING"}
+                            </span>
+                            {isVerified && (
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full font-bold text-[10.5px] cursor-pointer ${
+                                  canSend
+                                    ? "bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]"
+                                    : "bg-[#F1F5F9] text-[#64748B] border border-[#CBD5E1]"
+                                }`}
+                                onClick={() => handleToggleSending(dom.id, canSend)}
+                                title="Click to toggle sending"
+                              >
+                                {canSend ? "⚡ SES SENDING ENABLED" : "⏸️ SENDING PAUSED"}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-[11.5px] mt-1 text-[#64748B]">
+                            {dom.ses_identity_arn && (
+                              <span className="truncate max-w-xs font-mono text-[10.5px]">ARN: {dom.ses_identity_arn}</span>
+                            )}
+                            {dom.reputation_score !== undefined && (
+                              <span>Reputation: <strong className="text-[#059669] font-mono">{dom.reputation_score}%</strong></span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleVerifyDomain(dom.id)}
+                          disabled={isChecking}
+                          className="py-1.5 px-3.5 bg-white border border-[#CBD5E1] hover:bg-[#F1F5F9] rounded-lg text-[12px] font-bold text-[#334155] flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? "animate-spin text-[#2563EB]" : ""}`} />
+                          <span>{isChecking ? "Checking SES..." : "Check Verification"}</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteDomain(dom.id, dom.domain)}
+                          title="Delete Domain"
+                          className="p-1.5 text-[#94A3B8] hover:text-[#DC2626] hover:bg-white rounded-lg transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* DNS Records Table */}
+                    <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden text-[12px] shadow-xs">
+                      <div className="grid grid-cols-12 bg-[#F1F5F9] px-4 py-2 font-bold text-[#475569] uppercase tracking-wider text-[10.5px]">
+                        <div className="col-span-2">Record Type</div>
+                        <div className="col-span-4">Host / Name</div>
+                        <div className="col-span-4">Value / Target</div>
+                        <div className="col-span-2 text-right">Status</div>
+                      </div>
+
+                      {dom.records && dom.records.length > 0 ? (
+                        dom.records.map((rec, rIdx) => {
+                          const hostKey = `${dom.id}_host_${rIdx}`;
+                          const valKey = `${dom.id}_val_${rIdx}`;
+                          const recType = rec.record_type || rec.type || "CNAME";
+                          const recHost = rec.host || rec.name || "@";
+                          const recVal = rec.value || "";
+
+                          return (
+                            <div
+                              key={rIdx}
+                              className="grid grid-cols-12 px-4 py-3 border-t border-[#F1F5F9] items-center text-[12px] hover:bg-[#F8FAFC]"
+                            >
+                              <div className="col-span-2 font-mono font-bold text-[#0F172A]">{recType}</div>
+                              <div className="col-span-4 font-mono text-[#334155] flex items-center gap-1.5 pr-2">
+                                <span className="truncate" title={recHost}>{recHost}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(recHost, hostKey)}
+                                  className="text-[10px] text-[#2563EB] hover:underline font-sans shrink-0 px-1 py-0.5 rounded bg-[#EFF6FF]"
+                                >
+                                  {copiedKey === hostKey ? "Copied!" : "Copy"}
+                                </button>
+                              </div>
+                              <div className="col-span-4 font-mono text-[#334155] flex items-center gap-1.5 pr-2">
+                                <span className="truncate" title={recVal}>{recVal}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(recVal, valKey)}
+                                  className="text-[10px] text-[#2563EB] hover:underline font-sans shrink-0 px-1 py-0.5 rounded bg-[#EFF6FF]"
+                                >
+                                  {copiedKey === valKey ? "Copied!" : "Copy"}
+                                </button>
+                              </div>
+                              <div className="col-span-2 text-right">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10.5px] font-bold ${
+                                    rec.status === "verified" || isVerified
+                                      ? "bg-[#ECFDF5] text-[#059669]"
+                                      : "bg-[#FEF3C7] text-[#D97706]"
+                                  }`}
+                                >
+                                  {rec.status === "verified" || isVerified ? "✓ Verified" : "Pending"}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 text-center text-[#64748B] text-[12px]">
+                          Generating DKIM &amp; MAIL FROM tokens from AWS SES... Click Check Verification in a few moments.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

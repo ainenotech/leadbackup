@@ -59,10 +59,42 @@ function AppContent() {
   const [events, setEvents] = useState<ActivityFeedEvent[]>([]);
   const [recentLogs, setRecentLogs] = useState<CampaignLogItem[]>([]);
 
-  // Check existing session on mount
+  // Check existing session or handle OAuth login ticket on mount
   useEffect(() => {
     setMounted(true);
     const checkAuth = async () => {
+      // 1. Check if returning from OAuth redirect with a login ticket
+      if (typeof window !== "undefined") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const ticket = urlParams.get("login_ticket");
+        if (ticket) {
+          try {
+            const data = await api.exchangeTicket(ticket);
+            if (data && data.user) {
+              setCurrentUser(data.user);
+              setCurrentOrg(data.organization || data.organizations?.[0] || null);
+              setOrganizations(data.organizations || (data.organization ? [data.organization] : []));
+              try {
+                const mb = await api.getSystemMailbox();
+                setActiveSenderEmail(mb.sender_email || "mohit@nenotechnology.us");
+              } catch {
+                setActiveSenderEmail("mohit@nenotechnology.us");
+              }
+              setIsAuthenticated(true);
+              // Clean the query param from URL without reload
+              const cleanUrl = new URL(window.location.href);
+              cleanUrl.searchParams.delete("login_ticket");
+              window.history.replaceState({}, "", cleanUrl.toString());
+              setIsAuthChecking(false);
+              return;
+            }
+          } catch (err) {
+            console.error("Failed to exchange login ticket:", err);
+          }
+        }
+      }
+
+      // 2. Standard token session check
       const token = getStoredToken();
       if (!token) {
         setIsAuthenticated(false);
@@ -77,7 +109,12 @@ function AppContent() {
           const org = me.active_organization || me.organization || me.organizations?.[0];
           setCurrentOrg(org || null);
           setOrganizations(me.organizations || (org ? [org] : []));
-          setActiveSenderEmail(me.user.email || "mohit@nenotechnology.us");
+          try {
+            const mb = await api.getSystemMailbox();
+            setActiveSenderEmail(mb.sender_email || "mohit@nenotechnology.us");
+          } catch {
+            setActiveSenderEmail("mohit@nenotechnology.us");
+          }
           setIsAuthenticated(true);
         } else {
           setIsAuthenticated(false);
@@ -160,7 +197,7 @@ function AppContent() {
     }
   };
 
-  const handleLoginSuccess = (
+  const handleLoginSuccess = async (
     user: AuthUser,
     org: AuthOrganization,
     orgs: AuthOrganization[]
@@ -168,7 +205,12 @@ function AppContent() {
     setCurrentUser(user);
     setCurrentOrg(org);
     setOrganizations(orgs);
-    setActiveSenderEmail(user.email || "mohit@nenotechnology.us");
+    try {
+      const mb = await api.getSystemMailbox();
+      setActiveSenderEmail(mb.sender_email || "mohit@nenotechnology.us");
+    } catch {
+      setActiveSenderEmail("mohit@nenotechnology.us");
+    }
     setIsAuthenticated(true);
     fetchTelemetry();
   };
@@ -253,7 +295,7 @@ function AppContent() {
 
         {activePage === "analytics" && <AnalyticsView />}
 
-        {activePage === "templates" && <TemplateHubView />}
+        {activePage === "templates" && <TemplateHubView activeSenderEmail={activeSenderEmail} />}
 
         {activePage === "upload" && (
           <UploadDraftView
@@ -267,10 +309,11 @@ function AppContent() {
           <EmailReviewView
             onDraftsApproved={fetchTelemetry}
             onNavigateToUpload={() => handlePageChange("upload")}
+            activeSenderEmail={activeSenderEmail}
           />
         )}
 
-        {activePage === "replies" && <RepliesBookingsView />}
+        {activePage === "replies" && <RepliesBookingsView activeSenderEmail={activeSenderEmail} />}
 
         {activePage === "knowledge_base" && <KnowledgeBaseView />}
 

@@ -23,11 +23,13 @@ import {
 interface EmailReviewViewProps {
   onDraftsApproved?: () => void;
   onNavigateToUpload?: () => void;
+  activeSenderEmail?: string;
 }
 
 export default function EmailReviewView({
   onDraftsApproved,
   onNavigateToUpload,
+  activeSenderEmail,
 }: EmailReviewViewProps = {}) {
   const [drafts, setDrafts] = useState<CampaignLogItem[]>([]);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
@@ -473,7 +475,7 @@ export default function EmailReviewView({
             {/* Recipient Routing Subheader */}
             <div className="px-4 py-2 bg-white border-b border-[#F1F5F9] text-[12px] text-[#475569] flex flex-wrap gap-4">
               <div>
-                <strong className="text-[#1E293B]">From:</strong> AINeotechnology Outreach &lt;support@nenotechnology.com&gt;
+                <strong className="text-[#1E293B]">From:</strong> Neno Technology Outreach &lt;{activeSenderEmail || "mohit@nenotechnology.us"}&gt;
               </div>
               <div>
                 <strong className="text-[#1E293B]">To:</strong> {currentDraft?.name || "Lead"} &lt;{currentDraft?.email}&gt;

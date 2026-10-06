@@ -27,8 +27,8 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
   const [tab, setTab] = useState<"signin" | "register">("signin");
 
   // Sign In Form State
-  const [signInEmail, setSignInEmail] = useState("mohit@nenotechnology.us");
-  const [signInPassword, setSignInPassword] = useState("Admin@12345");
+  const [signInEmail, setSignInEmail] = useState("");
+  const [signInPassword, setSignInPassword] = useState("");
   const [signInLoading, setSignInLoading] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
 
@@ -232,20 +232,6 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
             {/* TAB 1: SIGN IN */}
             {tab === "signin" && (
               <div>
-                {/* Active Workspace Badge from Old Project */}
-                <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 mb-5 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xl">🏢</span>
-                    <div>
-                      <div className="text-[13px] font-bold text-[#0F172A]">Neno Technology</div>
-                      <div className="text-[11px] text-[#64748B]">Workspace: nenotechnology</div>
-                    </div>
-                  </div>
-                  <span className="bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] text-[10.5px] font-bold px-2.5 py-1 rounded-md">
-                    👑 Owner Active
-                  </span>
-                </div>
-
                 {signInError && (
                   <div className="mb-4 p-3 bg-[#FEF2F2] border border-[#FECACA] rounded-xl text-[12.5px] text-[#DC2626] font-medium flex items-center gap-2">
                     <span>⚠️</span>

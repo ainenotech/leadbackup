@@ -302,8 +302,8 @@ def _handle_oauth_auth(provider: str, purpose: str, email: str, config: dict, cu
         IdentityAccount.provider_user_id == immutable_id
     ).first()
     
-    app_url = os.getenv("APP_URL", "http://localhost:8501")
-    allow_consumer = os.getenv("AUTH_ALLOW_CONSUMER_ACCOUNTS", "false").lower() == "true"
+    app_url = os.getenv("APP_URL", "http://localhost:3000")
+    allow_consumer = os.getenv("AUTH_ALLOW_CONSUMER_ACCOUNTS", "true").lower() == "true"
     
     if purpose == "link":
         if not current_user_id or current_user_id == "login":
@@ -338,32 +338,59 @@ def _handle_oauth_auth(provider: str, purpose: str, email: str, config: dict, cu
         else:
             user = db.query(User).filter(User.email == clean_email).first()
             if user:
-                if not user.email_verified and email_verified:
-                    pass
+                # Safe linking rule:
+                # Link if provider verified email, user has active memberships, or user pre-provisioned via invite
+                has_memberships = db.query(OrganizationMember).filter(OrganizationMember.user_id == user.id).count() > 0
+                if email_verified or has_memberships or not user.password_hash or user.email_verified:
+                    user.email_verified = True
                 else:
-                    return _render_oauth_result("Account Exists", "We couldn't sign you in. If you already have an account, sign in the usual way and link your Microsoft or Google account inside the app.", True)
+                    return _render_oauth_result("Account Exists", "An account with this email already exists. Please log in with your password to link this account.", True)
             else:
                 if is_consumer and not allow_consumer:
                     return _render_oauth_result("Work Account Required", f"Personal {provider.capitalize()} accounts are not supported. Please use a work or school account.", True)
                     
-                dummy_password = os.urandom(16).hex()
-                org_name = clean_email.split("@")[1].split(".")[0].capitalize()
-                try:
-                    register_organization_and_user(
-                        db=db,
-                        org_name=f"{org_name} Workspace",
-                        admin_email=clean_email,
-                        password=dummy_password,
-                        full_name=None,
-                        industry=None,
-                        company_size=None,
-                        phone=None,
-                        website=None
+                # Create user
+                user_id = str(uuid.uuid4())
+                user = User(
+                    id=user_id,
+                    email=clean_email,
+                    email_verified=True,
+                    full_name=config.get("name") or clean_email.split("@")[0].capitalize(),
+                    status="active",
+                    platform_role="user",
+                )
+                db.add(user)
+                db.flush()
+
+                # If no existing organization memberships, provision an initial customer organization
+                has_memberships = db.query(OrganizationMember).filter(OrganizationMember.user_id == user.id).count() > 0
+                if not has_memberships:
+                    display_name = user.full_name or clean_email.split("@")[0].capitalize()
+                    org_slug = f"org-{uuid.uuid4().hex[:8]}"
+                    new_org = Organization(
+                        id=str(uuid.uuid4()),
+                        name=f"{display_name} Organization",
+                        slug=org_slug,
+                        status="active",
+                        is_platform_org=False,
                     )
-                    user = db.query(User).filter(User.email == clean_email).first()
-                except Exception as e:
-                    db.rollback()
-                    return _render_oauth_result("Sign Up Failed", str(e), True)
+                    db.add(new_org)
+                    db.flush()
+
+                    membership = OrganizationMember(
+                        id=str(uuid.uuid4()),
+                        organization_id=new_org.id,
+                        user_id=user.id,
+                        role="organization_owner",
+                        status="active",
+                        is_default=True,
+                    )
+                    db.add(membership)
+                    try:
+                        from services.master_db_service import log_audit
+                        log_audit(db, action="organization.created", entity_type="organization", entity_id=new_org.id, user=user.id)
+                    except Exception:
+                        pass
                     
             if not identity:
                 identity = IdentityAccount(

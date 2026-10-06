@@ -216,7 +216,20 @@ export default function Sidebar({
             {organizations && organizations.length > 1 ? (
               <select
                 value={currentOrg?.id || ""}
-                onChange={(e) => onSwitchOrg(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "__new_org__") {
+                    const orgName = prompt("Enter new organization name:");
+                    if (orgName && orgName.trim()) {
+                      api.createOrganization({ name: orgName.trim() })
+                        .then((res) => {
+                          window.location.reload();
+                        })
+                        .catch((err) => alert(err.message));
+                    }
+                  } else {
+                    onSwitchOrg(e.target.value);
+                  }
+                }}
                 className="w-full px-2.5 py-1.5 bg-white border border-[#CBD5E1] rounded-lg text-[13px] font-bold text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
               >
                 {organizations.map((org) => (
@@ -224,10 +237,28 @@ export default function Sidebar({
                     {org.name}
                   </option>
                 ))}
+                <option value="__new_org__">+ Create New Workspace...</option>
               </select>
             ) : (
-              <div className="text-[13.5px] font-bold text-[#0F172A] truncate">
-                {currentOrg?.name || "Neno Technology"}
+              <div className="flex items-center justify-between">
+                <div className="text-[13.5px] font-bold text-[#0F172A] truncate">
+                  {currentOrg?.name || "My Organization"}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const orgName = prompt("Enter new organization name:");
+                    if (orgName && orgName.trim()) {
+                      api.createOrganization({ name: orgName.trim() })
+                        .then(() => window.location.reload())
+                        .catch((err) => alert(err.message));
+                    }
+                  }}
+                  className="text-[11px] text-[#2563EB] hover:underline font-bold"
+                  title="Create new organization"
+                >
+                  + New
+                </button>
               </div>
             )}
 
@@ -447,11 +478,12 @@ export default function Sidebar({
         {/* 11. User Profile & Sign Out Footer */}
         <div className="pt-2 border-t border-[#F1F5F9]">
           <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 mb-2">
+            <div className="text-[9.5px] font-bold text-[#94A3B8] uppercase mb-0.5">Logged In Account</div>
             <div className="font-bold text-[13px] text-[#0F172A] truncate">
-              {currentUser?.full_name || currentUser?.email?.split("@")[0] || "Mohit Patel"}
+              {currentUser?.full_name || currentUser?.email?.split("@")[0] || "Team Member"}
             </div>
             <div className="text-[11px] text-[#64748B] truncate">
-              {currentUser?.email || "mohit@nenotechnology.us"}
+              {currentUser?.email || ""}
             </div>
             <div className="mt-1">
               <span className="bg-[#EDE9FE] text-[#7C3AED] text-[10px] font-bold px-1.5 py-0.5 rounded">

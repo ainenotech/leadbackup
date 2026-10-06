@@ -14,6 +14,7 @@ Design principles:
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Index, Integer,
@@ -196,6 +197,27 @@ class IdentityAccount(Base):
         UniqueConstraint("provider", "provider_user_id", name="uq_identity_provider_user"),
         Index("ix_identity_user_provider", "user_id", "provider"),
     )
+
+    @property
+    def provider_subject(self) -> str:
+        return self.provider_user_id
+
+    @provider_subject.setter
+    def provider_subject(self, val: str):
+        self.provider_user_id = val
+
+    @property
+    def email(self) -> Optional[str]:
+        return self.provider_email
+
+    @email.setter
+    def email(self, val: Optional[str]):
+        self.provider_email = val
+
+
+# Aliases for architecture specifications
+OAuthIdentity = IdentityAccount
+OrganizationMembership = OrganizationMember
 
 
 # ─────────────────────────────────────────────────────────────

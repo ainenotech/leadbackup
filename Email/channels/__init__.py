@@ -39,6 +39,9 @@ def get_channel_handler(channel_name: str, config: dict = None) -> SendChannel:
     elif channel_name == "google_oauth":
         from .google_oauth_channel import GoogleOAuthChannel
         return GoogleOAuthChannel()
+    elif channel_name == "customer_domain":
+        from services.domain_auth_service import _get_provider
+        return CustomerDomainAdapter(ses_mailer=_get_provider())
     elif channel_name in ("smtp_imap", "own_domain"):
         return NotImplementedChannel(channel_name)
     raise ValueError(f"Unknown channel: {channel_name}")

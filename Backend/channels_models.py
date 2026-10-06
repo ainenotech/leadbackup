@@ -87,7 +87,7 @@ class OAuthFlowState(Base):
     organization_id = Column(
         String,
         ForeignKey("organizations.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     user_id = Column(String, nullable=False)
     expected_email = Column(String, nullable=False)

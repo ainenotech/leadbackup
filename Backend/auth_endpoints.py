@@ -92,6 +92,16 @@ class OrgStatusRequest(BaseModel):
     status: str
 
 
+class CreateOrganizationRequest(BaseModel):
+    name: str
+    slug: Optional[str] = None
+    brand_name: Optional[str] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_size: Optional[str] = None
+    phone: Optional[str] = None
+
+
 # ─────────────────────────────────────────────────────────────
 # FASTAPI DEPENDENCIES (Tenant & User Context)
 # ─────────────────────────────────────────────────────────────
@@ -208,20 +218,16 @@ def auth_oauth_login(
         raise HTTPException(status_code=400, detail="Unsupported provider")
         
     user_id = "login"
-    org = db.query(Organization).filter(Organization.is_platform_org == True).first()
-    if not org:
-        org = db.query(Organization).first()
-    if not org:
-        raise HTTPException(status_code=500, detail="No organization exists to anchor login state.")
-    org_id = org.id
+    org = db.query(Organization).first()
+    org_id = org.id if org else None
 
     from services.oauth_service import build_auth_url_and_flow, build_google_auth_url_and_flow
     if provider == "microsoft":
-        scopes = ["openid", "profile", "email"]
+        scopes = ["User.Read"]
         redirect_uri = os.getenv("MS_OAUTH_REDIRECT_URI", "http://localhost:8000/api/channels/oauth/microsoft/callback")
         flow = build_auth_url_and_flow(scopes=scopes, redirect_uri=redirect_uri)
     elif provider == "google":
-        scopes = ["openid", "email", "profile"]
+        scopes = ["User.Read"]
         redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8000/api/channels/oauth/google/callback")
         flow = build_google_auth_url_and_flow(scopes=scopes, redirect_uri=redirect_uri)
 
@@ -678,3 +684,304 @@ def logout_endpoint():
     response = JSONResponse(content={"status": "success", "message": "Successfully signed out."})
     response.delete_cookie(key="session_token", path="/")
     return response
+
+
+# ── Universal Organization Endpoints ──
+
+@router.post("/organizations")
+@router.post("/auth/organizations")
+def create_organization_endpoint(
+    req: CreateOrganizationRequest,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Create a new customer organization and assign creator as owner."""
+    import re
+    db = SessionLocal()
+    try:
+        user_id = context["user_id"]
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        base_slug = req.slug or re.sub(r'[^a-z0-9]+', '-', req.name.strip().lower()).strip('-')
+        if not base_slug:
+            base_slug = "workspace"
+        slug = base_slug
+        counter = 1
+        while db.query(Organization).filter(Organization.slug == slug).first():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
+        org_id = str(uuid.uuid4())
+        org = Organization(
+            id=org_id,
+            name=req.name.strip(),
+            slug=slug,
+            brand_name=req.brand_name.strip() if req.brand_name else req.name.strip(),
+            website=req.website.strip() if req.website else None,
+            industry=req.industry.strip() if req.industry else None,
+            company_size=req.company_size.strip() if req.company_size else None,
+            phone=req.phone.strip() if req.phone else None,
+            status="active",
+            is_platform_org=False,
+        )
+        db.add(org)
+        db.flush()
+
+        membership = OrganizationMember(
+            id=str(uuid.uuid4()),
+            organization_id=org.id,
+            user_id=user.id,
+            role="organization_owner",
+            status="active",
+            is_default=True,
+        )
+        db.add(membership)
+        db.commit()
+
+        try:
+            from services.master_db_service import log_audit
+            log_audit(db, action="organization.created", entity_type="organization", entity_id=org.id, user=user.id)
+        except Exception:
+            pass
+
+        new_token = create_access_token(
+            user_id=user.id,
+            org_id=org.id,
+            role="organization_owner",
+            email=user.email,
+            platform_role=user.platform_role,
+        )
+
+        return {
+            "status": "success",
+            "access_token": new_token,
+            "organization": {
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug,
+                "brand_name": org.brand_name,
+                "role": "organization_owner",
+                "status": org.status,
+            },
+            "data": {
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug,
+                "brand_name": org.brand_name,
+                "role": "organization_owner",
+            },
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.get("/organizations")
+def list_user_organizations_endpoint(
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """List all organizations the authenticated user belongs to."""
+    db = SessionLocal()
+    try:
+        user_id = context["user_id"]
+        memberships = (
+            db.query(OrganizationMember, Organization)
+            .join(Organization, OrganizationMember.organization_id == Organization.id)
+            .filter(
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.status == "active",
+                Organization.status == "active",
+            )
+            .all()
+        )
+        org_list = [
+            {
+                "id": o.id,
+                "name": o.name,
+                "slug": o.slug,
+                "role": m.role,
+                "is_default": m.is_default,
+                "status": o.status,
+                "logo_url": o.logo_url,
+                "brand_name": o.brand_name or o.name,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+            }
+            for m, o in memberships
+        ]
+        return {"status": "success", "organizations": org_list, "data": org_list}
+    finally:
+        db.close()
+
+
+@router.get("/organizations/{organization_id}")
+def get_organization_endpoint(
+    organization_id: str,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Get single organization details scoped to caller's membership."""
+    db = SessionLocal()
+    try:
+        user_id = context["user_id"]
+        is_super = context.get("platform_role") == "platform_super_admin"
+        if not is_super:
+            membership = db.query(OrganizationMember).filter(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.status == "active",
+            ).first()
+            if not membership:
+                raise HTTPException(status_code=403, detail="Access denied to this organization.")
+
+        org = db.query(Organization).filter(Organization.id == organization_id).first()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        member_count = db.query(OrganizationMember).filter(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.status == "active",
+        ).count()
+
+        return {
+            "status": "success",
+            "data": {
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug,
+                "brand_name": org.brand_name or org.name,
+                "logo_url": org.logo_url,
+                "website": org.website,
+                "status": org.status,
+                "member_count": member_count,
+                "settings": org.settings or {},
+            },
+        }
+    finally:
+        db.close()
+
+
+@router.get("/organizations/{organization_id}/members")
+def get_organization_members_endpoint(
+    organization_id: str,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """List members for a specific organization."""
+    db = SessionLocal()
+    try:
+        user_id = context["user_id"]
+        is_super = context.get("platform_role") == "platform_super_admin"
+        if not is_super:
+            membership = db.query(OrganizationMember).filter(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.status == "active",
+            ).first()
+            if not membership:
+                raise HTTPException(status_code=403, detail="Access denied to this organization.")
+
+        members = get_org_members(db, organization_id)
+        return {"status": "success", "members": members, "data": members}
+    finally:
+        db.close()
+
+
+@router.post("/organizations/{organization_id}/members/invite")
+def invite_organization_member_endpoint(
+    organization_id: str,
+    req: InviteMemberRequest,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Invite member to an organization."""
+    db = SessionLocal()
+    try:
+        user_id = context["user_id"]
+        is_super = context.get("platform_role") == "platform_super_admin"
+        if not is_super:
+            membership = db.query(OrganizationMember).filter(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.status == "active",
+            ).first()
+            if not membership or membership.role not in ("organization_owner", "owner", "organization_admin", "admin"):
+                raise HTTPException(status_code=403, detail="Only organization owners or admins can invite members.")
+
+        # Normalize role
+        target_role = req.role
+        if target_role == "owner":
+            target_role = "organization_owner"
+        elif target_role == "admin":
+            target_role = "organization_admin"
+        elif target_role == "member":
+            target_role = "regular_user"
+
+        result = invite_org_member(
+            db=db,
+            org_id=organization_id,
+            invited_by_user_id=user_id,
+            email=req.email,
+            role=target_role,
+            full_name=req.full_name,
+            temporary_password=req.temporary_password,
+        )
+        try:
+            from services.master_db_service import log_audit
+            log_audit(db, action="organization.member.invited", entity_type="organization_member", entity_id=result.get("member_id"), user=user_id)
+        except Exception:
+            pass
+
+        return {"status": "success", "success": True, "data": result}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.post("/organizations/{organization_id}/members/{target_user_id}/accept")
+def accept_organization_invite_endpoint(
+    organization_id: str,
+    target_user_id: str,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Accept invitation to an organization."""
+    db = SessionLocal()
+    try:
+        caller_id = context["user_id"]
+        if caller_id != target_user_id and context.get("platform_role") != "platform_super_admin":
+            raise HTTPException(status_code=403, detail="Cannot accept invitation for another user.")
+
+        membership = db.query(OrganizationMember).filter(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.user_id == target_user_id,
+        ).first()
+
+        if not membership:
+            raise HTTPException(status_code=404, detail="Invitation not found.")
+
+        membership.status = "active"
+        membership.joined_at = datetime.now(timezone.utc)
+        db.commit()
+
+        try:
+            from services.master_db_service import log_audit
+            log_audit(db, action="organization.member.accepted", entity_type="organization_member", entity_id=membership.id, user=caller_id)
+        except Exception:
+            pass
+
+        return {
+            "status": "success",
+            "message": "Invitation accepted.",
+            "membership": {
+                "id": membership.id,
+                "organization_id": membership.organization_id,
+                "user_id": membership.user_id,
+                "role": membership.role,
+                "status": membership.status,
+            }
+        }
+    finally:
+        db.close()
+

@@ -120,7 +120,8 @@ def register_domain(
     """
     org = _verify_org_admin(db, user_id, organization_id)
     domain = _extract_domain(email_address)
-    local_part = email_address.split("@")[0] if "@" in email_address else ""
+    local_part = email_address.split("@")[0] if "@" in email_address else "outreach"
+    eff_reply_to = reply_to or (email_address.strip() if "@" in email_address else f"outreach@{domain}")
 
     # Check for existing claim
     existing = db.query(OrgSendingDomain).filter(
@@ -176,13 +177,20 @@ def register_domain(
         status="pending",
         from_local_part=local_part,
         from_name=from_name or org.brand_name or org.name,
-        reply_to=reply_to or email_address.strip(),
+        reply_to=eff_reply_to,
         mail_from_subdomain="mail",
         daily_cap=_DEFAULT_DAILY_CAP,
         claim_expires_at=datetime.now(timezone.utc) + timedelta(days=_PENDING_EXPIRY_DAYS),
     )
     db.add(sending_domain)
     db.flush()
+
+    try:
+        from services.master_db_service import log_audit
+        log_audit(db, action="email_domain.created", entity_type="email_domain", entity_id=sending_domain.id, user=user_id)
+        log_audit(db, action="email_domain.verification_started", entity_type="email_domain", entity_id=sending_domain.id, user=user_id)
+    except Exception:
+        pass
 
     # Store DKIM records
     for dkim in result.dkim_records:
@@ -338,20 +346,25 @@ def _run_dns_check(
     if provider_result:
         provider_dkim_verified = provider_result.dkim_status in ("success",)
 
-    # Domain verified only when provider DKIM verified AND our DNS lookup agrees
-    if provider_dkim_verified and all_dkim_verified:
+    # Domain verified when provider DKIM verified OR local DNS lookup verified
+    if provider_dkim_verified or all_dkim_verified:
         if domain_rec.status in ("pending", "blocked"):
-            domain_rec.status = "limited"  # Initially limited (capped)
+            domain_rec.status = "ready"
             domain_rec.verified_at = now
             domain_rec.claim_expires_at = None  # No longer expires
-
-            # If cap is high enough, mark as ready
-            if domain_rec.daily_cap > 0:
-                domain_rec.status = "limited"
-            else:
-                domain_rec.status = "ready"
+            try:
+                from services.master_db_service import log_audit
+                log_audit(db, action="email_domain.verification_succeeded", entity_type="email_domain", entity_id=domain_rec.id, user=triggered_by)
+                log_audit(db, action="email_domain.sending_enabled", entity_type="email_domain", entity_id=domain_rec.id, user=triggered_by)
+            except Exception:
+                pass
     elif domain_rec.status == "pending":
         domain_rec.status = "pending"
+        try:
+            from services.master_db_service import log_audit
+            log_audit(db, action="email_domain.verification_failed", entity_type="email_domain", entity_id=domain_rec.id, user=triggered_by)
+        except Exception:
+            pass
 
     domain_rec.last_checked_at = now
 
@@ -486,6 +499,13 @@ def pause_domain(
     domain_rec.paused_reason = reason
     db.commit()
     db.refresh(domain_rec)
+
+    try:
+        from services.master_db_service import log_audit
+        log_audit(db, action="email_domain.sending_disabled", entity_type="email_domain", entity_id=domain_id, user=user_id)
+    except Exception:
+        pass
+
     return _serialize_domain(db, domain_rec)
 
 
@@ -508,10 +528,17 @@ def resume_domain(
     if domain_rec.status != "paused":
         raise ValueError("Domain is not paused")
 
-    domain_rec.status = "limited" if domain_rec.verified_at else "pending"
+    domain_rec.status = "ready" if domain_rec.verified_at else "pending"
     domain_rec.paused_reason = None
     db.commit()
     db.refresh(domain_rec)
+
+    try:
+        from services.master_db_service import log_audit
+        log_audit(db, action="email_domain.sending_enabled", entity_type="email_domain", entity_id=domain_id, user=user_id)
+    except Exception:
+        pass
+
     return _serialize_domain(db, domain_rec)
 
 
@@ -544,6 +571,13 @@ def delete_domain(
     db.query(OrgDomainStats).filter(OrgDomainStats.domain_id == domain_id).delete()
     db.delete(domain_rec)
     db.commit()
+
+    try:
+        from services.master_db_service import log_audit
+        log_audit(db, action="email_domain.deleted", entity_type="email_domain", entity_id=domain_id, user=user_id)
+    except Exception:
+        pass
+
     return True
 
 
@@ -811,12 +845,19 @@ def _serialize_domain(
         OrgDomainStats.date == today,
     ).first()
 
+    v_status = "verified" if domain.status in ("ready", "limited") else ("disabled" if domain.status == "paused" else ("failed" if domain.status == "blocked" else "pending"))
+    can_send = domain.status in ("ready", "limited")
+
     return {
         "id": domain.id,
         "organization_id": domain.organization_id,
         "domain": domain.domain,
         "provider": domain.provider,
         "status": domain.status,
+        "verification_status": v_status,
+        "can_send": can_send,
+        "ses_identity_arn": domain.provider_identity_ref,
+        "verification_method": "dns_dkim",
         "from_address": f"{domain.from_local_part}@{domain.domain}" if domain.from_local_part else f"noreply@{domain.domain}",
         "from_name": domain.from_name,
         "reply_to": domain.reply_to,

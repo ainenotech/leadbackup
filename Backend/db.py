@@ -31,12 +31,10 @@ def _init_engine(url: str):
             pass
         return eng
     except Exception as exc:
-        sqlite_fallback = "sqlite:///campaign.db"
         server_info = url.split("@")[-1] if "@" in url else url
-        print(f"[Notice] Could not connect to PostgreSQL at {server_info} ({exc}).")
-        print(f"[Notice] Automatically falling back to local SQLite database: '{sqlite_fallback}'.")
-        return create_engine(sqlite_fallback, connect_args={"check_same_thread": False, "timeout": 30})
-
+        raise RuntimeError(
+            f"Could not connect to PostgreSQL at {server_info}"
+        ) from exc 
 
 engine = _init_engine(DATABASE_URL)
 
@@ -53,7 +51,11 @@ def init_db():
         return
 
     from sqlalchemy import inspect, text
-    import Backend.models  # Ensure all model tables are registered on Base
+    import Backend.models
+    import Backend.auth_models
+    import Backend.domain_models
+    import Backend.channels_models
+    import Backend.master_db_models
 
     Base.metadata.create_all(bind=engine)
     new_cols = [

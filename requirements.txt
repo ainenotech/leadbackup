@@ -30,3 +30,10 @@ google-auth
 # Analytics & Exporting (PDF / Excel / Charts)
 matplotlib
 reportlab
+
+# Authentication & Networking
+bcrypt
+PyJWT
+dnspython
+boto3
+pytest

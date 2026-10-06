@@ -200,14 +200,30 @@ export interface TeamMember {
 export interface SendingDomain {
   id: string;
   domain: string;
-  status: "verified" | "pending" | "failed" | "paused";
+  status: "verified" | "pending" | "failed" | "paused" | "ready" | "limited" | "blocked";
+  verification_status?: "verified" | "pending" | "failed" | "disabled";
+  can_send?: boolean;
+  from_name?: string;
+  from_address?: string;
+  reply_to?: string;
+  daily_cap?: number;
+  ses_identity_arn?: string;
+  verification_method?: string;
   reputation_score?: number;
   created_at?: string;
+  verified_at?: string;
+  last_checked_at?: string;
   records?: Array<{
-    type: string;
-    name: string;
-    value: string;
+    id?: string;
+    record_type?: string;
+    type?: string;
+    host?: string;
+    name?: string;
+    value?: string;
     status: string;
+    purpose?: string;
+    required?: boolean;
+    last_result?: string;
   }>;
 }
 
@@ -421,7 +437,127 @@ export const api = {
     return res.json();
   },
 
-  // ── Sending Domains & DNS ──
+  // ── Multi-Tenant SaaS & Organization Endpoints ──
+  async exchangeTicket(ticket: string): Promise<{
+    access_token: string;
+    token_type: string;
+    user: AuthUser;
+    organization: AuthOrganization;
+    organizations: AuthOrganization[];
+  }> {
+    const res = await fetch(`/api/auth/oauth/ticket?ticket=${encodeURIComponent(ticket)}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "OAuth login exchange failed" }));
+      throw new Error(err.detail || "OAuth login exchange failed");
+    }
+    const data = await res.json();
+    if (data.access_token) {
+      setStoredToken(data.access_token);
+    }
+    return data;
+  },
+
+  async createOrganization(payload: { name: string; slug?: string }): Promise<{
+    organization: AuthOrganization;
+    access_token: string;
+  }> {
+    const res = await fetch("/api/organizations", {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to create organization" }));
+      throw new Error(err.detail || "Failed to create organization");
+    }
+    const data = await res.json();
+    if (data.access_token) {
+      setStoredToken(data.access_token);
+    }
+    return data;
+  },
+
+  async getOrganizations(): Promise<AuthOrganization[]> {
+    const res = await fetch("/api/organizations", {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.organizations || [];
+  },
+
+  async getOrganization(orgId: string): Promise<AuthOrganization> {
+    const res = await fetch(`/api/organizations/${orgId}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to load organization");
+    const json = await res.json();
+    return json.organization || json;
+  },
+
+  // ── Sending Domains & AWS SES Verification ──
+  async getEmailDomains(orgId: string): Promise<SendingDomain[]> {
+    const res = await fetch(`/api/organizations/${orgId}/email-domains`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      // Fallback to legacy endpoint if needed
+      return this.getDomains(orgId);
+    }
+    const json = await res.json();
+    return json.domains || [];
+  },
+
+  async addEmailDomain(orgId: string, domain: string): Promise<any> {
+    const res = await fetch(`/api/organizations/${orgId}/email-domains`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ domain }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to add domain" }));
+      throw new Error(err.detail || "Failed to add domain");
+    }
+    return res.json();
+  },
+
+  async verifyEmailDomain(orgId: string, domainId: string): Promise<any> {
+    const res = await fetch(`/api/organizations/${orgId}/email-domains/${domainId}/verify`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Verification check failed" }));
+      throw new Error(err.detail || "Verification check failed");
+    }
+    return res.json();
+  },
+
+  async toggleDomainSending(orgId: string, domainId: string, can_send: boolean): Promise<any> {
+    const res = await fetch(`/api/organizations/${orgId}/email-domains/${domainId}/sending`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ can_send }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to update sending status" }));
+      throw new Error(err.detail || "Failed to update sending status");
+    }
+    return res.json();
+  },
+
+  async deleteEmailDomain(orgId: string, domainId: string): Promise<any> {
+    const res = await fetch(`/api/organizations/${orgId}/email-domains/${domainId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to delete domain" }));
+      throw new Error(err.detail || "Failed to delete domain");
+    }
+    return res.json();
+  },
+
   async getDomains(orgId: string): Promise<SendingDomain[]> {
     const res = await fetch(`/api/domains/${orgId}`, {
       headers: getAuthHeaders(),
@@ -432,34 +568,28 @@ export const api = {
   },
 
   async registerDomain(orgId: string, domain: string): Promise<any> {
-    const res = await fetch(`/api/domains/${orgId}`, {
-      method: "POST",
-      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ domain }),
-    });
-    if (!res.ok) throw new Error("Failed to register domain");
-    return res.json();
+    return this.addEmailDomain(orgId, domain);
   },
 
   async verifyDomain(orgId: string, domainId: string): Promise<any> {
-    const res = await fetch(`/api/domains/${orgId}/${domainId}/verify`, {
-      method: "POST",
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error("Verification failed");
-    return res.json();
+    return this.verifyEmailDomain(orgId, domainId);
   },
 
   async deleteDomain(orgId: string, domainId: string): Promise<any> {
-    const res = await fetch(`/api/domains/${orgId}/${domainId}`, {
-      method: "DELETE",
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error("Failed to remove domain");
-    return res.json();
+    return this.deleteEmailDomain(orgId, domainId);
   },
 
   // ── Pipeline & Telemetry Endpoints ──
+  async getSystemMailbox(): Promise<{ sender_email: string; sender_name?: string; contact_email?: string; api_base_url?: string }> {
+    try {
+      const res = await fetch("/api/system/mailbox");
+      if (!res.ok) return { sender_email: "mohit@nenotechnology.us" };
+      return res.json();
+    } catch {
+      return { sender_email: "mohit@nenotechnology.us" };
+    }
+  },
+
   async getOverviewStats(): Promise<OverviewStats> {
     const res = await fetch("/api/realtime/summary");
     if (!res.ok) throw new Error("Failed to load overview stats");

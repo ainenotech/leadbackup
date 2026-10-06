@@ -5,7 +5,11 @@ import HeaderBanner from "@/components/layout/HeaderBanner";
 import { api, ReplyItem, BookingItem } from "@/lib/api";
 import { RefreshCw, Play, Square, Download, Search, MessageSquare, Bot, BookOpen, Calendar, FileSpreadsheet, CheckCircle2, Upload } from "lucide-react";
 
-export default function RepliesBookingsView() {
+export default function RepliesBookingsView({
+  activeSenderEmail,
+}: {
+  activeSenderEmail?: string;
+} = {}) {
   const [replies, setReplies] = useState<ReplyItem[]>([]);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [daemonRunning, setDaemonRunning] = useState(false);
@@ -131,7 +135,7 @@ export default function RepliesBookingsView() {
                 </span>
               </div>
               <div className="text-[12.5px] text-[#64748B] mt-1">
-                Monitors <code className="text-[#2563EB]">support@nenotechnology.com</code> inbox · Auto-activates only on customer reply · Answers via RAG vector intelligence
+                Monitors <code className="text-[#2563EB]">{activeSenderEmail || "mohit@nenotechnology.us"}</code> inbox · Auto-activates only on customer reply · Answers via RAG vector intelligence
               </div>
             </div>
           </div>
