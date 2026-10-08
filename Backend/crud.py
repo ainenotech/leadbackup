@@ -532,13 +532,27 @@ def _calculate_engagement(entry: CampaignLog) -> float:
     return min(100.0, score)
 
 
-def record_email_open(db: Session, token: str) -> Optional[CampaignLog]:
-    """Records a real email open event triggered by the 1x1 transparent tracking pixel."""
+def record_email_open(db: Session, token: str, event_time: Optional[datetime] = None) -> Optional[CampaignLog]:
+    """Records a real email open event triggered by the 1x1 transparent tracking pixel with rapid burst debouncing."""
     entry = get_by_token(db, token)
     if entry:
         entry.opened = True
-        entry.open_count = (entry.open_count or 0) + 1
-        now_utc = datetime.now(timezone.utc)
+        now_utc = event_time or datetime.now(timezone.utc)
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+
+        # Debounce: if an open was already recorded within the last 5 seconds (e.g. proxy double-fetching), do not increment count
+        is_duplicate = False
+        if entry.last_open_at:
+            last_open = entry.last_open_at
+            if last_open.tzinfo is None:
+                last_open = last_open.replace(tzinfo=timezone.utc)
+            if abs((now_utc - last_open).total_seconds()) < 5:
+                is_duplicate = True
+
+        if not is_duplicate:
+            entry.open_count = (entry.open_count or 0) + 1
+
         if not entry.first_open_at:
             entry.first_open_at = now_utc
         entry.last_open_at = now_utc
@@ -548,13 +562,29 @@ def record_email_open(db: Session, token: str) -> Optional[CampaignLog]:
     return entry
 
 
-def record_link_click(db: Session, token: str, destination_url: str = "") -> Optional[CampaignLog]:
-    """Records a real link click event triggered by click redirect tracking."""
+def record_link_click(
+    db: Session, token: str, destination_url: str = "", event_time: Optional[datetime] = None
+) -> Optional[CampaignLog]:
+    """Records a real link click event triggered by click redirect tracking with rapid burst debouncing."""
     entry = get_by_token(db, token)
     if entry:
         entry.clicked_link = True
-        entry.click_count = (entry.click_count or 0) + 1
-        now_utc = datetime.now(timezone.utc)
+        now_utc = event_time or datetime.now(timezone.utc)
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+
+        # Debounce: if a click was already recorded within the last 5 seconds (e.g. link scanner / prefetch + human click), do not increment count
+        is_duplicate = False
+        if entry.last_click_at:
+            last_click = entry.last_click_at
+            if last_click.tzinfo is None:
+                last_click = last_click.replace(tzinfo=timezone.utc)
+            if abs((now_utc - last_click).total_seconds()) < 5:
+                is_duplicate = True
+
+        if not is_duplicate:
+            entry.click_count = (entry.click_count or 0) + 1
+
         if not entry.first_click_at:
             entry.first_click_at = now_utc
         entry.last_click_at = now_utc

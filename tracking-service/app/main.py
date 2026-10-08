@@ -36,6 +36,22 @@ def record_event(
     request: Request,
     target_url: str | None = None,
 ):
+    from datetime import datetime, timezone, timedelta
+
+    # Debounce rapid duplicate events (e.g. link scanners, prefetch, or double click within 4s)
+    threshold = datetime.now(timezone.utc) - timedelta(seconds=4)
+    recent = (
+        db.query(TrackingEvent)
+        .filter(
+            TrackingEvent.token == token,
+            TrackingEvent.event_type == event_type,
+            TrackingEvent.created_at >= threshold,
+        )
+        .first()
+    )
+    if recent:
+        return recent
+
     event = TrackingEvent(
         token=token,
         event_type=event_type,

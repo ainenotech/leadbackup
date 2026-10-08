@@ -485,14 +485,18 @@ def get_all_templates():
     try:
         df = _get_logs_dataframe(db)
         templates = load_all_templates()
-        stats = compute_template_analytics(df)
+        analytics_result = compute_template_analytics(df)
+
+        stats_list = analytics_result.get("template_stats", [])
+        stats_map = {item["id"]: item for item in stats_list}
 
         enriched_templates = []
         for tpl in templates:
             t_id = tpl["id"]
-            t_stats = stats.get(t_id, {
-                "sent": 0, "opened": 0, "clicked": 0, "replied": 0,
-                "open_rate": 0.0, "click_rate": 0.0, "reply_rate": 0.0
+            t_stats = stats_map.get(t_id, {
+                "sent": 0, "opened": 0, "clicked": 0, "replied": 0, "booked": 0,
+                "open_rate": 0.0, "click_rate": 0.0, "reply_rate": 0.0, "booking_rate": 0.0,
+                "total_leads": 0, "total_sent": 0,
             })
             enriched_templates.append({
                 **tpl,
@@ -502,6 +506,11 @@ def get_all_templates():
         return {
             "templates": enriched_templates,
             "total": len(enriched_templates),
+            "summary": {
+                "best_open_rate": analytics_result.get("best_open_rate"),
+                "best_click_rate": analytics_result.get("best_click_rate"),
+                "best_booking_rate": analytics_result.get("best_booking_rate"),
+            }
         }
     finally:
         db.close()

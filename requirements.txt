@@ -11,6 +11,8 @@ pandas
 openpyxl
 fastapi
 uvicorn
+email-validator
+python-multipart
 
 # zoneinfo (stdlib on Linux/macOS) needs the IANA database bundled on
 # Windows; harmless everywhere else

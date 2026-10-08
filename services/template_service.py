@@ -612,13 +612,38 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
         
         t_df = df_copy[df_copy["resolved_template_id"] == tid]
         total_leads = len(t_df)
-        sent_df = t_df[t_df["status"].isin(["sent", "meeting_scheduled"])]
-        total_sent = len(sent_df)
+        sent_mask = (
+            t_df["email_sent_at"].notna()
+            | t_df["status"].isin([
+                "sent", "meeting_scheduled", "replied", "opted_out", "delivered",
+                "scheduled", "meeting_booked", "booked", "form_submitted", "opened", "clicked"
+            ])
+        )
+        total_sent = int(sent_mask.sum())
         
         opened_count = int(t_df["opened"].sum()) if "opened" in t_df.columns else 0
         clicked_count = int(t_df["clicked_link"].sum()) if "clicked_link" in t_df.columns else 0
-        replied_count = int(t_df["reply_received_at"].notna().sum()) if "reply_received_at" in t_df.columns else 0
-        booked_count = int(t_df["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed"]).sum()) if "booking_status" in t_df.columns else 0
+        
+        replied_count = 0
+        if "reply_received_at" in t_df.columns:
+            replied_count = int(t_df["reply_received_at"].notna().sum())
+        if "status" in t_df.columns:
+            replied_count = max(replied_count, int((t_df["status"] == "replied").sum()))
+        if "reply_body" in t_df.columns:
+            has_body = (
+                t_df["reply_body"].notna()
+                & (~t_df["reply_body"].astype(str).str.strip().str.lower().isin(["", "none", "-", "—"]))
+            )
+            replied_count = max(replied_count, int(has_body.sum()))
+
+        booked_count = 0
+        if "booking_status" in t_df.columns:
+            booked_count = int(t_df["booking_status"].isin(["scheduled", "meeting_scheduled", "confirmation_sent", "confirmed"]).sum())
+        if "status" in t_df.columns:
+            booked_count = max(booked_count, int(t_df["status"].isin(["scheduled", "meeting_scheduled", "meeting_booked", "booked"]).sum()))
+
+        if total_sent == 0 and (opened_count > 0 or clicked_count > 0 or replied_count > 0 or booked_count > 0):
+            total_sent = max(total_leads, opened_count, clicked_count, replied_count, booked_count)
 
         open_rate = round((opened_count / total_sent * 100), 1) if total_sent > 0 else 0.0
         click_rate = round((clicked_count / total_sent * 100), 1) if total_sent > 0 else 0.0
@@ -635,9 +660,14 @@ def compute_template_analytics(df: pd.DataFrame) -> Dict[str, Any]:
             "accent_color": color,
             "total_leads": total_leads,
             "total_sent": total_sent,
+            "sent": total_sent,
+            "opened": opened_count,
             "opened_count": opened_count,
+            "clicked": clicked_count,
             "clicked_count": clicked_count,
+            "replied": replied_count,
             "replied_count": replied_count,
+            "booked": booked_count,
             "booked_count": booked_count,
             "open_rate": open_rate,
             "click_rate": click_rate,

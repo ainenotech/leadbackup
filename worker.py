@@ -69,6 +69,14 @@ def run_campaign():
             status=initial_status,
         )
 
+        # Never send to bounced or unsubscribed leads
+        if entry.bounced or entry.unsubscribed:
+            print(
+                f"Skipping {lead.email}: "
+                f"{'unsubscribed' if entry.unsubscribed else 'bounced'}"
+            )
+            continue
+
         if require_approval:
             drafted_count += 1
             print(f"Drafted email for {lead.email} (Awaiting approval in dashboard)")

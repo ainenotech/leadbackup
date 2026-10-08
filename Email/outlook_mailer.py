@@ -36,7 +36,7 @@ class OutlookMailer(Mailer):
     def send_email(self, to_email: str, subject: str, body: str, token: Optional[str] = None) -> str:
         # Resolve token for live open and click tracking
         clean_body = (body or "").strip()
-        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
+        api_base_url = os.getenv("TRACKING_API_URL","https://tracking.nenotechnology.com").rstrip("/")
 
         if not token:
             try:
