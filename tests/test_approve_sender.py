@@ -62,3 +62,56 @@ def test_api_approve_and_send_all():
         assert "sent_count" in data
         assert data["sender_email"] == "support@nenotechnology.com"
 
+
+def test_create_sender_account_gmail_with_any_verified_domain():
+    from services.sender_account_service import create_sender_account
+    from Backend.auth_models import Organization, User, OrganizationMembership
+    from Backend.domain_models import OrgSendingDomain
+    import uuid
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    org = Organization(id=str(uuid.uuid4()), name="Test Org", slug="test-org")
+    user = User(id=str(uuid.uuid4()), email="admin@test.com", password_hash="hash")
+    membership = OrganizationMembership(organization_id=org.id, user_id=user.id, role="admin")
+    domain = OrgSendingDomain(
+        id=str(uuid.uuid4()),
+        organization_id=org.id,
+        domain="nenotechnology.com",
+        status="verified",
+    )
+    session.add_all([org, user, membership, domain])
+    session.commit()
+
+    # 1. Adding a Gmail account with verified corporate domain
+    gmail_sender = create_sender_account(
+        db=session,
+        user_id=user.id,
+        org_id=org.id,
+        email="panchalnand4@gmail.com",
+        display_name="Nand Panchal",
+        domain_id=domain.id,
+        provider="ses_only",
+    )
+    assert gmail_sender["email"] == "panchalnand4@gmail.com"
+    assert gmail_sender["display_name"] == "Nand Panchal"
+    assert gmail_sender["domain_name"] == "nenotechnology.com"
+    assert gmail_sender["is_send_ready"] is True
+
+    # 2. Adding an Outlook account without any custom domain
+    outlook_sender = create_sender_account(
+        db=session,
+        user_id=user.id,
+        org_id=org.id,
+        email="outreach@outlook.com",
+        display_name="Outreach Outlook",
+        provider="microsoft_365",
+    )
+    assert outlook_sender["email"] == "outreach@outlook.com"
+    assert outlook_sender["domain_name"] == "outlook.com"
+    session.close()
+
+

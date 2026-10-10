@@ -167,6 +167,17 @@ export default function WorkspaceSettingsView({
     }
   }, [showAddSenderModal]);
 
+  useEffect(() => {
+    const handleMsg = (e: MessageEvent) => {
+      if (e.data?.type === "OAUTH_MAILBOX_CONNECTED") {
+        fetchSenders();
+        fetchOrgDomains();
+      }
+    };
+    window.addEventListener("message", handleMsg);
+    return () => window.removeEventListener("message", handleMsg);
+  }, [orgId]);
+
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgId) return;
@@ -629,7 +640,9 @@ export default function WorkspaceSettingsView({
                     Connect your Microsoft 365 / Outlook mailbox securely using OAuth 2.0 without sharing raw passwords.
                   </div>
                   <a
-                    href="http://localhost:8000/api/channels/oauth/microsoft/login"
+                    href={`http://localhost:8000/api/channels/oauth/microsoft/login?email=${encodeURIComponent(detectEmail)}&org_id=${encodeURIComponent(orgId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 py-2.5 px-4 bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold rounded-xl transition-all"
                   >
                     <span>🪟 Connect Microsoft 365 Mailbox</span>
@@ -643,7 +656,9 @@ export default function WorkspaceSettingsView({
                     Connect your Google Workspace mailbox securely using OAuth 2.0 with send &amp; reply sync.
                   </div>
                   <a
-                    href="http://localhost:8000/api/channels/oauth/google/login"
+                    href={`http://localhost:8000/api/channels/oauth/google/login?email=${encodeURIComponent(detectEmail)}&org_id=${encodeURIComponent(orgId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 py-2.5 px-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[13px] font-bold rounded-xl transition-all"
                   >
                     <span>🌐 Connect Google Workspace Mailbox</span>
@@ -1204,11 +1219,11 @@ export default function WorkspaceSettingsView({
                       <div className="flex items-center gap-2 shrink-0">
                         {sender.provider !== "ses_only" && sender.mailbox_connection_status !== "connected" && (
                           <a
-                            href={
-                              sender.provider === "microsoft_365"
-                                ? "http://localhost:8000/api/channels/oauth/microsoft/login"
-                                : "http://localhost:8000/api/channels/oauth/google/login"
-                            }
+                            href={`http://localhost:8000/api/channels/oauth/${
+                              sender.provider === "microsoft_365" ? "microsoft" : "google"
+                            }/login?email=${encodeURIComponent(sender.email)}&org_id=${encodeURIComponent(orgId)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="py-1.5 px-3 bg-[#0F172A] hover:bg-[#1E293B] text-white rounded-lg text-[11.5px] font-bold flex items-center gap-1 transition-all"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
@@ -1448,7 +1463,7 @@ export default function WorkspaceSettingsView({
             </div>
 
             <p className="text-[13px] text-[#64748B]">
-              Configure an individual sender email address. Must belong to a registered sending domain.
+              Configure an individual sender email address (Gmail, Microsoft 365 / Outlook, or custom domain).
             </p>
 
             <form onSubmit={handleCreateSender} className="space-y-4">
@@ -1459,15 +1474,26 @@ export default function WorkspaceSettingsView({
                 <input
                   type="email"
                   required
-                  placeholder="e.g. mohit@nenotechnology.us"
+                  placeholder="e.g. yourname@gmail.com or mohit@nenotechnology.us"
                   value={newSenderEmail}
                   onChange={(e) => {
                     const val = e.target.value;
                     setNewSenderEmail(val);
-                    if (val.includes("@") && !newSenderDomainId) {
+                    if (val.includes("@")) {
                       const domainPart = val.split("@")[1].toLowerCase();
-                      const match = domains.find((d) => d.domain.toLowerCase() === domainPart);
-                      if (match) setNewSenderDomainId(match.id);
+                      if (domainPart.includes("gmail.com")) {
+                        setNewSenderProvider("google_workspace");
+                      } else if (
+                        domainPart.includes("outlook.com") ||
+                        domainPart.includes("hotmail.com") ||
+                        domainPart.includes("live.com")
+                      ) {
+                        setNewSenderProvider("microsoft_365");
+                      }
+                      if (!newSenderDomainId) {
+                        const match = domains.find((d) => d.domain.toLowerCase() === domainPart);
+                        if (match) setNewSenderDomainId(match.id);
+                      }
                     }
                   }}
                   className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13.5px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
@@ -1489,24 +1515,23 @@ export default function WorkspaceSettingsView({
 
               <div>
                 <label className="block text-[13px] font-bold text-[#0F172A] mb-1">
-                  Associated Sending Domain *
+                  Associated Sending Domain (Optional)
                 </label>
                 <select
-                  required
                   value={newSenderDomainId}
                   onChange={(e) => setNewSenderDomainId(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13.5px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
                 >
-                  <option value="">Select a registered domain</option>
+                  <option value="">Direct Mailbox / Any Domain (Gmail, Outlook, OAuth)</option>
                   {domains.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.domain} ({d.status === "verified" || d.status === "ready" ? "Verified" : "Pending"})
                     </option>
                   ))}
                 </select>
-                {domains.length === 0 && (
+                {domains.length === 0 && newSenderProvider === "ses_only" && (
                   <p className="text-[11.5px] text-[#DC2626] mt-1">
-                    No sending domains found. Please register a domain in the Domains tab first.
+                    No sending domains found. For SES outbound sending, please register a domain in the Domains tab first.
                   </p>
                 )}
               </div>

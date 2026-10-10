@@ -195,16 +195,26 @@ class OutlookMailer(Mailer):
 </body>
 </html>"""
 
+        disp_name = kwargs.get("display_name")
+        effective_from = from_email or MS_SENDER_EMAIL
+        reply_addr = kwargs.get("reply_to") or effective_from
+
+        from_obj = {"address": effective_from}
+        if disp_name:
+            from_obj["name"] = disp_name
+
         payload = {
             "message": {
                 "subject": subject,
                 "body": {"contentType": "HTML", "content": html_content},
                 "toRecipients": [{"emailAddress": {"address": to_email}}],
+                "from": {"emailAddress": from_obj},
+                "sender": {"emailAddress": from_obj},
+                "replyTo": [{"emailAddress": {"address": reply_addr}}],
             },
             "saveToSentItems": "true",
         }
 
-        effective_from = from_email or MS_SENDER_EMAIL
         resp = requests.post(
             f"{GRAPH_BASE}/users/{effective_from}/sendMail",
             headers=get_graph_headers(),

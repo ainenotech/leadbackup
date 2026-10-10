@@ -79,17 +79,20 @@ def _evaluate_readiness(
 ) -> None:
     """Re-evaluate the four readiness dimensions and sending_status."""
     # 1. SES Identity Status
-    if domain:
-        if domain.status in ("ready", "limited", "verified"):
-            sender.ses_identity_status = "ready"
-        elif domain.status in ("pending", "blocked"):
-            sender.ses_identity_status = "pending"
-        elif domain.status == "failed":
-            sender.ses_identity_status = "failed"
+    if sender.provider == "ses_only":
+        if domain:
+            if domain.status in ("ready", "limited", "verified"):
+                sender.ses_identity_status = "ready"
+            elif domain.status in ("pending", "blocked"):
+                sender.ses_identity_status = "pending"
+            elif domain.status == "failed":
+                sender.ses_identity_status = "failed"
+            else:
+                sender.ses_identity_status = domain.status or "not_started"
         else:
-            sender.ses_identity_status = domain.status or "not_started"
+            sender.ses_identity_status = "not_started"
     else:
-        sender.ses_identity_status = "not_started"
+        sender.ses_identity_status = "not_required"
 
     # 2. Mailbox Connection Status
     if sender.provider == "ses_only":
@@ -112,22 +115,20 @@ def _evaluate_readiness(
         sender.sending_status = "disabled"
     elif domain and domain.status == "paused":
         sender.sending_status = "blocked"
-    elif sender.ses_identity_status != "ready":
+    elif sender.provider == "ses_only" and sender.ses_identity_status != "ready":
         sender.sending_status = "blocked"
-    elif (
-        sender.provider in ("microsoft_365", "google_workspace", "smtp_imap")
-        and sender.mailbox_connection_status != "connected"
-    ):
+    elif sender.provider in ("microsoft_365", "google_workspace", "smtp_imap") and sender.mailbox_connection_status != "connected":
         sender.sending_status = "blocked"
-    sends_hour = sender.sends_this_hour or 0
-    sends_day = sender.sends_today or 0
-    if (
-        (sender.hourly_limit and sends_hour >= sender.hourly_limit)
-        or (sender.daily_limit and sends_day >= sender.daily_limit)
-    ):
-        sender.sending_status = "rate_limited"
     else:
-        sender.sending_status = "ready"
+        sends_hour = sender.sends_this_hour or 0
+        sends_day = sender.sends_today or 0
+        if (
+            (sender.hourly_limit and sends_hour >= sender.hourly_limit)
+            or (sender.daily_limit and sends_day >= sender.daily_limit)
+        ):
+            sender.sending_status = "rate_limited"
+        else:
+            sender.sending_status = "ready"
 
 
 def create_sender_account(
@@ -152,7 +153,11 @@ def create_sender_account(
 
     domain_part = email.split("@")[1].strip().lower()
 
-    # Find matching domain
+    is_common_webmail = domain_part in (
+        "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com"
+    ) or provider in ("google_workspace", "microsoft_365")
+
+    # Find associated domain if provided or matching
     domain = None
     if domain_id:
         domain = (
@@ -164,8 +169,8 @@ def create_sender_account(
             .first()
         )
         if not domain:
-            raise ValueError(f"Domain with ID {domain_id} not found in this organization")
-        if domain.domain.lower() != domain_part:
+            raise ValueError(f"Domain with ID '{domain_id}' not found in organization")
+        if not is_common_webmail and domain.domain.lower() != domain_part:
             raise ValueError(
                 f"Email domain '@{domain_part}' does not match specified domain '@{domain.domain}'"
             )
@@ -178,12 +183,10 @@ def create_sender_account(
             )
             .first()
         )
-
-    if not domain:
-        raise ValueError(
-            f"Sending domain '{domain_part}' must be registered before adding sender accounts. "
-            "Please register the domain first in the Domains tab."
-        )
+        if not domain and not is_common_webmail:
+            raise ValueError(
+                f"Domain '@{domain_part}' must be registered in organization before adding sender accounts"
+            )
 
     # Check for duplicate
     existing = (
@@ -212,8 +215,8 @@ def create_sender_account(
         organization_id=org_id,
         email=email,
         display_name=display_name or email.split("@")[0].replace(".", " ").title(),
-        domain_id=domain.id,
-        domain_name=domain.domain,
+        domain_id=domain.id if domain else None,
+        domain_name=domain.domain if domain else domain_part,
         provider=provider,
         enabled=True,
         hourly_limit=hourly_limit,
@@ -484,28 +487,29 @@ def check_sender_eligibility(
     if not sender.enabled:
         return {"eligible": False, "reason": "Sender is disabled by admin", "sender": sender}
 
-    # Verify domain
-    domain = (
-        db.query(OrgSendingDomain).filter(OrgSendingDomain.id == sender.domain_id).first()
-        if sender.domain_id
-        else None
-    )
-    if not domain:
-        return {"eligible": False, "reason": "Sender domain is not registered", "sender": sender}
+    # Verify domain only if provider is SES
+    if sender.provider == "ses_only":
+        domain = (
+            db.query(OrgSendingDomain).filter(OrgSendingDomain.id == sender.domain_id).first()
+            if sender.domain_id
+            else None
+        )
+        if not domain:
+            return {"eligible": False, "reason": "Sender domain is not registered in SES", "sender": sender}
 
-    if domain.status not in ("ready", "limited", "verified"):
-        return {
-            "eligible": False,
-            "reason": f"Sender domain '{domain.domain}' is not verified (status: {domain.status})",
-            "sender": sender,
-        }
+        if domain.status not in ("ready", "limited", "verified"):
+            return {
+                "eligible": False,
+                "reason": f"Sender domain '{domain.domain}' is not verified (status: {domain.status})",
+                "sender": sender,
+            }
 
-    if domain.status == "paused":
-        return {
-            "eligible": False,
-            "reason": f"Sending is paused for domain '{domain.domain}'",
-            "sender": sender,
-        }
+        if domain.status == "paused":
+            return {
+                "eligible": False,
+                "reason": f"Sending is paused for domain '{domain.domain}'",
+                "sender": sender,
+            }
 
     # Check mailbox connection if required
     if sender.provider in ("microsoft_365", "google_workspace", "smtp_imap"):

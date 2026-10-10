@@ -676,21 +676,38 @@ export default function EmailReviewView({
             </div>
 
             {/* Recipient Routing Subheader */}
-            <div className="px-4 py-2 bg-white border-b border-[#F1F5F9] text-[12px] text-[#475569] flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <strong className="text-[#1E293B]">From:</strong>
-                  <span>Neno Technology Outreach &lt;{selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com"}&gt;</span>
+            <div className="px-4 py-2.5 bg-[#F8FAFC] border-b border-[#E2E8F0] text-[12.5px] text-[#475569] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <strong className="text-[#0F172A]">Send From:</strong>
+                  <select
+                    value={selectedSenderEmail}
+                    onChange={(e) => setSelectedSenderEmail(e.target.value)}
+                    className="text-[12.5px] font-bold text-[#0F172A] bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1 focus:outline-none focus:border-[#2563EB] shadow-2xs"
+                  >
+                    {verifiedSenders.length > 0 ? (
+                      verifiedSenders.map((s) => (
+                        <option key={s.id} value={s.email}>
+                          {s.display_name ? `${s.display_name} <${s.email}>` : s.email}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com"}>
+                        {selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com"}
+                      </option>
+                    )}
+                  </select>
                   <span className="text-[10px] bg-[#DCFCE7] text-[#166534] px-1.5 py-0.5 rounded font-bold border border-[#86EFAC]">
-                    ✓ Verified Mailbox
+                    ✓ Ready to Dispatch
                   </span>
                 </div>
-                <div>
-                  <strong className="text-[#1E293B]">To:</strong> {currentDraft?.name || "Lead"} &lt;{currentDraft?.email}&gt;
+                <div className="flex items-center gap-1.5">
+                  <strong className="text-[#0F172A]">To:</strong>
+                  <span className="font-semibold text-[#334155]">{currentDraft?.name || "Lead"} &lt;{currentDraft?.email}&gt;</span>
                 </div>
               </div>
-              <div className="text-[11px] text-[#64748B]">
-                Active Sender: <strong className="text-[#0F172A]">{selectedSenderEmail}</strong>
+              <div className="text-[11.5px] text-[#64748B]">
+                Selected Mailbox: <strong className="text-[#2563EB]">{selectedSenderEmail}</strong>
               </div>
             </div>
 
