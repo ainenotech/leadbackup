@@ -13,7 +13,9 @@ from Backend.auth_models import User, Organization, OrganizationMember, Identity
 from Backend.auth_service import register_organization_and_user
 from datetime import datetime, timezone, timedelta
 import json
+import logging
 import urllib.parse
+import uuid
 import requests
 import os
 import hashlib
@@ -24,7 +26,110 @@ from services.oauth_service import (
 from Backend.channels_models import OAuthFlowState, OrgMailConnection
 from services.secret_store import encrypt_secret
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/channels", tags=["Email Channels"])
+
+
+@router.get("/oauth/microsoft/login")
+def channels_microsoft_oauth_login(
+    db: Session = Depends(get_db),
+):
+    """Browser-navigable GET endpoint that starts the Microsoft OAuth flow
+    and redirects directly to the Microsoft consent screen.
+    Used by frontend <a> links on the workspace settings page."""
+    scopes = ["User.Read", "Mail.Send", "Mail.Read"]
+    redirect_uri = os.getenv(
+        "MS_OAUTH_REDIRECT_URI",
+        "http://localhost:8000/api/channels/oauth/microsoft/callback",
+    )
+
+    try:
+        flow = build_auth_url_and_flow(scopes=scopes, redirect_uri=redirect_uri)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initiate Microsoft OAuth: {exc}",
+        )
+
+    raw_state = flow.get("state")
+    if not raw_state:
+        raise HTTPException(status_code=500, detail="Failed to generate OAuth state")
+
+    state_hash = hashlib.sha256(raw_state.encode("utf-8")).hexdigest()
+
+    # Use a sentinel org so the callback can still look up the flow state
+    org = db.query(Organization).first()
+    org_id = org.id if org else None
+
+    flow_state = OAuthFlowState(
+        state_hash=state_hash,
+        provider="microsoft",
+        organization_id=org_id,
+        user_id="login",
+        expected_email="login",
+        flow_data_encrypted=encrypt_secret(flow),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+    )
+    db.add(flow_state)
+    db.commit()
+
+    return RedirectResponse(url=flow["auth_uri"])
+
+
+@router.get("/oauth/google/login")
+def channels_google_oauth_login(
+    db: Session = Depends(get_db),
+):
+    """Browser-navigable GET endpoint that starts the Google OAuth flow
+    and redirects directly to Google's consent screen.
+    Used by frontend <a> links on the workspace settings page."""
+    scopes = [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.readonly",
+    ]
+    redirect_uri = os.getenv(
+        "GOOGLE_OAUTH_REDIRECT_URI",
+        "http://localhost:8000/api/channels/oauth/google/callback",
+    )
+
+    try:
+        flow = build_google_auth_url_and_flow(scopes=scopes, redirect_uri=redirect_uri)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initiate Google OAuth: {exc}",
+        )
+
+    raw_state = flow.get("state")
+    if not raw_state:
+        raise HTTPException(status_code=500, detail="Failed to generate OAuth state")
+
+    state_hash = hashlib.sha256(raw_state.encode("utf-8")).hexdigest()
+
+    org = db.query(Organization).first()
+    org_id = org.id if org else None
+
+    flow_state = OAuthFlowState(
+        state_hash=state_hash,
+        provider="google",
+        organization_id=org_id,
+        user_id="login",
+        expected_email="login",
+        flow_data_encrypted=encrypt_secret(flow),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+    )
+    db.add(flow_state)
+    db.commit()
+
+    return RedirectResponse(url=flow["auth_uri"])
 
 
 class DetectRequest(BaseModel):
@@ -569,6 +674,7 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
         existing_conn.status = "active"
         existing_conn.encrypted_secret = encrypt_secret(refresh_token)
         existing_conn.config = config
+        conn_id = existing_conn.id
     else:
         new_conn = OrgMailConnection(
             organization_id=flow_state.organization_id,
@@ -581,6 +687,23 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
             daily_cap=daily_cap
         )
         db.add(new_conn)
+        conn_id = new_conn.id
+
+    # Sync matching SenderAccount if one exists
+    try:
+        from Backend.sender_models import SenderAccount
+        matching_sender = db.query(SenderAccount).filter(
+            SenderAccount.organization_id == flow_state.organization_id,
+            SenderAccount.email == expected_clean,
+        ).first()
+        if matching_sender:
+            matching_sender.provider_connection_id = conn_id
+            matching_sender.mailbox_connection_status = "connected"
+            matching_sender.reply_monitoring_status = "active"
+            if matching_sender.ses_identity_status == "ready" and matching_sender.enabled:
+                matching_sender.sending_status = "ready"
+    except Exception as sync_err:
+        logger.warning(f"Could not sync SenderAccount after oauth: {sync_err}")
         
     db.commit()
     

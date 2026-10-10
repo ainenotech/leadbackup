@@ -12,7 +12,7 @@ import json
 import uuid
 
 from .db import get_db, SessionLocal
-from .auth_models import User, Organization, OrganizationMember, IdentityAccount, LoginTicket
+from .auth_models import User, Organization, OrganizationMember, IdentityAccount, LoginTicket, Session as UserSession
 from .auth_service import (
     authenticate_user,
     create_access_token,
@@ -70,7 +70,8 @@ class OAuthStartResponse(BaseModel):
     auth_url: str
 
 class ExchangeTicketRequest(BaseModel):
-    login_ticket: str
+    login_ticket: Optional[str] = None
+    ticket: Optional[str] = None
 
 
 class UpdateMemberRoleRequest(BaseModel):
@@ -227,7 +228,7 @@ def auth_oauth_login(
         redirect_uri = os.getenv("MS_OAUTH_REDIRECT_URI", "http://localhost:8000/api/channels/oauth/microsoft/callback")
         flow = build_auth_url_and_flow(scopes=scopes, redirect_uri=redirect_uri)
     elif provider == "google":
-        scopes = ["User.Read"]
+        scopes = ["openid", "email", "profile"]
         redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8000/api/channels/oauth/google/callback")
         flow = build_google_auth_url_and_flow(scopes=scopes, redirect_uri=redirect_uri)
 
@@ -255,21 +256,31 @@ def auth_oauth_login(
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url=flow["auth_uri"])
 
-@router.post("/auth/oauth/exchange-ticket")
-def exchange_ticket(req: ExchangeTicketRequest):
+def _do_exchange_ticket(ticket_hash: Optional[str]):
     """Exchanges a short-lived login ticket for normal session credentials."""
+    if not ticket_hash:
+        raise HTTPException(status_code=400, detail="Missing login ticket")
+
     db = SessionLocal()
     try:
         ticket = db.query(LoginTicket).filter(
-            LoginTicket.ticket_hash == req.login_ticket,
-            LoginTicket.used_at == None,
+            LoginTicket.ticket_hash == ticket_hash,
             LoginTicket.expires_at > datetime.now(timezone.utc)
         ).first()
         
         if not ticket:
             raise HTTPException(status_code=401, detail="Invalid, expired, or already used ticket.")
             
-        ticket.used_at = datetime.now(timezone.utc)
+        if ticket.used_at is not None:
+            used_time = ticket.used_at
+            if used_time.tzinfo is None:
+                used_time = used_time.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - used_time).total_seconds()
+            if age > 60:
+                raise HTTPException(status_code=401, detail="Invalid, expired, or already used ticket.")
+        else:
+            ticket.used_at = datetime.now(timezone.utc)
+            db.commit()
         
         user = db.query(User).filter(User.id == ticket.user_id).first()
         if not user or user.status not in ("active", "pending_verification"):
@@ -288,7 +299,29 @@ def exchange_ticket(req: ExchangeTicketRequest):
             .all()
         )
         if not memberships:
-            raise HTTPException(status_code=403, detail="Your account is not associated with any active organization.")
+            # Provision fallback org if missing
+            display_name = user.full_name or user.email.split("@")[0].capitalize()
+            org_slug = f"org-{uuid.uuid4().hex[:8]}"
+            active_org = Organization(
+                id=str(uuid.uuid4()),
+                name=f"{display_name} Organization",
+                slug=org_slug,
+                status="active",
+                is_platform_org=False,
+            )
+            db.add(active_org)
+            db.flush()
+            default_membership = OrganizationMember(
+                id=str(uuid.uuid4()),
+                organization_id=active_org.id,
+                user_id=user.id,
+                role="organization_owner",
+                status="active",
+                is_default=True,
+            )
+            db.add(default_membership)
+            db.commit()
+            memberships = [(default_membership, active_org)]
             
         default_membership, active_org = None, None
         for m, o in memberships:
@@ -317,46 +350,64 @@ def exchange_ticket(req: ExchangeTicketRequest):
             platform_role=user.platform_role,
         )
         
-        # Create server-side session
-        session = Session(
-            user_id=user.id,
-            organization_id=active_org.id,
-            token_hash=token, # For simplicity, using JWT as the token_hash
-            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
-            ip_address="0.0.0.0",
-            user_agent="Streamlit"
-        )
-        db.add(session)
+        # Create server-side session safely
+        try:
+            existing_session = db.query(UserSession).filter(UserSession.token_hash == token).first()
+            if not existing_session:
+                user_session = UserSession(
+                    user_id=user.id,
+                    organization_id=active_org.id,
+                    token_hash=token,
+                    expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+                    ip_address="0.0.0.0",
+                    user_agent="Streamlit/Next.js"
+                )
+                db.add(user_session)
+                db.commit()
+        except Exception:
+            db.rollback()
         
-        db.commit()
-        
+        payload = {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "platform_role": user.platform_role,
+            },
+            "organization": {
+                "id": active_org.id,
+                "name": active_org.name,
+                "slug": active_org.slug,
+                "role": default_membership.role,
+                "logo_url": active_org.logo_url,
+                "brand_name": active_org.brand_name or active_org.name,
+            },
+            "organizations": org_list,
+        }
         return {
             "status": "success",
-            "data": {
-                "access_token": token,
-                "token_type": "bearer",
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "full_name": user.full_name,
-                    "platform_role": user.platform_role,
-                },
-                "organization": {
-                    "id": active_org.id,
-                    "name": active_org.name,
-                    "slug": active_org.slug,
-                    "role": default_membership.role,
-                    "logo_url": active_org.logo_url,
-                    "brand_name": active_org.brand_name or active_org.name,
-                },
-                "organizations": org_list,
-            }
+            "data": payload,
+            **payload,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+
+@router.post("/auth/oauth/exchange-ticket")
+@router.post("/auth/oauth/ticket")
+def exchange_ticket_post(req: ExchangeTicketRequest):
+    return _do_exchange_ticket(req.login_ticket or req.ticket)
+
+@router.get("/auth/oauth/exchange-ticket")
+@router.get("/auth/oauth/ticket")
+def exchange_ticket_get(ticket: Optional[str] = None, login_ticket: Optional[str] = None):
+    return _do_exchange_ticket(ticket or login_ticket)
 
 
 @router.get("/auth/me")
@@ -428,6 +479,7 @@ def get_current_user_state(
                 "role": active_membership.role,
                 "logo_url": active_org.logo_url,
                 "brand_name": active_org.brand_name or active_org.name,
+                "settings": active_org.settings or {},
             },
             "organizations": org_list,
         }
@@ -531,7 +583,7 @@ def update_org_settings_endpoint(
             sender_config=req.sender_config,
             booking_config=req.booking_config,
         )
-        return {"status": "success", "data": result}
+        return {"status": "success", "data": result, "organization": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:

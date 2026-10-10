@@ -83,7 +83,7 @@ def register_domain_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("Domain registration failed: %s", e)
-        raise HTTPException(status_code=500, detail="Domain registration failed")
+        raise HTTPException(status_code=500, detail=f"Domain registration failed: {str(e)}")
     finally:
         db.close()
 
@@ -102,7 +102,7 @@ def list_domains_endpoint(
             user_id=context["user_id"],
             organization_id=context["org_id"],
         )
-        return {"status": "success", "data": result}
+        return {"status": "success", "data": result, "domains": result}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -219,7 +219,7 @@ def org_add_domain_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("Domain registration failed: %s", e)
-        raise HTTPException(status_code=500, detail="Domain registration failed")
+        raise HTTPException(status_code=500, detail=f"Domain registration failed: {str(e)}")
     finally:
         db.close()
 
@@ -239,7 +239,7 @@ def org_list_domains_endpoint(
             user_id=context["user_id"],
             organization_id=organization_id,
         )
-        return {"status": "success", "data": result}
+        return {"status": "success", "data": result, "domains": result}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:

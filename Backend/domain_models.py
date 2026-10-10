@@ -56,6 +56,10 @@ class OrgSendingDomain(Base):
     # Custom MAIL FROM subdomain (e.g. "mail" → mail.customer.com)
     mail_from_subdomain = Column(String, nullable=True)
 
+    # Optional metadata
+    description = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+
     # Daily sending cap
     daily_cap = Column(Integer, nullable=False, default=200)
 

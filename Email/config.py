@@ -15,3 +15,19 @@ MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET", "")
 MS_SENDER_EMAIL = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
 
 GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
+
+
+
+# --- Amazon SES ---
+AWS_PROFILE = os.getenv("AWS_PROFILE", "")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+SES_CONFIGURATION_SET = os.getenv(
+    "SES_CONFIGURATION_SET", "neno-campaigns"
+)
+SES_FROM_EMAIL = os.getenv(
+    "SES_FROM_EMAIL", "support@nenotechnology.com"
+)
+SES_REPLY_TO = os.getenv(
+    "SES_REPLY_TO", MS_SENDER_EMAIL
+)
+

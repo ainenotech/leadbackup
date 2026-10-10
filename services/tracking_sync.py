@@ -220,6 +220,47 @@ def sync_once() -> int:
     return processed
 
 
+import threading
+from typing import Optional
+
+
+class TrackingSyncDaemon:
+    """Thread-safe background daemon to sync AWS tracking events continuously."""
+    _thread: Optional[threading.Thread] = None
+    _stop_event: threading.Event = threading.Event()
+    _is_running: bool = False
+
+    @classmethod
+    def is_running(cls) -> bool:
+        return cls._is_running and cls._thread is not None and cls._thread.is_alive()
+
+    @classmethod
+    def start(cls, interval_seconds: int = 15):
+        if cls.is_running():
+            return
+        cls._stop_event.clear()
+        cls._is_running = True
+
+        def _loop():
+            print(f"[TrackingSyncDaemon] Continuous sync daemon started (every {interval_seconds}s from {TRACKING_API_URL}).")
+            while not cls._stop_event.is_set():
+                try:
+                    sync_once()
+                except Exception as e:
+                    print(f"[TrackingSyncDaemon] Sync error: {e}")
+                cls._stop_event.wait(interval_seconds)
+            cls._is_running = False
+            print("[TrackingSyncDaemon] Stopped.")
+
+        cls._thread = threading.Thread(target=_loop, name="TrackingSyncDaemon", daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def stop(cls):
+        cls._stop_event.set()
+        cls._is_running = False
+
+
 def main():
     print("[tracking-sync] Starting.")
     print(f"[tracking-sync] API: {TRACKING_API_URL}")

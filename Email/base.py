@@ -3,6 +3,6 @@ from abc import ABC, abstractmethod
 
 class Mailer(ABC):
     @abstractmethod
-    def send_email(self, to_email: str, subject: str, body: str) -> str:
+    def send_email(self, to_email: str, subject: str, body: str, **kwargs) -> str:
         """Sends a plain-text email. Returns a provider message id."""
         raise NotImplementedError

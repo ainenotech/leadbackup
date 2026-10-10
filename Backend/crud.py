@@ -132,8 +132,8 @@ def mark_failed(db: Session, entry_id: str, error: str) -> None:
         db.commit()
 
 
-def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
-    """Approves a drafted email and dispatches it via the Outlook mailer (Microsoft Graph).
+def approve_and_send_entry(db: Session, entry_id: str, sender_email: Optional[str] = None) -> CampaignLog:
+    """Approves a drafted email and dispatches it via the active email provider (SES / Microsoft Graph).
     Enforces strict pre-send deduplication so already-emailed leads are never resent.
     """
     entry = db.query(CampaignLog).filter(CampaignLog.id == entry_id).first()
@@ -193,9 +193,45 @@ def approve_and_send_entry(db: Session, entry_id: str) -> CampaignLog:
             entry.body,
         )
 
+    active_from_email = (sender_email or "").strip() or None
+    sender_account_id = None
+    try:
+        from Backend.auth_models import Organization
+        from Backend.sender_models import SenderAccount
+        from services.sender_account_service import record_sender_send
+
+        if not active_from_email:
+            org = db.query(Organization).filter(Organization.status == "active").first()
+            if org and org.settings:
+                active_from_email = org.settings.get("sender", {}).get("sender_email") or org.settings.get("sender_email")
+
+        if active_from_email:
+            sender_rec = db.query(SenderAccount).filter(SenderAccount.email == active_from_email.lower().strip()).first()
+            if sender_rec:
+                sender_account_id = sender_rec.id
+                active_from_email = sender_rec.email
+        else:
+            first_ready = db.query(SenderAccount).filter(SenderAccount.enabled == True).first()
+            if first_ready:
+                active_from_email = first_ready.email
+                sender_account_id = first_ready.id
+    except Exception:
+        pass
+
     mailer = get_mailer()
     try:
-        mailer.send_email(to_email=entry.email, subject=entry.subject, body=entry.body, token=entry.token)
+        mailer.send_email(
+            to_email=entry.email,
+            subject=entry.subject,
+            body=entry.body,
+            token=entry.token,
+            from_email=active_from_email,
+        )
+        if sender_account_id:
+            try:
+                record_sender_send(db, sender_account_id)
+            except Exception:
+                pass
     except Exception as send_err:
         entry.status = "failed"
         entry.send_error = str(send_err)[:500]
@@ -725,7 +761,12 @@ def sync_excel_and_outlook_to_db(db: Session) -> dict:
 
     synced_bookings = 0
     synced_replies = 0
-    now_utc = datetime.now(timezone.utc)
+    # 0. Sync tracking events from https://tracking.nenotechnology.com
+    try:
+        from services.tracking_sync import sync_once
+        sync_once()
+    except Exception:
+        pass
 
     # 1. Sync from booked_leads.xlsx (Power Automate Bookings -> Excel flow)
     if os.path.exists("booked_leads.xlsx"):

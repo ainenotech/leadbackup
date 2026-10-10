@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 import pandas as pd
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Response
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -205,7 +206,21 @@ def get_overview_stats():
 # ── System Mailbox Configuration ──
 @router.get("/system/mailbox")
 def get_system_mailbox():
-    sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+    sender_email = None
+    db = SessionLocal()
+    try:
+        from Backend.auth_models import Organization
+        org = db.query(Organization).filter(Organization.status == "active").first()
+        if org and org.settings:
+            sender_email = org.settings.get("sender", {}).get("sender_email") or org.settings.get("sender_email")
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+    if not sender_email:
+        sender_email = os.getenv("MS_SENDER_EMAIL", "mohit@nenotechnology.us")
+
     contact_email = os.getenv("CONTACT_EMAIL", "sales@nenotechnology.com")
     booking_url = os.getenv(
         "BOOKING_FORM_URL",
@@ -718,11 +733,16 @@ def update_draft(log_id: str, payload: Dict[str, str]):
         db.close()
 
 
+class ApproveDraftPayload(BaseModel):
+    sender_email: Optional[str] = None
+
+
 @router.post("/drafts/{log_id}/approve")
-def approve_and_send(log_id: str):
+def approve_and_send(log_id: str, payload: Optional[ApproveDraftPayload] = None):
     db = SessionLocal()
     try:
-        sent_entry = approve_and_send_entry(db, log_id)
+        sender_email = payload.sender_email if payload else None
+        sent_entry = approve_and_send_entry(db, log_id, sender_email=sender_email)
         return {"success": True, "entry": _serialize_log(sent_entry)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to dispatch email: {str(e)}")
@@ -837,18 +857,34 @@ def reject_all_drafts():
         db.close()
 
 
+class BatchSendDraftsPayload(BaseModel):
+    sender_email: Optional[str] = None
+    batch_size: Optional[int] = None
+    draft_ids: Optional[List[str]] = None
+
+
 @router.post("/drafts/send-all")
-def send_all_drafts():
+def send_all_drafts(payload: Optional[BatchSendDraftsPayload] = None):
     db = SessionLocal()
     try:
-        rows = db.query(CampaignLog).filter(CampaignLog.status == "drafted").all()
+        sender_email = payload.sender_email if payload else None
+        batch_size = payload.batch_size if payload else None
+        draft_ids = payload.draft_ids if payload else None
+
+        query = db.query(CampaignLog).filter(CampaignLog.status == "drafted")
+        if draft_ids:
+            query = query.filter(CampaignLog.id.in_(draft_ids))
+        if batch_size and batch_size > 0:
+            query = query.limit(batch_size)
+
+        rows = query.all()
         sent_count = 0
         failed_count = 0
         errors = []
 
         for r in rows:
             try:
-                approve_and_send_entry(db, r.id)
+                approve_and_send_entry(db, r.id, sender_email=sender_email)
                 sent_count += 1
             except Exception as e:
                 failed_count += 1
@@ -858,6 +894,7 @@ def send_all_drafts():
             "sent_count": sent_count,
             "failed_count": failed_count,
             "errors": errors,
+            "sender_email": sender_email,
         }
     finally:
         db.close()

@@ -14,6 +14,7 @@ from .routes import router as core_router
 from .auth_endpoints import router as auth_router
 from .domain_endpoints import router as domain_router
 from .channels_endpoints import router as channels_router
+from .sender_endpoints import router as sender_router
 
 load_dotenv()
 
@@ -36,6 +37,7 @@ app.include_router(core_router)
 app.include_router(auth_router)
 app.include_router(domain_router)
 app.include_router(channels_router)
+app.include_router(sender_router)
 
 
 @app.on_event("startup")
@@ -55,6 +57,22 @@ def start_background_services():
             RenderKeepAliveDaemon.start(interval_minutes=9)
     except Exception as e:
         print(f"[API Startup Warning] Could not start RenderKeepAliveDaemon: {e}")
+
+    # 3. Start Domain Verification Daemon for SES background status polling
+    try:
+        from services.domain_verification_daemon import DomainVerificationDaemon
+        if not DomainVerificationDaemon.is_running():
+            DomainVerificationDaemon.start()
+    except Exception as e:
+        print(f"[API Startup Warning] Could not start DomainVerificationDaemon: {e}")
+
+    # 4. Start Tracking Sync Daemon to continuously pull open & click events from https://tracking.nenotechnology.com
+    try:
+        from services.tracking_sync import TrackingSyncDaemon
+        if not TrackingSyncDaemon.is_running():
+            TrackingSyncDaemon.start(interval_seconds=15)
+    except Exception as e:
+        print(f"[API Startup Warning] Could not start TrackingSyncDaemon: {e}")
 
 
 @app.get("/logo-dark.png")
