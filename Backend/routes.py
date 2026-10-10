@@ -41,8 +41,9 @@ from services.rag import (
 from reply_worker import ReplyDaemonManager, check_and_reply_inbox
 from leads import detect_lead_status_in_dataframe
 from services.excel_logger import DEFAULT_BOOKED_EXCEL, DEFAULT_REPLIES_EXCEL
-from utils.text_cleaner import extract_text_from_ai_message
+from utils.text_cleaner import clean_email_text, extract_text_from_ai_message
 from utils.token import generate_token
+
 
 router = APIRouter(prefix="/api")
 
@@ -870,35 +871,43 @@ def get_customer_replies():
     seen_emails = set()
 
     try:
-        # Load from Excel if present
-        if os.path.exists(DEFAULT_REPLIES_EXCEL):
-            try:
-                excel_r_df = pd.read_excel(DEFAULT_REPLIES_EXCEL)
-                for _, r in excel_r_df.iterrows():
-                    em = str(r.get("email") or "").strip().lower()
-                    cust_reply = str(r.get("customer_reply") or "").strip()
-                    ai_reply = extract_text_from_ai_message(str(r.get("ai_response_sent") or "")).strip()
-                    if em and (cust_reply or ai_reply) and em not in seen_emails and "postmaster" not in em:
-                        seen_emails.add(em)
-                        all_replies.append({
-                            "email": em,
-                            "name": str(r.get("name") or "").strip() or "Customer",
-                            "company": str(r.get("company") or "").strip() or "—",
-                            "reply_intent": str(r.get("reply_intent") or "question").strip(),
-                            "customer_reply": cust_reply,
-                            "ai_response_sent": ai_reply,
-                            "reply_received_at": str(r.get("reply_received_at") or "").strip(),
-                            "ai_reply_sent_at": str(r.get("ai_reply_sent_at") or "").strip(),
-                        })
-            except Exception:
-                pass
+        # Check all possible locations for customer_replies.xlsx
+        candidate_excel_paths = [
+            DEFAULT_REPLIES_EXCEL,
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "customer_replies.xlsx"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "customer_replies.xlsx"),
+        ]
+        
+        for ep in candidate_excel_paths:
+            if ep and os.path.exists(ep):
+                try:
+                    excel_r_df = pd.read_excel(ep)
+                    for _, r in excel_r_df.iterrows():
+                        em = str(r.get("email") or "").strip().lower()
+                        cust_reply = str(r.get("customer_reply") or "").strip()
+                        raw_ai = str(r.get("ai_response_sent") or "")
+                        ai_reply = clean_email_text(extract_text_from_ai_message(raw_ai)).strip()
+                        if em and (cust_reply or ai_reply) and em not in seen_emails and "postmaster" not in em:
+                            seen_emails.add(em)
+                            all_replies.append({
+                                "email": em,
+                                "name": str(r.get("name") or "").strip() or "Customer",
+                                "company": str(r.get("company") or "").strip() or "—",
+                                "reply_intent": str(r.get("reply_intent") or "question").strip(),
+                                "customer_reply": cust_reply,
+                                "ai_response_sent": ai_reply,
+                                "reply_received_at": str(r.get("reply_received_at") or "").strip(),
+                                "ai_reply_sent_at": str(r.get("ai_reply_sent_at") or "").strip(),
+                            })
+                except Exception:
+                    pass
 
         # Load from DB
         rows = db.query(CampaignLog).all()
         for r in rows:
             em = str(r.email or "").strip().lower()
             cust_reply = str(r.reply_body or "").strip()
-            ai_reply = extract_text_from_ai_message(str(r.ai_reply_sent or "")).strip()
+            ai_reply = clean_email_text(extract_text_from_ai_message(str(r.ai_reply_sent or ""))).strip()
             if not cust_reply and not ai_reply:
                 continue
             if em and em not in seen_emails and "postmaster" not in em:
@@ -920,6 +929,7 @@ def get_customer_replies():
         }
     finally:
         db.close()
+
 
 
 @router.get("/bookings")
@@ -1072,13 +1082,20 @@ def clear_kb():
 # ── 10. Direct Excel Exports ──
 @router.get("/excel/customer-replies")
 def download_customer_replies_excel():
-    if os.path.exists(DEFAULT_REPLIES_EXCEL):
-        return FileResponse(
-            DEFAULT_REPLIES_EXCEL,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename="customer_replies.xlsx"
-        )
+    paths = [
+        DEFAULT_REPLIES_EXCEL,
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "customer_replies.xlsx"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "customer_replies.xlsx"),
+    ]
+    for p in paths:
+        if p and os.path.exists(p):
+            return FileResponse(
+                p,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename="customer_replies.xlsx"
+            )
     raise HTTPException(status_code=404, detail="customer_replies.xlsx not generated yet")
+
 
 
 @router.get("/excel/booked-leads")

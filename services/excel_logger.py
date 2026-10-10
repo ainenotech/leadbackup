@@ -5,13 +5,16 @@ into an Excel workbook (booked_leads.xlsx and leads.xlsx) for permanent record k
 import os
 from datetime import datetime, timezone
 import pandas as pd
+from utils.text_cleaner import clean_email_text
 
 DEFAULT_BOOKED_EXCEL = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "booked_leads.xlsx"
 )
-DEFAULT_REPLIES_EXCEL = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "customer_replies.xlsx"
-)
+
+_data_replies_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "customer_replies.xlsx")
+_root_replies_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "customer_replies.xlsx")
+DEFAULT_REPLIES_EXCEL = _data_replies_path if os.path.exists(_data_replies_path) else _root_replies_path
+
 
 
 def log_form_submission_to_excel(
@@ -150,6 +153,7 @@ def log_reply_to_excel(
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     clean_email = email.strip().lower() if email else ""
+    clean_ai_sent = clean_email_text(ai_response_sent) if ai_response_sent else ""
 
     new_row = {
         "email": clean_email,
@@ -157,7 +161,7 @@ def log_reply_to_excel(
         "company": company or "",
         "reply_intent": reply_intent or "interested",
         "customer_reply": customer_reply or "",
-        "ai_response_sent": ai_response_sent or "",
+        "ai_response_sent": clean_ai_sent,
         "reply_received_at": str(reply_received_at or timestamp),
         "ai_reply_sent_at": str(ai_reply_sent_at or timestamp),
         "status": "Replied",
@@ -176,9 +180,10 @@ def log_reply_to_excel(
         if customer_reply:
             df.at[idx, "customer_reply"] = customer_reply
         if ai_response_sent:
-            df.at[idx, "ai_response_sent"] = ai_response_sent
+            df.at[idx, "ai_response_sent"] = clean_ai_sent
         if reply_received_at:
             df.at[idx, "reply_received_at"] = str(reply_received_at)
+
         if ai_reply_sent_at:
             df.at[idx, "ai_reply_sent_at"] = str(ai_reply_sent_at)
         df.at[idx, "updated_at"] = timestamp

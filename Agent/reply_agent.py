@@ -14,66 +14,7 @@ from sqlalchemy.orm import Session
 
 from Agent.llm import get_llm
 from services.rag import retrieve_relevant_chunks
-
-def extract_text_from_ai_message(content: Any) -> str:
-    """Safely extracts clean human string text from LLM response content across all providers
-    (string, list of dicts, Anthropic/Claude/Gemini content blocks, or stringified repr),
-    guaranteeing no raw Python dicts, extras, or base64 signatures are ever returned.
-    """
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                text_val = block.get("text", "")
-                if text_val:
-                    parts.append(text_val)
-            elif hasattr(block, "text"):
-                text_val = getattr(block, "text", "")
-                if text_val:
-                    parts.append(text_val)
-            else:
-                parts.append(str(block))
-        result = "\n".join(parts).strip()
-    elif isinstance(content, str):
-        s = content.strip()
-        # Check if the string is a stringified list of dicts: "[{'type': 'text', 'text': ..."
-        if (s.startswith("[{") and ("'text'" in s or '"text"' in s)):
-            try:
-                import ast
-                parsed = ast.literal_eval(s)
-                if isinstance(parsed, list):
-                    return extract_text_from_ai_message(parsed)
-            except Exception:
-                pass
-            try:
-                import json
-                parsed = json.loads(s)
-                if isinstance(parsed, list):
-                    return extract_text_from_ai_message(parsed)
-            except Exception:
-                pass
-            import re
-            m = re.search(r"['\"]text['\"]\s*:\s*(['\"])(.*?)\1(?:,\s*['\"]extras|\}\])", s, re.DOTALL)
-            if m:
-                try:
-                    return m.group(2).encode().decode("unicode-escape").strip()
-                except Exception:
-                    return m.group(2).strip()
-        result = s
-    else:
-        result = str(content).strip()
-
-    # Safety: strip any stray 'extras': {'signature': ...} if present
-    if "'extras':" in result:
-        idx = result.find("'extras':")
-        result = result[:idx].rstrip(", '\"{")
-    if '"extras":' in result:
-        idx = result.find('"extras":')
-        result = result[:idx].rstrip(', \'"{')
-
-    return result.strip()
+from utils.text_cleaner import clean_email_text, extract_text_from_ai_message
 
 
 
@@ -96,12 +37,17 @@ CRITICAL GROUNDING & STRICT REAL-DATA RULES:
    - If they ask about voice agents, custom AI, CRM/ERP, or enterprise automation, provide the specific capabilities detailed in the knowledge base.
    - Do NOT invent fake pricing, fake certifications, or make unrealistic promises outside the knowledge base.
 4. STRICTLY NO PLACEHOLDERS: NEVER include square brackets like "[Customer Name]", "[insert details]", "[Your Name]", etc.
-5. TONE: Warm, responsive, consultative, and executive. Avoid robotic language or generic fluff.
-6. CALL TO ACTION:
-   - Encourage them to schedule a short consultation call to discuss their exact project requirements.
-   - Direct them to our official Microsoft Bookings consultation portal:
-     <a href="{booking_url}" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Schedule a Consultation Call</a>
-7. SIGN-OFF BLOCK:
+5. NO MARKDOWN ASTERISKS / PROPER EXECUTIVE FORMATTING:
+   - NEVER use markdown stars or asterisks (such as "**" or "***") anywhere in your response.
+   - NEVER write "**text**" or "* **heading:**" to highlight or bold words. Corporate emails must not have asterisks.
+   - For lists or bullet points, use clean standard bullet dots (•) or dashes (-) without any asterisks.
+   - DO NOT include email header fields like "Subject: ..." in your body. Start directly with the greeting ("Hi [Name],").
+   - DO NOT output raw HTML tags (like <a href=...> or <p>). Write standard, clean plain text.
+6. TONE: Warm, responsive, consultative, and executive. Avoid robotic language or generic fluff.
+7. CALL TO ACTION:
+   - Encourage them to schedule a short, 15-minute consultation call to discuss their exact project requirements.
+   - Invite them to schedule via our consultation portal: {booking_url}
+8. SIGN-OFF BLOCK:
    End with the exact executive sign-off:
    Warm regards,
    Tirth Patel
@@ -298,18 +244,24 @@ def process_incoming_reply(
         HumanMessage(content=user_prompt)
     ])
 
-    response_text = extract_text_from_ai_message(resp.content)
-
+    raw_response = extract_text_from_ai_message(resp.content)
+    response_text = clean_email_text(raw_response)
 
     # Ensure booking link is present if not already embedded
     if "bookings.cloud.microsoft" not in response_text and intent != "not_interested":
-        cta_html = f'<p style="margin: 16px 0;"><a href="{booking_url}" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Schedule a Consultation Call Here</a></p>'
+        cta_line = (
+            "To explore how we can tailor our services to your specific goals, I invite you to schedule a brief consultation with us directly through our portal:\n"
+            f"{booking_url}"
+        )
         sig_match = re.search(r"(Warm regards|Best regards|Kind regards|Regards),?", response_text, flags=re.IGNORECASE)
         if sig_match:
             idx = sig_match.start()
-            response_text = f"{response_text[:idx].rstrip()}\n\n{cta_html}\n\n{response_text[idx:].strip()}"
+            response_text = f"{response_text[:idx].rstrip()}\n\n{cta_line}\n\n{response_text[idx:].strip()}"
         else:
-            response_text = f"{response_text.rstrip()}\n\n{cta_html}"
+            response_text = f"{response_text.rstrip()}\n\n{cta_line}"
+
+    # Final pass to guarantee zero asterisks or raw HTML tags in response_text
+    response_text = clean_email_text(response_text)
 
     # Build standard corporate threaded email with primary mail body quoted
     formatted_html = build_threaded_reply_html(
@@ -352,7 +304,7 @@ def build_threaded_reply_html(
     booking_url: str = "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
 ) -> str:
     """Builds a complete, executive corporate reply email in standard Outlook/enterprise format:
-    1. AI response grounded in the Neno Technology Knowledge Base PDF.
+    1. AI response grounded in the Neno Technology Knowledge Base PDF (clean, professional, zero raw asterisks).
     2. Consultation Call button & direct link to Microsoft Bookings.
     3. Executive sign-off block from Tirth Patel (Founder & CEO).
     4. Clean Outlook separator line (<hr>).
@@ -363,23 +315,48 @@ def build_threaded_reply_html(
     subj = (subject or "Inquiry").strip()
     from_date = (received_time or "Recent").strip()
 
-    # Convert AI response text into clean HTML paragraphs
-    paragraphs = [p.strip() for p in ai_response_text.replace("\r\n", "\n").split("\n\n") if p.strip()]
+    clean_ai_text = clean_email_text(ai_response_text)
+
+    # Convert AI response text into clean HTML paragraphs & styled bullet lists
+    paragraphs = [p.strip() for p in clean_ai_text.replace("\r\n", "\n").split("\n\n") if p.strip()]
     ai_html_parts = []
     for p in paragraphs:
-        # Avoid double wrapping if already contains HTML tags like <a> or <p>
-        if p.startswith(("<p", "<div", "<table", "<ul", "<ol", "<blockquote")):
+        lines = [line.strip() for line in p.split("\n") if line.strip()]
+        # Check if this block is a series of bullet points
+        if len(lines) >= 1 and all(line.startswith(("•", "-", "*")) for line in lines):
+            li_parts = []
+            for line in lines:
+                item_content = re.sub(r'^[•\-\*]\s*', '', line).strip()
+                colon_idx = item_content.find(":")
+                if colon_idx != -1 and colon_idx < 80:
+                    hdr = item_content[:colon_idx].strip()
+                    rest = item_content[colon_idx+1:].strip()
+                    item_html = f"<strong>{html.escape(hdr)}:</strong> {html.escape(rest)}"
+                else:
+                    item_html = html.escape(item_content)
+                li_parts.append(
+                    f'<li style="margin-bottom: 7px; color: #1E293B; line-height: 1.55;">{item_html}</li>'
+                )
+            ai_html_parts.append(
+                f'<ul style="margin: 0 0 14px 0; padding-left: 22px; font-family: Arial, Helvetica, sans-serif; font-size: 14.5px;">{"".join(li_parts)}</ul>'
+            )
+        elif p.startswith(("<p", "<div", "<table", "<ul", "<ol", "<blockquote")):
             ai_html_parts.append(p)
         else:
-            p_formatted = p.replace("\n", "<br>")
+            p_clean = html.escape(p).replace("\n", "<br>")
+            if booking_url and booking_url in p:
+                p_clean = p_clean.replace(
+                    html.escape(booking_url),
+                    f'<a href="{booking_url}" target="_blank" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Schedule a Consultation Call</a>'
+                )
             ai_html_parts.append(
-                f'<p style="margin: 0 0 13px 0; font-family: Arial, Helvetica, sans-serif; font-size: 14.5px; line-height: 1.6; color: #1E293B;">{p_formatted}</p>'
+                f'<p style="margin: 0 0 13px 0; font-family: Arial, Helvetica, sans-serif; font-size: 14.5px; line-height: 1.6; color: #1E293B;">{p_clean}</p>'
             )
     ai_html_body = "\n".join(ai_html_parts)
 
     # Prepare consultation call CTA button if not already in text
     cta_block = ""
-    if booking_url and booking_url not in ai_response_text and "unsubscribe" not in ai_response_text.lower():
+    if booking_url and booking_url not in clean_ai_text and "unsubscribe" not in clean_ai_text.lower():
         cta_block = f"""
         <div style="margin: 20px 0;">
             <table cellpadding="0" cellspacing="0" border="0" style="border-collapse: separate;">
@@ -449,14 +426,15 @@ def build_threaded_reply_plain(
     original_body: Optional[str] = None,
     booking_url: str = "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
 ) -> str:
-    """Builds a plaintext corporate reply with quoted primary incoming message."""
+    """Builds a clean plaintext corporate reply with quoted primary incoming message."""
     clean_name = (sender_name or "").strip() or "Customer"
     subj = (subject or "Inquiry").strip()
     from_date = (received_time or "Recent").strip()
 
-    parts = [ai_response_text.strip()]
+    clean_plain = clean_email_text(ai_response_text)
+    parts = [clean_plain]
 
-    if booking_url and booking_url not in ai_response_text and "unsubscribe" not in ai_response_text.lower():
+    if booking_url and booking_url not in clean_plain and "unsubscribe" not in clean_plain.lower():
         parts.append(f"\nSchedule a Consultation Call:\n{booking_url}")
 
     if original_body and original_body.strip():
@@ -473,3 +451,4 @@ def build_threaded_reply_plain(
         )
 
     return "\n".join(parts)
+

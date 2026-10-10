@@ -52,6 +52,8 @@ from Backend.models import CampaignLog
 from Email import get_mailer
 from services.excel_logger import log_booking_to_excel, log_reply_to_excel
 from utils.microsoft_auth import MS_SENDER_EMAIL, get_graph_headers
+from utils.text_cleaner import clean_email_text
+
 
 init_db()
 
@@ -644,8 +646,9 @@ def check_and_reply_inbox(db=None, sync_existing: bool = False) -> Dict[str, Any
                 results["failed_count"] += 1
                 continue
 
-            reply_text = agent_res.get("response_text", "")
+            reply_text = clean_email_text(agent_res.get("response_text", ""))
             intent = agent_res.get("intent", "question")
+
             cleaned_msg = agent_res.get("cleaned_message", "")
             chunks_used = agent_res.get("context_chunks", [])
             primary_mail_body = agent_res.get("original_body") or cleaned_msg or body_content

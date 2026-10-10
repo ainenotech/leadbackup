@@ -5,11 +5,113 @@ import HeaderBanner from "@/components/layout/HeaderBanner";
 import { api, ReplyItem, BookingItem } from "@/lib/api";
 import { RefreshCw, Play, Square, Download, Search, MessageSquare, Bot, BookOpen, Calendar, FileSpreadsheet, CheckCircle2, Upload } from "lucide-react";
 
+function renderCleanAiResponse(raw: string) {
+  if (!raw) return null;
+  // Clean raw stars, subject line, and stray HTML wrappers
+  let text = raw
+    .replace(/\*\*\*/g, "")
+    .replace(/\*\*/g, "")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/^(?:Subject|SUBJECT):\s*[^\n]*\n+/i, "")
+    .replace(/<p[^>]*>/gi, "")
+    .replace(/<\/p>/gi, "\n\n")
+    .trim();
+
+  // If there are raw <a href="...">...</a> tags, extract the URL
+  const linkRegex = /<a\s+(?:[^>]*?\s+)?href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
+  text = text.replace(linkRegex, (_match, href, label) => {
+    return `${label || "Schedule a Consultation Call"}: ${href}`;
+  });
+  text = text.replace(/<[^>]+>/g, "");
+
+  const paragraphs = text.split(/\n\n+/).filter((p) => p.trim().length > 0);
+
+  return (
+    <div className="space-y-3 text-[#1E3A8A] leading-relaxed">
+      {paragraphs.map((para, pIdx) => {
+        const trimmed = para.trim();
+        // Check if paragraph contains booking URL
+        const isBookingPara =
+          trimmed.includes("bookings.cloud.microsoft") ||
+          trimmed.toLowerCase().includes("schedule a consultation");
+
+        if (isBookingPara) {
+          const urlMatch = trimmed.match(/https?:\/\/[^\s<"']+/);
+          const bookingUrl = urlMatch
+            ? urlMatch[0]
+            : "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled";
+          const textBeforeUrl = trimmed.replace(bookingUrl, "").replace(/:\s*$/, "").trim();
+
+          return (
+            <div key={pIdx} className="my-2.5 p-3.5 bg-white/90 border border-[#BFDBFE] rounded-xl space-y-2">
+              {textBeforeUrl && (
+                <p className="text-[13px] text-[#1E3A8A] font-medium">{textBeforeUrl}</p>
+              )}
+              <a
+                href={bookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-[12.5px] rounded-lg shadow-xs transition-colors"
+              >
+                <span>📅</span>
+                <span>Schedule a Consultation Call</span>
+                <span className="text-[11px] opacity-80">↗</span>
+              </a>
+            </div>
+          );
+        }
+
+        // Check if paragraph contains bullet points
+        const lines = trimmed.split("\n").filter((l) => l.trim().length > 0);
+        const isBulletList =
+          lines.length > 0 && lines.every((l) => /^([•\-\*]|\d+\.)/.test(l.trim()));
+
+        if (isBulletList) {
+          return (
+            <ul key={pIdx} className="space-y-1.5 pl-1 my-2">
+              {lines.map((l, lIdx) => {
+                const itemClean = l.replace(/^([•\-\*]|\d+\.)\s*/, "").replace(/\*\*/g, "").trim();
+                const colonIdx = itemClean.indexOf(":");
+                if (colonIdx > 0 && colonIdx < 80) {
+                  const heading = itemClean.substring(0, colonIdx);
+                  const body = itemClean.substring(colonIdx + 1);
+                  return (
+                    <li key={lIdx} className="flex items-start gap-2 text-[13px]">
+                      <span className="text-[#2563EB] font-bold mt-0.5">•</span>
+                      <span>
+                        <strong className="text-[#0F172A] font-semibold">{heading}:</strong>
+                        <span className="text-[#1E3A8A]">{body}</span>
+                      </span>
+                    </li>
+                  );
+                }
+                return (
+                  <li key={lIdx} className="flex items-start gap-2 text-[13px]">
+                    <span className="text-[#2563EB] font-bold mt-0.5">•</span>
+                    <span className="text-[#1E3A8A]">{itemClean}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          );
+        }
+
+        return (
+          <p key={pIdx} className="text-[13.5px] whitespace-pre-wrap">
+            {trimmed}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function RepliesBookingsView({
   activeSenderEmail,
 }: {
   activeSenderEmail?: string;
 } = {}) {
+
   const [replies, setReplies] = useState<ReplyItem[]>([]);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [daemonRunning, setDaemonRunning] = useState(false);
@@ -342,16 +444,15 @@ export default function RepliesBookingsView({
 
                   {/* AI Grounded Response Bubble */}
                   {r.ai_response_sent && (
-                    <div className="p-4 bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl text-[13.5px] space-y-1">
+                    <div className="p-4 bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl text-[13.5px] space-y-2">
                       <span className="text-[11px] font-bold text-[#1D4ED8] uppercase block flex items-center gap-1.5">
                         <span>🤖</span>
                         <span>AI Grounded Corporate Response (Dispatched via Microsoft Graph)</span>
                       </span>
-                      <p className="text-[#1E3A8A] leading-relaxed whitespace-pre-wrap">
-                        {r.ai_response_sent}
-                      </p>
+                      {renderCleanAiResponse(r.ai_response_sent)}
                     </div>
                   )}
+
                 </div>
               ))}
             </div>

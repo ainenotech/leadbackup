@@ -5,6 +5,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from Agent.llm import get_llm
 
+from utils.text_cleaner import clean_email_text
+
 DEFAULT_SYSTEM_PROMPT = """You are drafting warm, high-converting, professional B2B re-engagement emails on behalf of:
 Sender: Tirth Patel, Founder & CEO
 Company: Nenotechnology (Aineno Innovation Pvt. Ltd.), Ahmedabad, Gujarat (www.nenotechnology.com)
@@ -33,6 +35,7 @@ Rules:
    Ahmedabad, Gujarat
    sales@nenotechnology.com | +91 7863852024
    www.nenotechnology.com
+7. NO MARKDOWN ASTERISKS: NEVER use markdown stars or asterisks (such as ** or ***) for bolding, highlighting, or bullet points. Write clean, natural, executive paragraphs without any ** highlights or asterisks.
 
 Output format must strictly begin with line 1 as "SUBJECT: <subject line>", followed by the email body.
 """
@@ -149,10 +152,12 @@ def compose_email(
             body = f"{prefix}\n\n{cta_sentence}\n\n{suffix}"
         else:
             body = body.rstrip() + f"\n\n{cta_sentence}\n\n{signature_block}"
-    elif "Tirth Patel" not in body:
+    if "Tirth Patel" not in body:
         body = body.rstrip() + f"\n\n{signature_block}"
 
+    body = clean_email_text(body)
     return subject, body
+
 
 
 

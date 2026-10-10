@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from Email import get_mailer
 from services.excel_logger import log_booking_to_excel, log_form_submission_to_excel
+from utils.text_cleaner import clean_email_text
 from .models import CampaignLog, KnowledgeDocument, ProcessedReply
+
 
 
 def get_already_sent_emails(db: Session) -> Set[str]:
@@ -91,6 +93,8 @@ def create_pending_entry(
     if not tracking_link or "localhost" in str(tracking_link) or "127.0.0.1" in str(tracking_link):
         tracking_link = booking_url
 
+    clean_body = clean_email_text(body)
+
     entry = CampaignLog(
         campaign_name=campaign_name,
         lead_id=lead_id,
@@ -100,11 +104,12 @@ def create_pending_entry(
         token=token,
         tracking_link=tracking_link,
         subject=subject,
-        body=body,
+        body=clean_body,
         status=status,
         template_id=template_id,
         template_name=template_name,
     )
+
     db.add(entry)
     db.commit()
     db.refresh(entry)
@@ -238,10 +243,11 @@ def update_draft_content(db: Session, entry_id: str, subject: str, body: str) ->
     entry = db.query(CampaignLog).filter(CampaignLog.id == entry_id).first()
     if entry:
         entry.subject = subject
-        entry.body = body
+        entry.body = clean_email_text(body)
         db.commit()
         db.refresh(entry)
     return entry
+
 
 
 def get_by_token(db: Session, token: str) -> Optional[CampaignLog]:
