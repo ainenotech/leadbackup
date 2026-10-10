@@ -1,5 +1,6 @@
 """Endpoints for the Email Channels Foundation."""
 
+from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from Backend.db import get_db
@@ -33,6 +34,8 @@ router = APIRouter(prefix="/api/channels", tags=["Email Channels"])
 
 @router.get("/oauth/microsoft/login")
 def channels_microsoft_oauth_login(
+    email: Optional[str] = None,
+    org_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Browser-navigable GET endpoint that starts the Microsoft OAuth flow
@@ -60,16 +63,24 @@ def channels_microsoft_oauth_login(
 
     state_hash = hashlib.sha256(raw_state.encode("utf-8")).hexdigest()
 
-    # Use a sentinel org so the callback can still look up the flow state
-    org = db.query(Organization).first()
-    org_id = org.id if org else None
+    target_email = (email or "").strip().lower() or None
+    target_org_id = org_id
+    if target_email and not target_org_id:
+        from Backend.sender_models import SenderAccount
+        s_acc = db.query(SenderAccount).filter(SenderAccount.email.ilike(target_email)).first()
+        if s_acc:
+            target_org_id = s_acc.organization_id
+
+    if not target_org_id:
+        org = db.query(Organization).first()
+        target_org_id = org.id if org else None
 
     flow_state = OAuthFlowState(
         state_hash=state_hash,
         provider="microsoft",
-        organization_id=org_id,
-        user_id="login",
-        expected_email="login",
+        organization_id=target_org_id,
+        user_id="channel_connect" if target_email else "login",
+        expected_email=target_email if target_email else "login",
         flow_data_encrypted=encrypt_secret(flow),
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
     )
@@ -81,6 +92,8 @@ def channels_microsoft_oauth_login(
 
 @router.get("/oauth/google/login")
 def channels_google_oauth_login(
+    email: Optional[str] = None,
+    org_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Browser-navigable GET endpoint that starts the Google OAuth flow
@@ -114,15 +127,24 @@ def channels_google_oauth_login(
 
     state_hash = hashlib.sha256(raw_state.encode("utf-8")).hexdigest()
 
-    org = db.query(Organization).first()
-    org_id = org.id if org else None
+    target_email = (email or "").strip().lower() or None
+    target_org_id = org_id
+    if target_email and not target_org_id:
+        from Backend.sender_models import SenderAccount
+        s_acc = db.query(SenderAccount).filter(SenderAccount.email.ilike(target_email)).first()
+        if s_acc:
+            target_org_id = s_acc.organization_id
+
+    if not target_org_id:
+        org = db.query(Organization).first()
+        target_org_id = org.id if org else None
 
     flow_state = OAuthFlowState(
         state_hash=state_hash,
         provider="google",
-        organization_id=org_id,
-        user_id="login",
-        expected_email="login",
+        organization_id=target_org_id,
+        user_id="channel_connect" if target_email else "login",
+        expected_email=target_email if target_email else "login",
         flow_data_encrypted=encrypt_secret(flow),
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
     )
@@ -376,6 +398,13 @@ def _render_oauth_result(title: str, message: str, is_error: bool = False, admin
             {admin_html}
             <button class="close-btn" onclick="window.close()">Close Tab</button>
         </div>
+        <script>
+            try {{
+                if (window.opener) {{
+                    window.opener.postMessage({{ type: "OAUTH_MAILBOX_CONNECTED" }}, "*");
+                }}
+            }} catch(e) {{}}
+        </script>
     </body>
     </html>
     '''
@@ -545,19 +574,20 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
     purpose = flow_state.expected_email
     
     if purpose not in ("login", "link"):
-        # Re-verify user membership is still active owner/admin (allow platform_super_admin)
-        from Backend.auth_models import OrganizationMember, User
-        user = db.query(User).filter(User.id == flow_state.user_id).first()
-        is_super = bool(user and user.platform_role == "platform_super_admin")
-        if not is_super:
-            membership = db.query(OrganizationMember).filter(
-                OrganizationMember.organization_id == flow_state.organization_id,
-                OrganizationMember.user_id == flow_state.user_id,
-                OrganizationMember.status == "active"
-            ).first()
-            
-            if not membership or membership.role not in ("owner", "admin", "organization_owner", "organization_admin"):
-                return _render_oauth_result("Unauthorized", "You are no longer an active administrator for this organization.", is_error=True)
+        if flow_state.user_id and flow_state.user_id not in ("channel_connect", "login"):
+            # Re-verify user membership is still active owner/admin (allow platform_super_admin)
+            from Backend.auth_models import OrganizationMember, User
+            user = db.query(User).filter(User.id == flow_state.user_id).first()
+            is_super = bool(user and user.platform_role == "platform_super_admin")
+            if not is_super:
+                membership = db.query(OrganizationMember).filter(
+                    OrganizationMember.organization_id == flow_state.organization_id,
+                    OrganizationMember.user_id == flow_state.user_id,
+                    OrganizationMember.status == "active"
+                ).first()
+                
+                if not membership or membership.role not in ("owner", "admin", "organization_owner", "organization_admin"):
+                    return _render_oauth_result("Unauthorized", "You are no longer an active administrator for this organization.", is_error=True)
 
     # Check for OAuth error in callback
     error = req.query_params.get("error")
@@ -651,15 +681,25 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
         
     actual_clean = (actual_mail or "").strip().lower()
     expected_clean = (flow_state.expected_email or "").strip().lower()
-    if not expected_clean and actual_clean:
+    if not expected_clean or expected_clean in ("login", "channel_connect"):
         expected_clean = actual_clean
     elif actual_clean and expected_clean and actual_clean != expected_clean:
         return _render_oauth_result("Account Mismatch", f"You entered {expected_clean} but signed into {provider.capitalize()} as {actual_clean}. Please sign in with the matching account.", is_error=True)
         
+    # Match sender account to find target organization
+    from Backend.sender_models import SenderAccount
+    matching_sender = db.query(SenderAccount).filter(
+        SenderAccount.email.ilike(expected_clean)
+    ).first()
+
+    target_org_id = matching_sender.organization_id if matching_sender else flow_state.organization_id
+    if not target_org_id:
+        org = db.query(Organization).first()
+        target_org_id = org.id if org else None
+
     # Save connection
     existing_conn = db.query(OrgMailConnection).filter(
-        OrgMailConnection.organization_id == flow_state.organization_id,
-        OrgMailConnection.email == expected_clean
+        OrgMailConnection.email.ilike(expected_clean)
     ).first()
     
     channel_name = f"{provider}_oauth"
@@ -674,12 +714,14 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
     if existing_conn:
         existing_conn.channel = channel_name
         existing_conn.status = "active"
+        if target_org_id:
+            existing_conn.organization_id = target_org_id
         existing_conn.encrypted_secret = encrypt_secret(refresh_token)
         existing_conn.config = config
         conn_id = existing_conn.id
     else:
         new_conn = OrgMailConnection(
-            organization_id=flow_state.organization_id,
+            organization_id=target_org_id,
             email=expected_clean,
             domain=domain,
             channel=channel_name,
@@ -694,12 +736,7 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
 
     # Sync or auto-provision matching SenderAccount
     try:
-        from Backend.sender_models import SenderAccount
         prov_type = "google_workspace" if provider == "google" else "microsoft_365"
-        matching_sender = db.query(SenderAccount).filter(
-            SenderAccount.organization_id == flow_state.organization_id,
-            SenderAccount.email == expected_clean,
-        ).first()
         if matching_sender:
             matching_sender.provider = prov_type
             matching_sender.provider_connection_id = conn_id
@@ -710,7 +747,7 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
                 matching_sender.sending_status = "ready"
         else:
             new_sender = SenderAccount(
-                organization_id=flow_state.organization_id,
+                organization_id=target_org_id,
                 email=expected_clean,
                 domain_name=domain,
                 provider=prov_type,
@@ -729,4 +766,4 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
         
     db.commit()
     
-    return _render_oauth_result("Connection Successful", f"Your mailbox ({flow_state.expected_email}) has been securely connected. You can now close this tab and return to the application.")
+    return _render_oauth_result("Connection Successful", f"Your mailbox ({expected_clean}) has been securely connected. You can now close this tab and return to the application.")

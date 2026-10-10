@@ -167,6 +167,17 @@ export default function WorkspaceSettingsView({
     }
   }, [showAddSenderModal]);
 
+  useEffect(() => {
+    const handleMsg = (e: MessageEvent) => {
+      if (e.data?.type === "OAUTH_MAILBOX_CONNECTED") {
+        fetchSenders();
+        fetchOrgDomains();
+      }
+    };
+    window.addEventListener("message", handleMsg);
+    return () => window.removeEventListener("message", handleMsg);
+  }, [orgId]);
+
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgId) return;
@@ -629,7 +640,9 @@ export default function WorkspaceSettingsView({
                     Connect your Microsoft 365 / Outlook mailbox securely using OAuth 2.0 without sharing raw passwords.
                   </div>
                   <a
-                    href="http://localhost:8000/api/channels/oauth/microsoft/login"
+                    href={`http://localhost:8000/api/channels/oauth/microsoft/login?email=${encodeURIComponent(detectEmail)}&org_id=${encodeURIComponent(orgId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 py-2.5 px-4 bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold rounded-xl transition-all"
                   >
                     <span>🪟 Connect Microsoft 365 Mailbox</span>
@@ -643,7 +656,9 @@ export default function WorkspaceSettingsView({
                     Connect your Google Workspace mailbox securely using OAuth 2.0 with send &amp; reply sync.
                   </div>
                   <a
-                    href="http://localhost:8000/api/channels/oauth/google/login"
+                    href={`http://localhost:8000/api/channels/oauth/google/login?email=${encodeURIComponent(detectEmail)}&org_id=${encodeURIComponent(orgId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 py-2.5 px-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[13px] font-bold rounded-xl transition-all"
                   >
                     <span>🌐 Connect Google Workspace Mailbox</span>
@@ -1204,11 +1219,11 @@ export default function WorkspaceSettingsView({
                       <div className="flex items-center gap-2 shrink-0">
                         {sender.provider !== "ses_only" && sender.mailbox_connection_status !== "connected" && (
                           <a
-                            href={
-                              sender.provider === "microsoft_365"
-                                ? "http://localhost:8000/api/channels/oauth/microsoft/login"
-                                : "http://localhost:8000/api/channels/oauth/google/login"
-                            }
+                            href={`http://localhost:8000/api/channels/oauth/${
+                              sender.provider === "microsoft_365" ? "microsoft" : "google"
+                            }/login?email=${encodeURIComponent(sender.email)}&org_id=${encodeURIComponent(orgId)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="py-1.5 px-3 bg-[#0F172A] hover:bg-[#1E293B] text-white rounded-lg text-[11.5px] font-bold flex items-center gap-1 transition-all"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
