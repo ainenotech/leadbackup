@@ -190,6 +190,7 @@ def approve_and_send_entry(db: Session, entry_id: str, sender_email: Optional[st
 
     active_from_email = (sender_email or "").strip() or None
     sender_account_id = None
+    display_name = None
     try:
         from Backend.auth_models import Organization
         from Backend.sender_models import SenderAccount
@@ -201,27 +202,75 @@ def approve_and_send_entry(db: Session, entry_id: str, sender_email: Optional[st
                 active_from_email = org.settings.get("sender", {}).get("sender_email") or org.settings.get("sender_email")
 
         if active_from_email:
-            sender_rec = db.query(SenderAccount).filter(SenderAccount.email == active_from_email.lower().strip()).first()
+            sender_rec = db.query(SenderAccount).filter(SenderAccount.email.ilike(active_from_email.lower().strip())).first()
             if sender_rec:
                 sender_account_id = sender_rec.id
                 active_from_email = sender_rec.email
+                display_name = sender_rec.display_name
         else:
             first_ready = db.query(SenderAccount).filter(SenderAccount.enabled == True).first()
             if first_ready:
                 active_from_email = first_ready.email
                 sender_account_id = first_ready.id
+                display_name = first_ready.display_name
     except Exception:
         pass
 
-    mailer = get_mailer()
     try:
-        mailer.send_email(
-            to_email=entry.email,
-            subject=entry.subject,
-            body=entry.body,
-            token=entry.token,
-            from_email=active_from_email,
-        )
+        dispatched_oauth = False
+        try:
+            from Backend.channels_models import OrgMailConnection
+            oauth_conn = db.query(OrgMailConnection).filter(
+                OrgMailConnection.email.ilike(active_from_email.lower().strip()),
+                OrgMailConnection.status == "active",
+            ).first()
+
+            if oauth_conn:
+                from Email.tracking_utils import prepare_tracked_email_bodies
+                html_body, text_body = prepare_tracked_email_bodies(
+                    body=entry.body,
+                    token=entry.token,
+                    sender_email=active_from_email,
+                )
+                if "google" in (oauth_conn.channel or "").lower():
+                    from Email.channels.google_oauth_channel import GoogleOAuthChannel
+                    GoogleOAuthChannel().send_email(
+                        db=db,
+                        connection=oauth_conn,
+                        to_email=entry.email,
+                        subject=entry.subject,
+                        body_html=html_body,
+                        body_text=text_body,
+                        reply_to=active_from_email,
+                    )
+                    dispatched_oauth = True
+                elif "microsoft" in (oauth_conn.channel or "").lower():
+                    from Email.channels.microsoft_oauth import MicrosoftOAuthChannel
+                    MicrosoftOAuthChannel().send_email(
+                        db=db,
+                        connection=oauth_conn,
+                        to_email=entry.email,
+                        subject=entry.subject,
+                        body_html=html_body,
+                        body_text=text_body,
+                        reply_to=active_from_email,
+                    )
+                    dispatched_oauth = True
+        except Exception as oauth_err:
+            print(f"[dispatch] OAuth channel dispatch check skipped/failed: {oauth_err}")
+
+        if not dispatched_oauth:
+            mailer = get_mailer()
+            mailer.send_email(
+                to_email=entry.email,
+                subject=entry.subject,
+                body=entry.body,
+                token=entry.token,
+                from_email=active_from_email,
+                display_name=display_name,
+                reply_to=active_from_email,
+            )
+
         if sender_account_id:
             try:
                 record_sender_send(db, sender_account_id)

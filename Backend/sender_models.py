@@ -119,11 +119,11 @@ class SenderAccount(Base):
         if not self.enabled:
             return "disabled"
 
-        if self.ses_identity_status != "ready":
+        if self.provider == "ses_only" and self.ses_identity_status != "ready":
             return "ses_pending"
 
         if self.provider in ("microsoft_365", "google_workspace", "smtp_imap"):
-            if self.mailbox_connection_status not in ("connected",):
+            if self.mailbox_connection_status not in ("connected", "not_required"):
                 return "mailbox_disconnected"
 
         if self.sending_status == "rate_limited":
@@ -138,12 +138,12 @@ class SenderAccount(Base):
         """True only when ALL required prerequisites pass."""
         if not self.enabled:
             return False
-        if self.ses_identity_status != "ready":
+        if self.provider == "ses_only" and self.ses_identity_status != "ready":
             return False
         if self.sending_status != "ready":
             return False
         if self.provider in ("microsoft_365", "google_workspace", "smtp_imap"):
-            if self.mailbox_connection_status != "connected":
+            if self.mailbox_connection_status not in ("connected", "not_required"):
                 return False
         return True
 

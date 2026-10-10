@@ -39,7 +39,8 @@ class SESMailer(Mailer):
         **kwargs,
     ) -> str:
         sender = from_email or kwargs.get("from_email") or SES_FROM_EMAIL
-        reply = reply_to or kwargs.get("reply_to") or SES_REPLY_TO
+        reply = reply_to or kwargs.get("reply_to") or sender or SES_REPLY_TO
+        disp_name = kwargs.get("display_name")
 
         from Email.tracking_utils import prepare_tracked_email_bodies
         html_body, text_body = prepare_tracked_email_bodies(
@@ -48,8 +49,10 @@ class SESMailer(Mailer):
             sender_email=sender,
         )
 
+        from_header = f'"{disp_name}" <{sender}>' if disp_name else sender
+
         send_params = {
-            "FromEmailAddress": sender,
+            "FromEmailAddress": from_header,
             "Destination": {"ToAddresses": [to_email]},
             "Content": {
                 "Simple": {

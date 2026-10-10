@@ -651,7 +651,9 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
         
     actual_clean = (actual_mail or "").strip().lower()
     expected_clean = (flow_state.expected_email or "").strip().lower()
-    if actual_clean and expected_clean and actual_clean != expected_clean:
+    if not expected_clean and actual_clean:
+        expected_clean = actual_clean
+    elif actual_clean and expected_clean and actual_clean != expected_clean:
         return _render_oauth_result("Account Mismatch", f"You entered {expected_clean} but signed into {provider.capitalize()} as {actual_clean}. Please sign in with the matching account.", is_error=True)
         
     # Save connection
@@ -687,23 +689,43 @@ def oauth_callback(provider: str, req: Request, db: Session = Depends(get_db)):
             daily_cap=daily_cap
         )
         db.add(new_conn)
+        db.flush()
         conn_id = new_conn.id
 
-    # Sync matching SenderAccount if one exists
+    # Sync or auto-provision matching SenderAccount
     try:
         from Backend.sender_models import SenderAccount
+        prov_type = "google_workspace" if provider == "google" else "microsoft_365"
         matching_sender = db.query(SenderAccount).filter(
             SenderAccount.organization_id == flow_state.organization_id,
             SenderAccount.email == expected_clean,
         ).first()
         if matching_sender:
+            matching_sender.provider = prov_type
             matching_sender.provider_connection_id = conn_id
             matching_sender.mailbox_connection_status = "connected"
+            matching_sender.ses_identity_status = "not_required"
             matching_sender.reply_monitoring_status = "active"
-            if matching_sender.ses_identity_status == "ready" and matching_sender.enabled:
+            if matching_sender.enabled:
                 matching_sender.sending_status = "ready"
+        else:
+            new_sender = SenderAccount(
+                organization_id=flow_state.organization_id,
+                email=expected_clean,
+                domain_name=domain,
+                provider=prov_type,
+                provider_connection_id=conn_id,
+                mailbox_connection_status="connected",
+                ses_identity_status="not_required",
+                sending_status="ready",
+                reply_monitoring_status="active",
+                enabled=True,
+                hourly_limit=50,
+                daily_limit=daily_cap,
+            )
+            db.add(new_sender)
     except Exception as sync_err:
-        logger.warning(f"Could not sync SenderAccount after oauth: {sync_err}")
+        logger.warning(f"Could not sync or provision SenderAccount after oauth: {sync_err}")
         
     db.commit()
     
