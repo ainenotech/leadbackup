@@ -21,6 +21,7 @@ from .auth_service import (
     get_organization_by_id,
     get_platform_admin_overview,
     invite_org_member,
+    resend_org_invitation,
     register_organization_and_user,
     remove_org_member,
     set_organization_status,
@@ -632,6 +633,76 @@ def invite_member_endpoint(
         return {"status": "success", "data": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.post("/org/members/{user_id}/resend-invite")
+@router.post("/org/{org_id}/members/{user_id}/resend-invite")
+def resend_invite_endpoint(
+    user_id: str,
+    org_id: Optional[str] = None,
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Resend the workspace invitation email to an existing member."""
+    target_org_id = org_id or context["org_id"]
+    if context.get("role") not in ("organization_owner", "organization_admin") and context.get("platform_role") != "platform_super_admin":
+        raise HTTPException(status_code=403, detail="Only organization admins can resend invitations.")
+
+    db = SessionLocal()
+    try:
+        result = resend_org_invitation(
+            db=db,
+            org_id=target_org_id,
+            user_id=user_id,
+            requester_user_id=context["user_id"],
+        )
+        return {"status": "success", "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.get("/org/invitation-preview")
+@router.get("/org/{org_id}/invitation-preview")
+def get_invitation_preview_endpoint(
+    org_id: Optional[str] = None,
+    email: Optional[str] = "alex@company.com",
+    name: Optional[str] = "Alex Rivera",
+    role: Optional[str] = "regular_user",
+    context: Dict[str, Any] = Depends(get_current_user_and_tenant),
+):
+    """Returns rendered invitation email subject, HTML, and text for previewing in the UI."""
+    target_org_id = org_id or context.get("org_id")
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.id == target_org_id).first() if target_org_id else None
+        org_name = org.name if org else "Workspace"
+
+        inviter = db.query(User).filter(User.id == context.get("user_id")).first() if context.get("user_id") else None
+        inviter_name = (inviter.full_name or inviter.email) if inviter else "Workspace Admin"
+        inviter_email = inviter.email if inviter else "admin@nenotechnology.com"
+
+        from services.invitation_service import build_invitation_email
+        subject, html_content, text_content = build_invitation_email(
+            recipient_email=email or "alex@company.com",
+            organization_name=org_name,
+            inviter_name=inviter_name,
+            inviter_email=inviter_email,
+            recipient_name=name or "Alex Rivera",
+            role=role or "regular_user",
+            temporary_password="Welcome@2026!",
+        )
+        return {
+            "status": "success",
+            "subject": subject,
+            "html": html_content,
+            "text": text_content,
+            "org_name": org_name,
+            "inviter_name": inviter_name,
+            "inviter_email": inviter_email,
+        }
     finally:
         db.close()
 

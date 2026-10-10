@@ -34,97 +34,103 @@ class OutlookMailer(Mailer):
     """
 
     def send_email(self, to_email: str, subject: str, body: str, token: Optional[str] = None, from_email: Optional[str] = None, **kwargs) -> str:
-        # Resolve token for live open and click tracking
+        # Check if this is a transactional or system email (e.g. workspace invitation)
+        is_transactional = bool(kwargs.get("is_transactional") or kwargs.get("skip_tracking"))
         clean_body = (body or "").strip()
         api_base_url = os.getenv("TRACKING_API_URL","https://tracking.nenotechnology.com").rstrip("/")
 
-        if not token:
-            try:
-                from Backend.db import SessionLocal
-                from Backend.models import CampaignLog
-                from sqlalchemy import func
+        if not is_transactional:
+            if not token:
+                try:
+                    from Backend.db import SessionLocal
+                    from Backend.models import CampaignLog
+                    from sqlalchemy import func
 
-                _s = SessionLocal()
-                _row = (
-                    _s.query(CampaignLog.token)
-                    .filter(func.lower(CampaignLog.email) == to_email.strip().lower())
-                    .first()
-                )
-                if _row and _row[0]:
-                    token = _row[0]
-                _s.close()
-            except Exception:
-                token = None
+                    _s = SessionLocal()
+                    _row = (
+                        _s.query(CampaignLog.token)
+                        .filter(func.lower(CampaignLog.email) == to_email.strip().lower())
+                        .first()
+                    )
+                    if _row and _row[0]:
+                        token = _row[0]
+                    _s.close()
+                except Exception:
+                    token = None
 
-        # Target Microsoft Bookings consultation URL
-        target_booking = os.getenv(
-            "BOOKING_FORM_URL",
-            "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
-        )
+            # Target Microsoft Bookings consultation URL
+            target_booking = os.getenv(
+                "BOOKING_FORM_URL",
+                "https://bookings.cloud.microsoft/book/Connect@nenotechnology.com/?ismsaljsauthenabled",
+            )
 
-        # 1. Clean any existing localhost hrefs in the email body
-        clean_body = re.sub(
-            r'href=["\']https?://(?:localhost|127\.0\.0\.1)(?::\d+)?(?:/[^"\']*)?["\']',
-            f'href="{target_booking}"',
-            clean_body,
-        )
-        # 2. Clean any /form?token= links to point directly to the booking form
-        clean_body = re.sub(
-            r'href=["\']https?://[^/\"\'\s]+/form\?token=[^"\'\s]*["\']',
-            f'href="{target_booking}"',
-            clean_body,
-        )
+            # 1. Clean any existing localhost hrefs in the email body
+            clean_body = re.sub(
+                r'href=["\']https?://(?:localhost|127\.0\.0\.1)(?::\d+)?(?:/[^"\']*)?["\']',
+                f'href="{target_booking}"',
+                clean_body,
+            )
+            # 2. Clean any /form?token= links to point directly to the booking form
+            clean_body = re.sub(
+                r'href=["\']https?://[^/\"\'\s]+/form\?token=[^"\'\s]*["\']',
+                f'href="{target_booking}"',
+                clean_body,
+            )
 
-        # Check if api_base_url is a real public HTTPS URL (e.g. custom domain or public host)
-        has_public_tunnel = (
-            bool(api_base_url)
-            and api_base_url.lower().startswith("https://")
-            and not any(h in api_base_url.lower() for h in ("localhost", "127.0.0.1", "0.0.0.0", "::1"))
-        )
+            # Check if api_base_url is a real public HTTPS URL (e.g. custom domain or public host)
+            has_public_tunnel = (
+                bool(api_base_url)
+                and api_base_url.lower().startswith("https://")
+                and not any(h in api_base_url.lower() for h in ("localhost", "127.0.0.1", "0.0.0.0", "::1"))
+            )
 
-        # Rewrite links to route through click tracking ONLY if a public HTTPS host is configured
-        # Otherwise, keep Microsoft Bookings links 100% direct and reliable for all recipients!
-        if token and has_public_tunnel:
-            def _rewrite_link(m):
-                orig_url = m.group(1)
-                if "track/click" in orig_url or "track/unsubscribe" in orig_url or orig_url.startswith("mailto:"):
-                    return f'href="{orig_url}"'
-                import urllib.parse
-                encoded = urllib.parse.quote(orig_url, safe="")
-                signature = sign_tracking_url(token, orig_url)
+            # Rewrite links to route through click tracking ONLY if a public HTTPS host is configured
+            if token and has_public_tunnel:
+                def _rewrite_link(m):
+                    orig_url = m.group(1)
+                    if "track/click" in orig_url or "track/unsubscribe" in orig_url or orig_url.startswith("mailto:"):
+                        return f'href="{orig_url}"'
+                    import urllib.parse
+                    encoded = urllib.parse.quote(orig_url, safe="")
+                    signature = sign_tracking_url(token, orig_url)
 
-                return (
-                    f'href="{api_base_url}/api/track/click/'
-                    f'{token}?url={encoded}&sig={signature}"'
-                )
+                    return (
+                        f'href="{api_base_url}/api/track/click/'
+                        f'{token}?url={encoded}&sig={signature}"'
+                    )
 
-            clean_body = re.sub(r'href=["\'](https?://[^"\']+)["\']', _rewrite_link, clean_body)
+                clean_body = re.sub(r'href=["\'](https?://[^"\']+)["\']', _rewrite_link, clean_body)
 
-        # Prepare tracking pixel & unsubscribe footer
-        sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
-        pixel_img = ""
-        if token and api_base_url:
-            pixel_url = f"{api_base_url}/api/track/open/{token}"
-            pixel_img = f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none;max-height:0px;max-width:0px;opacity:0;border:none;overflow:hidden;" />'
+            # Prepare tracking pixel & unsubscribe footer
+            sender_email = os.getenv("MS_SENDER_EMAIL", "support@nenotechnology.com")
+            pixel_img = ""
+            if token and api_base_url:
+                pixel_url = f"{api_base_url}/api/track/open/{token}"
+                pixel_img = f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none;max-height:0px;max-width:0px;opacity:0;border:none;overflow:hidden;" />'
 
-        if token and has_public_tunnel:
-            unsub_url = f"{api_base_url}/api/track/unsubscribe/{token}"
-            unsub_link = f'<a href="{unsub_url}" style="color: #64748B; text-decoration: underline;">unsubscribe safely here</a>'
+            if token and has_public_tunnel:
+                unsub_url = f"{api_base_url}/api/track/unsubscribe/{token}"
+                unsub_link = f'<a href="{unsub_url}" style="color: #64748B; text-decoration: underline;">unsubscribe safely here</a>'
+            else:
+                unsub_mailto = f"mailto:{sender_email}?subject=Unsubscribe%20Request"
+                unsub_link = f'<a href="{unsub_mailto}" style="color: #64748B; text-decoration: underline;">unsubscribe safely here</a>'
+
+            telemetry_html = f"""
+            <div style="margin-top: 24px; padding-top: 14px; border-top: 1px solid #E2E8F0; font-size: 11px; color: #94A3B8;">
+                If you no longer wish to receive updates from Nenotechnology, you can {unsub_link}.
+            </div>
+            {pixel_img}
+            """
         else:
-            unsub_mailto = f"mailto:{sender_email}?subject=Unsubscribe%20Request"
-            unsub_link = f'<a href="{unsub_mailto}" style="color: #64748B; text-decoration: underline;">unsubscribe safely here</a>'
-
-        telemetry_html = f"""
-        <div style="margin-top: 24px; padding-top: 14px; border-top: 1px solid #E2E8F0; font-size: 11px; color: #94A3B8;">
-            If you no longer wish to receive updates from Nenotechnology, you can {unsub_link}.
-        </div>
-        {pixel_img}
-        """
+            telemetry_html = ""
 
         # Construct an HTML body so hyperlinks and rich email templates render perfectly.
         if clean_body.startswith(("<div", "<table", "<html", "<!DOCTYPE", "<body")):
             if "<html" in clean_body.lower():
-                html_content = clean_body.replace("</body>", f"{telemetry_html}</body>")
+                if telemetry_html:
+                    html_content = clean_body.replace("</body>", f"{telemetry_html}</body>")
+                else:
+                    html_content = clean_body
             else:
                 html_content = f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">

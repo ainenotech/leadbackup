@@ -435,6 +435,30 @@ export const api = {
     return res.json();
   },
 
+  async resendOrgMemberInvite(orgId: string, userId: string): Promise<any> {
+    const res = await fetch(`/api/org/${orgId}/members/${userId}/resend-invite`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Resend invite failed" }));
+      throw new Error(err.detail || "Resend invite failed");
+    }
+    return res.json();
+  },
+
+  async getInvitationPreview(orgId: string, params?: { email?: string; name?: string; role?: string }): Promise<any> {
+    const qs = new URLSearchParams();
+    if (params?.email) qs.set("email", params.email);
+    if (params?.name) qs.set("name", params.name);
+    if (params?.role) qs.set("role", params.role);
+    const res = await fetch(`/api/org/${orgId}/invitation-preview?${qs.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to load invitation preview");
+    return res.json();
+  },
+
   // ── Workspace Settings ──
   async getOrgSettings(orgId: string): Promise<any> {
     const res = await fetch(`/api/org/${orgId}/settings`, {

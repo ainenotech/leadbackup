@@ -6,6 +6,7 @@ from Backend.db import SessionLocal
 from Backend.auth_service import (
     get_org_members,
     invite_org_member,
+    resend_org_invitation,
     update_member_role,
     remove_org_member,
 )
@@ -93,7 +94,10 @@ def render_team_view(organization_id: str, embedded: bool = False):
                                 full_name=inv_name,
                                 temporary_password=inv_pwd if inv_pwd else None,
                             )
-                            st.toast(f"Successfully added {inv_email} as {inv_role}!", icon="🎉")
+                            if res.get("email_sent"):
+                                st.toast(f"Successfully invited {inv_email} and sent invitation email!", icon="🎉")
+                            else:
+                                st.toast(f"Successfully added {inv_email} as {inv_role}! Invitation email triggered.", icon="🎉")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed to invite: {e}")
@@ -142,7 +146,12 @@ def render_team_view(organization_id: str, embedded: bool = False):
                 if is_admin_or_owner and not is_me:
                     col_act1, col_act2 = st.columns(2)
                     with col_act1:
-                        pass
+                        if st.button("Resend", key=f"btn_resend_{m['user_id']}", help="Resend invitation email to this user"):
+                            try:
+                                r_res = resend_org_invitation(db, organization_id, m["user_id"], current_user_id)
+                                st.toast(f"Invitation email resent to {m['email']}!", icon="✉️")
+                            except Exception as e:
+                                st.error(f"Failed to resend: {e}")
                     with col_act2:
                         if st.button("Remove", key=f"btn_rem_{m['user_id']}", type="secondary", help="Remove member from this organization"):
                             try:

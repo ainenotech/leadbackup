@@ -11,6 +11,10 @@ import {
   AlertCircle,
   Settings,
   RefreshCw,
+  Eye,
+  Smartphone,
+  Monitor,
+  Key,
 } from "lucide-react";
 import { api, TeamMember, AuthUser, AuthOrganization } from "@/lib/api";
 
@@ -38,13 +42,28 @@ export default function TeamMembersView({
   const [isLoading, setIsLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
 
-  // Invite Form
+  // Invite Form State
   const [invEmail, setInvEmail] = useState("");
   const [invName, setInvName] = useState("");
   const [invRole, setInvRole] = useState("regular_user");
   const [invPassword, setInvPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Resend State
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null);
+
+  // Template Preview Modal State
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
+  const [previewData, setPreviewData] = useState<{
+    subject: string;
+    html: string;
+    text: string;
+    org_name?: string;
+    inviter_name?: string;
+  } | null>(null);
 
   const orgId = currentOrg?.id || "";
 
@@ -72,16 +91,19 @@ export default function TeamMembersView({
     try {
       setIsSubmitting(true);
       setFeedback(null);
-      await api.inviteOrgMember(orgId, {
+      const res = await api.inviteOrgMember(orgId, {
         email: invEmail.trim(),
         full_name: invName.trim() || undefined,
         role: invRole,
         temporary_password: invPassword || undefined,
       });
 
+      const emailSent = res?.data?.email_sent;
       setFeedback({
         type: "success",
-        text: `Successfully invited ${invEmail} as ${invRole}!`,
+        text: emailSent
+          ? `🎉 Successfully invited ${invEmail.trim()} as ${invRole}! An invitation email has been sent to their inbox.`
+          : `🎉 Successfully invited ${invEmail.trim()} as ${invRole}! Invitation email has been triggered.`,
       });
       setInvEmail("");
       setInvName("");
@@ -95,6 +117,26 @@ export default function TeamMembersView({
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleResendInvite = async (userId: string, email: string) => {
+    if (!orgId) return;
+    try {
+      setResendingUserId(userId);
+      setFeedback(null);
+      const res = await api.resendOrgMemberInvite(orgId, userId);
+      setFeedback({
+        type: "success",
+        text: `✉️ Invitation email resent to ${email}!`,
+      });
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        text: err.message || `Failed to resend invitation email to ${email}.`,
+      });
+    } finally {
+      setResendingUserId(null);
     }
   };
 
@@ -116,6 +158,24 @@ export default function TeamMembersView({
       await loadMembers();
     } catch (err: any) {
       alert("Failed to remove member: " + err.message);
+    }
+  };
+
+  const openPreview = async (email?: string, name?: string, role?: string) => {
+    if (!orgId) return;
+    try {
+      setShowPreviewModal(true);
+      setPreviewLoading(true);
+      const data = await api.getInvitationPreview(orgId, {
+        email: email || invEmail || "colleague@company.com",
+        name: name || invName || "Alex Rivera",
+        role: role || invRole || "regular_user",
+      });
+      setPreviewData(data);
+    } catch (err: any) {
+      console.warn("Failed to load invitation preview:", err);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -151,7 +211,16 @@ export default function TeamMembersView({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => openPreview()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1D4ED8] rounded-xl text-[13px] font-bold transition-all"
+              title="Preview the exact email template that invitees receive"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Preview Email Template</span>
+            </button>
+
             <button
               onClick={onNavigateToSettings}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] rounded-xl text-[13px] font-bold transition-all"
@@ -174,97 +243,155 @@ export default function TeamMembersView({
         <div className="flex items-center gap-6 mt-6 pt-5 border-t border-[#F1F5F9] text-[13px]">
           <div>
             <span className="text-[#64748B]">Active Workspace: </span>
-            <strong className="text-[#0F172A]">{currentOrg?.name || "Neno Technology"}</strong>
+            <strong className="text-[#0F172A]">{currentOrg?.name || "Nenotechnology"}</strong>
           </div>
           <div>
             <span className="text-[#64748B]">Total Members: </span>
             <strong className="text-[#2563EB] font-mono">{members.length}</strong>
+          </div>
+          <div className="text-[12px] text-[#059669] flex items-center gap-1.5 font-medium ml-auto">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Automatic Invitation Delivery Active</span>
           </div>
         </div>
       </div>
 
       {feedback && (
         <div
-          className={`p-4 rounded-xl border text-[13px] font-medium flex items-center gap-2.5 ${
+          className={`p-4 rounded-xl border text-[13px] font-medium flex items-center justify-between gap-2.5 ${
             feedback.type === "success"
               ? "bg-[#F0FDF4] border-[#BBF7D0] text-[#15803D]"
               : "bg-[#FEF2F2] border-[#FECACA] text-[#DC2626]"
           }`}
         >
-          {feedback.type === "success" ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
-          <span>{feedback.text}</span>
+          <div className="flex items-center gap-2.5">
+            {feedback.type === "success" ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
+            <span>{feedback.text}</span>
+          </div>
+          <button onClick={() => setFeedback(null)} className="text-[12px] opacity-70 hover:opacity-100 font-bold">
+            ✕
+          </button>
         </div>
       )}
 
       {/* Invite Member Drawer / Form */}
       {showInviteModal && (
-        <div className="bg-white border border-[#2563EB]/30 rounded-2xl p-6 shadow-sm">
+        <div className="bg-white border border-[#2563EB]/40 rounded-2xl p-6 shadow-md transition-all">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-[#2563EB]" />
-              <span>Invite New Team Member</span>
-            </h2>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB]">
+                <UserPlus className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-[#0F172A]">Invite New Team Member</h2>
+                <p className="text-[12px] text-[#64748B]">
+                  An onboarding invitation email with access credentials will be delivered immediately.
+                </p>
+              </div>
+            </div>
             <button
               onClick={() => setShowInviteModal(false)}
-              className="text-[#94A3B8] hover:text-[#0F172A] text-[13px] font-bold"
+              className="text-[#94A3B8] hover:text-[#0F172A] text-[13px] font-bold p-1"
             >
               ✕ Close
             </button>
           </div>
 
-          <form onSubmit={handleInvite} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-[12.5px] font-bold text-[#0F172A] mb-1">
-                Colleague Work Email *
-              </label>
-              <input
-                type="email"
-                required
-                value={invEmail}
-                onChange={(e) => setInvEmail(e.target.value)}
-                placeholder="alex@company.com"
-                className="w-full px-3.5 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
-              />
+          <form onSubmit={handleInvite} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-[12.5px] font-bold text-[#0F172A] mb-1">
+                  Colleague Work Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={invEmail}
+                  onChange={(e) => setInvEmail(e.target.value)}
+                  placeholder="alex@company.com"
+                  className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[12.5px] font-bold text-[#0F172A] mb-1">
+                  Full Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={invName}
+                  onChange={(e) => setInvName(e.target.value)}
+                  placeholder="Alex Rivera"
+                  className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[12.5px] font-bold text-[#0F172A] mb-1">
+                  Workspace Role *
+                </label>
+                <select
+                  value={invRole}
+                  onChange={(e) => setInvRole(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
+                >
+                  {ROLES.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[12.5px] font-bold text-[#0F172A] mb-1">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={invName}
-                onChange={(e) => setInvName(e.target.value)}
-                placeholder="Alex Rivera"
-                className="w-full px-3.5 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
-              />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+              <div>
+                <label className="block text-[12.5px] font-bold text-[#0F172A] mb-1">
+                  Temporary Password (Optional)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={invPassword}
+                    onChange={(e) => setInvPassword(e.target.value)}
+                    placeholder="Defaults to Welcome@2026!"
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] font-mono focus:outline-none focus:border-[#2563EB]"
+                  />
+                  <Key className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                </div>
+                <span className="text-[11px] text-[#64748B] mt-1 block">
+                  Included securely in the invitation email for first-time login.
+                </span>
+              </div>
 
-            <div>
-              <label className="block text-[12.5px] font-bold text-[#0F172A] mb-1">
-                Workspace Role *
-              </label>
-              <select
-                value={invRole}
-                onChange={(e) => setInvRole(e.target.value)}
-                className="w-full px-3.5 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[13px] text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
-              >
-                {ROLES.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="sm:col-span-2 flex items-end justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => openPreview(invEmail, invName, invRole)}
+                  className="py-2.5 px-4 bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] border border-[#BFDBFE] text-[13px] font-bold rounded-xl transition-all inline-flex items-center gap-1.5"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>Preview Email Template</span>
+                </button>
 
-            <div className="flex items-end">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-2 px-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[13px] font-bold rounded-xl shadow-xs transition-all disabled:opacity-50"
-              >
-                {isSubmitting ? "Inviting..." : "Send Invitation"}
-              </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="py-2.5 px-6 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[13px] font-bold rounded-xl shadow-xs transition-all disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Sending Invitation Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4" />
+                      <span>Send Workspace Invitation</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -272,9 +399,14 @@ export default function TeamMembersView({
 
       {/* Members Table */}
       <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs">
-        <h2 className="text-lg font-bold text-[#0F172A] mb-4">
-          Current Workspace Roster
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[#0F172A]">
+            Current Workspace Roster
+          </h2>
+          <span className="text-[12px] text-[#64748B]">
+            Showing all active members and invitees
+          </span>
+        </div>
 
         {isLoading ? (
           <div className="text-center py-10 text-[13px] text-[#64748B]">Loading members...</div>
@@ -339,13 +471,29 @@ export default function TeamMembersView({
                     </div>
 
                     {!isSelf && (
-                      <button
-                        onClick={() => handleRemove(m.user_id, m.email)}
-                        className="p-1.5 text-[#EF4444] hover:bg-[#FEF2F2] rounded-lg transition-all"
-                        title="Remove member"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleResendInvite(m.user_id, m.email)}
+                          disabled={resendingUserId === m.user_id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-bold text-[#2563EB] bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] rounded-lg transition-all disabled:opacity-50"
+                          title="Resend invitation email"
+                        >
+                          {resendingUserId === m.user_id ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Mail className="w-3.5 h-3.5" />
+                          )}
+                          <span>Resend Invite</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleRemove(m.user_id, m.email)}
+                          className="p-1.5 text-[#EF4444] hover:bg-[#FEF2F2] rounded-lg transition-all"
+                          title="Remove member"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -354,6 +502,120 @@ export default function TeamMembersView({
           </div>
         )}
       </div>
+
+      {/* Live Email Template Preview Modal */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 z-50 bg-[#0F172A]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden border border-[#CBD5E1] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between bg-[#F8FAFC]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB]">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0F172A]">
+                    Workspace Invitation Email Template
+                  </h3>
+                  <p className="text-[12px] text-[#64748B]">
+                    Live preview of the responsive HTML email template dispatched to invitees.
+                  </p>
+                </div>
+              </div>
+
+              {/* Device Viewport Toggle & Close */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-[#E2E8F0] p-0.5 rounded-lg text-[12px] font-bold">
+                  <button
+                    onClick={() => setPreviewDevice("desktop")}
+                    className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                      previewDevice === "desktop"
+                        ? "bg-white text-[#0F172A] shadow-xs"
+                        : "text-[#64748B] hover:text-[#0F172A]"
+                    }`}
+                  >
+                    <Monitor className="w-3.5 h-3.5" />
+                    <span>Desktop</span>
+                  </button>
+                  <button
+                    onClick={() => setPreviewDevice("mobile")}
+                    className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                      previewDevice === "mobile"
+                        ? "bg-white text-[#0F172A] shadow-xs"
+                        : "text-[#64748B] hover:text-[#0F172A]"
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>Mobile</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setShowPreviewModal(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] flex items-center justify-center font-bold text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Subject Line & Meta Bar */}
+            {previewData && (
+              <div className="px-6 py-3 bg-[#EFF6FF]/70 border-b border-[#BFDBFE]/70 text-[12.5px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2 truncate">
+                  <span className="font-bold text-[#1E40AF]">Subject:</span>
+                  <span className="text-[#1E293B] font-semibold truncate">{previewData.subject}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11.5px] text-[#475569] shrink-0">
+                  <span className="bg-white border border-[#CBD5E1] px-2.5 py-0.5 rounded-md font-mono">
+                    Sender: Microsoft Graph (mohit@nenotechnology.us)
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Email Iframe Canvas */}
+            <div className="flex-1 overflow-auto bg-[#E2E8F0]/50 p-4 sm:p-6 flex justify-center items-start">
+              {previewLoading ? (
+                <div className="flex flex-col items-center justify-center py-24 text-[#64748B] gap-3">
+                  <RefreshCw className="w-8 h-8 animate-spin text-[#2563EB]" />
+                  <span className="text-sm font-semibold">Generating invitation template preview...</span>
+                </div>
+              ) : previewData ? (
+                <div
+                  className={`transition-all bg-white rounded-xl shadow-lg border border-[#CBD5E1] overflow-hidden ${
+                    previewDevice === "desktop" ? "w-[620px] max-w-full" : "w-[390px] max-w-full"
+                  }`}
+                  style={{ height: "580px" }}
+                >
+                  <iframe
+                    srcDoc={previewData.html}
+                    title="Invitation Preview"
+                    className="w-full h-full border-0"
+                    sandbox="allow-same-origin allow-popups"
+                  />
+                </div>
+              ) : (
+                <div className="text-center py-14 text-sm text-[#64748B]">Unable to load email template</div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-[#E2E8F0] bg-white flex items-center justify-between">
+              <div className="text-[12px] text-[#64748B] flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#10B981]"></span>
+                <span>Optimized for Microsoft Outlook, Gmail, Apple Mail, and mobile inboxes.</span>
+              </div>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="px-4 py-2 bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] rounded-xl text-[13px] font-bold transition-all"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

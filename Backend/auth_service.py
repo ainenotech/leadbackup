@@ -457,14 +457,18 @@ def invite_org_member(
     full_name: Optional[str] = None,
     temporary_password: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Invite or add a user to an organization."""
+    """Invite or add a user to an organization and automatically dispatch invitation email."""
     clean_email = email.strip().lower()
 
     # Check if user already exists
     user = db.query(User).filter(User.email == clean_email).first()
+    is_new_user = False
+    password_for_email = None
+
     if not user:
-        # Create user with initial password or random
+        is_new_user = True
         default_pwd = temporary_password or "Welcome@2026!"
+        password_for_email = default_pwd
         user = User(
             id=str(uuid.uuid4()),
             email=clean_email,
@@ -476,6 +480,14 @@ def invite_org_member(
         )
         db.add(user)
         db.flush()
+    else:
+        if temporary_password:
+            user.password_hash = hash_password(temporary_password)
+            password_for_email = temporary_password
+            db.flush()
+        if full_name and (not user.full_name or user.full_name == user.email.split("@")[0].capitalize()):
+            user.full_name = full_name.strip()
+            db.flush()
 
     # Check if already member
     existing_member = (
@@ -487,33 +499,122 @@ def invite_org_member(
         .first()
     )
 
+    status_result = "invited"
+    member_id = None
+
     if existing_member:
         if existing_member.status == "active":
             raise ValueError(f"User '{clean_email}' is already an active member of this organization.")
         else:
             existing_member.status = "active"
             existing_member.role = role
+            existing_member.invited_by = invited_by_user_id
+            existing_member.invited_at = datetime.now(timezone.utc)
             db.commit()
-            return {"status": "reactivated", "member_id": existing_member.id}
+            status_result = "reactivated"
+            member_id = existing_member.id
+    else:
+        member = OrganizationMember(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            user_id=user.id,
+            role=role,
+            is_default=False,
+            status="active",
+            invited_by=invited_by_user_id,
+            invited_at=datetime.now(timezone.utc),
+        )
+        db.add(member)
+        db.commit()
+        member_id = member.id
 
-    member = OrganizationMember(
-        id=str(uuid.uuid4()),
-        organization_id=org_id,
-        user_id=user.id,
-        role=role,
-        is_default=False,
-        status="active",
-        invited_by=invited_by_user_id,
-        invited_at=datetime.now(timezone.utc),
+    # Resolve organization and inviter metadata for the invitation email
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    org_name = org.name if org else "Workspace"
+
+    inviter = db.query(User).filter(User.id == invited_by_user_id).first()
+    inviter_name = (inviter.full_name or inviter.email) if inviter else "Workspace Admin"
+    inviter_email = inviter.email if inviter else "admin@nenotechnology.com"
+
+    # Dispatch branded invitation email
+    email_status = {"success": False, "error": "Not attempted"}
+    try:
+        from services.invitation_service import send_invitation_email
+        email_status = send_invitation_email(
+            recipient_email=user.email,
+            organization_name=org_name,
+            inviter_name=inviter_name,
+            inviter_email=inviter_email,
+            recipient_name=user.full_name,
+            role=role,
+            temporary_password=password_for_email,
+        )
+    except Exception as e:
+        print(f"[invite_org_member] Failed to send email to {user.email}: {e}")
+        email_status = {"success": False, "error": str(e)}
+
+    return {
+        "status": status_result,
+        "member_id": member_id,
+        "email": user.email,
+        "role": role,
+        "full_name": user.full_name,
+        "email_sent": email_status.get("success", False),
+        "email_status": email_status,
+    }
+
+
+def resend_org_invitation(
+    db: Session,
+    org_id: str,
+    user_id: str,
+    requester_user_id: str,
+) -> Dict[str, Any]:
+    """Resend the workspace invitation email to an existing member."""
+    member = (
+        db.query(OrganizationMember)
+        .filter(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.user_id == user_id,
+        )
+        .first()
     )
-    db.add(member)
+    if not member:
+        raise ValueError("Member not found in this organization.")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise ValueError("User not found.")
+
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    org_name = org.name if org else "Workspace"
+
+    requester = db.query(User).filter(User.id == requester_user_id).first()
+    inviter_name = (requester.full_name or requester.email) if requester else "Workspace Admin"
+    inviter_email = requester.email if requester else "admin@nenotechnology.com"
+
+    from services.invitation_service import send_invitation_email
+    email_status = send_invitation_email(
+        recipient_email=user.email,
+        organization_name=org_name,
+        inviter_name=inviter_name,
+        inviter_email=inviter_email,
+        recipient_name=user.full_name,
+        role=member.role,
+        temporary_password=None,
+    )
+
+    member.invited_at = datetime.now(timezone.utc)
     db.commit()
 
     return {
-        "status": "invited",
+        "status": "resent",
         "member_id": member.id,
         "email": user.email,
-        "role": role,
+        "role": member.role,
+        "full_name": user.full_name,
+        "email_sent": email_status.get("success", False),
+        "email_status": email_status,
     }
 
 

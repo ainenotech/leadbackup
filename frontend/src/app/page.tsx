@@ -128,10 +128,12 @@ function AppContent() {
           }
           setIsAuthenticated(true);
         } else {
+          clearStoredToken();
           setIsAuthenticated(false);
         }
       } catch (e) {
-        console.warn("Session check failed:", e);
+        console.warn("Session check failed (cleared stale token):", e);
+        clearStoredToken();
         setIsAuthenticated(false);
       } finally {
         setIsAuthChecking(false);
