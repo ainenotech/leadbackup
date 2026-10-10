@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import HeaderBanner from "@/components/layout/HeaderBanner";
-import { api, CampaignLogItem, TemplateItem } from "@/lib/api";
+import { api, CampaignLogItem, TemplateItem, SenderAccount } from "@/lib/api";
 import {
   Mail,
   Send,
@@ -44,16 +44,37 @@ export default function EmailReviewView({
   const [saving, setSaving] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
+  // Verified Sending Mailboxes & Bunch Allocation State
+  const [verifiedSenders, setVerifiedSenders] = useState<SenderAccount[]>([]);
+  const [selectedSenderEmail, setSelectedSenderEmail] = useState<string>(activeSenderEmail || "");
+  const [bunchSize, setBunchSize] = useState<number>(10);
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const [draftsRes, tplsRes] = await Promise.all([
+      const [draftsRes, tplsRes, sendersRes] = await Promise.all([
         api.getPendingDrafts(),
         api.getTemplates(),
+        api.getSenders().catch(() => []),
       ]);
       const draftList = draftsRes.drafts || [];
       setDrafts(draftList);
       setTemplates(tplsRes.templates || []);
+
+      // Filter verified & active senders
+      const readySenders = (sendersRes || []).filter(
+        (s) => s.enabled && (s.is_send_ready || s.overall_status === "active")
+      );
+      setVerifiedSenders(readySenders);
+
+      if (readySenders.length > 0) {
+        const preferred = readySenders.find(
+          (s) => s.email.toLowerCase() === (activeSenderEmail || "").toLowerCase()
+        );
+        setSelectedSenderEmail(preferred ? preferred.email : readySenders[0].email);
+      } else if (activeSenderEmail) {
+        setSelectedSenderEmail(activeSenderEmail);
+      }
 
       if (draftList.length > 0) {
         const first = draftList[0];
@@ -65,7 +86,7 @@ export default function EmailReviewView({
         }
       }
     } catch (e: any) {
-      console.error("Failed to load drafts or templates", e);
+      console.error("Failed to load drafts, templates, or verified senders", e);
     } finally {
       setLoading(false);
     }
@@ -74,6 +95,25 @@ export default function EmailReviewView({
   useEffect(() => {
     fetchInitialData();
   }, []);
+
+  useEffect(() => {
+    if (activeSenderEmail && !selectedSenderEmail) {
+      setSelectedSenderEmail(activeSenderEmail);
+    }
+  }, [activeSenderEmail]);
+
+  const activeSenderObj = useMemo(() => {
+    return verifiedSenders.find(
+      (s) => s.email.toLowerCase() === (selectedSenderEmail || "").toLowerCase()
+    );
+  }, [verifiedSenders, selectedSenderEmail]);
+
+  const remainingDailyCapacity = useMemo(() => {
+    if (!activeSenderObj) return 200;
+    const limit = activeSenderObj.daily_limit || 200;
+    const sent = activeSenderObj.sends_today || 0;
+    return Math.max(0, limit - sent);
+  }, [activeSenderObj]);
 
   const currentDraft = useMemo(() => {
     return drafts.find((d) => d.id === selectedId) || drafts[0];
@@ -159,18 +199,24 @@ export default function EmailReviewView({
     }
   };
 
-  // Approve & 1-Click Send via Microsoft Graph
+  // Approve & 1-Click Send using the selected verified mail ID
   const handleApproveAndSend = async () => {
     if (!selectedId) return;
     setSaving(true);
+    const targetEmail = selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com";
     try {
-      await api.approveAndSendDraft(selectedId);
-      setActionMessage(`🚀 Email successfully dispatched to ${currentDraft?.email} via Microsoft Graph!`);
+      await api.approveAndSendDraft(selectedId, targetEmail);
+      setActionMessage(`🚀 Email successfully dispatched to ${currentDraft?.email} via ${targetEmail}!`);
       const nextDrafts = drafts.filter((d) => d.id !== selectedId);
       setDrafts(nextDrafts);
       if (nextDrafts.length > 0) {
         handleSelectDraft(nextDrafts[0].id);
       }
+      // Refresh sender quota count
+      try {
+        const freshSenders = await api.getSenders();
+        setVerifiedSenders(freshSenders.filter((s) => s.enabled && (s.is_send_ready || s.overall_status === "active")));
+      } catch {}
       if (onDraftsApproved) onDraftsApproved();
       setTimeout(() => setActionMessage(null), 4500);
     } catch (e: any) {
@@ -200,27 +246,58 @@ export default function EmailReviewView({
     }
   };
 
-  // Bulk Approve & Send All
-  const handleSendAll = async () => {
+  // Dispatch a chosen bunch (amount-number of emails) using selected verified mail ID
+  const handleSendBunch = async (customCount?: number) => {
     if (drafts.length === 0) return;
-    if (!confirm(`Are you sure you want to approve and dispatch all ${drafts.length} pending drafts via Microsoft Graph?`)) return;
+    const targetEmail = selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com";
+    const requested = customCount !== undefined ? customCount : bunchSize;
+    const effectiveCount = Math.min(Math.max(1, requested), drafts.length);
+
+    if (
+      !confirm(
+        `Are you sure you want to approve and dispatch a bunch of ${effectiveCount} draft(s) via verified mailbox '${targetEmail}'?`
+      )
+    )
+      return;
 
     setSaving(true);
     try {
-      const res = await api.sendAllDrafts();
-      setActionMessage(`✅ Bulk dispatch complete: ${res.sent_count} sent, ${res.failed_count} failed.`);
+      const res = await api.sendAllDrafts({
+        sender_email: targetEmail,
+        batch_size: effectiveCount,
+      });
+      if (res.failed_count > 0 && res.sent_count === 0) {
+        alert(`Bunch dispatch failed: ${res.errors?.join("; ") || "Unknown error"}`);
+      } else if (res.failed_count > 0) {
+        setActionMessage(
+          `⚠️ Dispatched ${res.sent_count} email(s) via ${targetEmail}, but ${res.failed_count} failed (${res.errors?.join(", ")})`
+        );
+      } else {
+        setActionMessage(
+          `✅ Bunch dispatch complete: ${res.sent_count} sent successfully via ${targetEmail}!`
+        );
+      }
       const freshDrafts = await api.getPendingDrafts();
       setDrafts(freshDrafts.drafts || []);
       if (freshDrafts.drafts && freshDrafts.drafts.length > 0) {
         handleSelectDraft(freshDrafts.drafts[0].id);
       }
+      try {
+        const freshSenders = await api.getSenders();
+        setVerifiedSenders(freshSenders.filter((s) => s.enabled && (s.is_send_ready || s.overall_status === "active")));
+      } catch {}
       if (onDraftsApproved) onDraftsApproved();
       setTimeout(() => setActionMessage(null), 5000);
     } catch (e: any) {
-      alert("Batch dispatch error: " + e.message);
+      alert("Bunch dispatch error: " + e.message);
     } finally {
       setSaving(false);
     }
+  };
+
+  // Bulk Approve & Send All
+  const handleSendAll = async () => {
+    await handleSendBunch(drafts.length);
   };
 
   // Bulk Reject All
@@ -307,6 +384,132 @@ export default function EmailReviewView({
               <span><strong>{drafts.length}</strong> draft email(s) awaiting your executive approval</span>
             </div>
             <span className="badge badge-drafted text-[11px]">Human-in-the-Loop</span>
+          </div>
+
+          {/* ── Verified Outbound Sender & Bunch Dispatch Ribbon ── */}
+          <div className="bg-gradient-to-r from-[#F0FDF4] via-[#F8FAFC] to-[#EFF6FF] border border-[#86EFAC] rounded-xl p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse"></span>
+                <h3 className="font-bold text-[#0F172A] text-[13.5px] flex items-center gap-1.5">
+                  <span>Verified Outbound Sender &amp; Bunch Dispatch</span>
+                </h3>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] border border-[#86EFAC]">
+                  {verifiedSenders.length > 0 ? `${verifiedSenders.length} Verified Mailbox(es) Ready` : "Org Mailbox"}
+                </span>
+              </div>
+
+              {activeSenderObj && (
+                <div className="text-[11.5px] font-semibold text-[#15803D] bg-white px-2.5 py-1 rounded-md border border-[#86EFAC] shadow-2xs">
+                  Daily Quota: <strong>{activeSenderObj.sends_today || 0} / {activeSenderObj.daily_limit || 200}</strong> sent today ({remainingDailyCapacity} left)
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end pt-1">
+              {/* 1. Verified Sender Dropdown (6 cols) */}
+              <div className="md:col-span-6 space-y-1">
+                <label className="block text-[11px] font-bold text-[#475569] uppercase tracking-wider">
+                  Outbound Verified Mail ID (Send From):
+                </label>
+                <select
+                  value={selectedSenderEmail}
+                  onChange={(e) => setSelectedSenderEmail(e.target.value)}
+                  className="w-full text-[13px] bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-[#0F172A] font-semibold focus:outline-none focus:border-[#10B981] shadow-2xs"
+                >
+                  {verifiedSenders.length > 0 ? (
+                    verifiedSenders.map((s) => {
+                      const remaining = Math.max(0, (s.daily_limit || 200) - (s.sends_today || 0));
+                      return (
+                        <option key={s.id} value={s.email}>
+                          ✓ {s.email} — ({remaining} remaining today | Limit: {s.daily_limit || 200}/day)
+                        </option>
+                      );
+                    })
+                  ) : (
+                    <option value={selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com"}>
+                      ✓ {selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com"} (Default Active Mailbox)
+                    </option>
+                  )}
+                </select>
+                <p className="text-[10.5px] text-[#64748B]">
+                  Authenticated DKIM/SPF signatures will be sent via this mailbox.
+                </p>
+              </div>
+
+              {/* 2. Bunch Amount / Number of Emails (3 cols) */}
+              <div className="md:col-span-3 space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="block text-[11px] font-bold text-[#475569] uppercase tracking-wider">
+                    Bunch Size:
+                  </label>
+                  <span className="text-[10.5px] font-semibold text-[#64748B]">
+                    Queue: {drafts.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    max={drafts.length}
+                    value={bunchSize}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 1;
+                      setBunchSize(Math.max(1, Math.min(drafts.length, val)));
+                    }}
+                    className="w-16 text-[13px] font-bold text-[#0F172A] bg-white border border-[#CBD5E1] rounded-lg px-2 py-1.5 text-center focus:outline-none focus:border-[#10B981]"
+                  />
+                  <div className="flex items-center gap-1">
+                    {[5, 10, 25, 50].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setBunchSize(Math.min(preset, drafts.length))}
+                        disabled={drafts.length === 0}
+                        className={`px-1.5 py-1 text-[11px] font-bold rounded border transition-colors ${
+                          bunchSize === preset
+                            ? "bg-[#10B981] text-white border-[#10B981]"
+                            : "bg-white text-[#475569] border-[#CBD5E1] hover:bg-[#F1F5F9]"
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setBunchSize(drafts.length)}
+                      disabled={drafts.length === 0}
+                      className={`px-1.5 py-1 text-[11px] font-bold rounded border transition-colors ${
+                        bunchSize === drafts.length
+                          ? "bg-[#2563EB] text-white border-[#2563EB]"
+                          : "bg-white text-[#475569] border-[#CBD5E1] hover:bg-[#F1F5F9]"
+                      }`}
+                    >
+                      All
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-[#64748B]">
+                  Amount of emails in this bunch.
+                </p>
+              </div>
+
+              {/* 3. Dispatch Bunch Button (3 cols) */}
+              <div className="md:col-span-3 space-y-1">
+                <button
+                  onClick={() => handleSendBunch(bunchSize)}
+                  disabled={saving || drafts.length === 0}
+                  className="w-full py-2 px-3 bg-[#10B981] hover:bg-[#059669] text-white font-bold text-[12px] rounded-lg shadow-sm transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  title={`Send next ${Math.min(bunchSize, drafts.length)} email(s) via ${selectedSenderEmail}`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Dispatch Bunch ({Math.min(bunchSize, drafts.length)})</span>
+                </button>
+                <p className="text-[10.5px] text-center text-[#64748B] truncate">
+                  via {selectedSenderEmail}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* ── Draft Selector & Template Switcher Ribbon ── */}
@@ -473,12 +676,21 @@ export default function EmailReviewView({
             </div>
 
             {/* Recipient Routing Subheader */}
-            <div className="px-4 py-2 bg-white border-b border-[#F1F5F9] text-[12px] text-[#475569] flex flex-wrap gap-4">
-              <div>
-                <strong className="text-[#1E293B]">From:</strong> Neno Technology Outreach &lt;{activeSenderEmail || "mohit@nenotechnology.us"}&gt;
+            <div className="px-4 py-2 bg-white border-b border-[#F1F5F9] text-[12px] text-[#475569] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <strong className="text-[#1E293B]">From:</strong>
+                  <span>Neno Technology Outreach &lt;{selectedSenderEmail || activeSenderEmail || "support@nenotechnology.com"}&gt;</span>
+                  <span className="text-[10px] bg-[#DCFCE7] text-[#166534] px-1.5 py-0.5 rounded font-bold border border-[#86EFAC]">
+                    ✓ Verified Mailbox
+                  </span>
+                </div>
+                <div>
+                  <strong className="text-[#1E293B]">To:</strong> {currentDraft?.name || "Lead"} &lt;{currentDraft?.email}&gt;
+                </div>
               </div>
-              <div>
-                <strong className="text-[#1E293B]">To:</strong> {currentDraft?.name || "Lead"} &lt;{currentDraft?.email}&gt;
+              <div className="text-[11px] text-[#64748B]">
+                Active Sender: <strong className="text-[#0F172A]">{selectedSenderEmail}</strong>
               </div>
             </div>
 
@@ -529,13 +741,14 @@ export default function EmailReviewView({
               onClick={handleApproveAndSend}
               disabled={saving}
               className="px-5 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-[13px] rounded-xl shadow-md transition-colors flex items-center gap-2"
+              title={`Dispatches this email to ${currentDraft?.email} using ${selectedSenderEmail}`}
             >
               <Send className="w-4 h-4" />
-              <span>Approve &amp; Send Now (1-Click)</span>
+              <span>Approve &amp; Send Now via {selectedSenderEmail || "Verified Mailbox"} (1-Click)</span>
             </button>
           </div>
 
-          {/* ── BATCH OPERATIONS & BULK DISPATCH CENTER (Exact Streamlit Match) ── */}
+          {/* ── BATCH OPERATIONS & BULK DISPATCH CENTER ── */}
           <hr className="border-0 border-t border-[#E2E8F0] my-6" />
 
           <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] space-y-4">
@@ -546,36 +759,52 @@ export default function EmailReviewView({
                   Bulk Operations &amp; Dispatch Center ({drafts.length} Leads)
                 </span>
               </div>
-              <span className="badge badge-drafted text-[11px] font-semibold">
-                {drafts.length} Leads Ready
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11.5px] text-[#475569] bg-[#F1F5F9] px-2.5 py-1 rounded-md border border-[#E2E8F0]">
+                  Sender: <strong className="text-[#0F172A]">{selectedSenderEmail}</strong>
+                </span>
+                <span className="badge badge-drafted text-[11px] font-semibold">
+                  {drafts.length} Leads Ready
+                </span>
+              </div>
             </div>
 
             <p className="text-[12.5px] text-[#64748B]">
-              Approve and send all remaining drafts formatted with your chosen executive template, or reject remaining drafts without dispatching emails.
+              Dispatch a specific bunch size or approve all remaining drafts using your selected verified mailbox (<strong>{selectedSenderEmail}</strong>).
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <button
                 onClick={handleApplyTemplateAll}
                 disabled={saving}
-                className="px-4 py-2.5 bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] font-bold text-[12.5px] rounded-xl border border-[#BFDBFE] transition-colors flex items-center justify-center gap-1.5"
+                className="px-3.5 py-2.5 bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] font-bold text-[12px] rounded-xl border border-[#BFDBFE] transition-colors flex items-center justify-center gap-1.5"
               >
                 <span>⭐ Apply Template to All ({drafts.length})</span>
               </button>
 
               <button
-                onClick={handleSendAll}
-                disabled={saving}
-                className="px-4 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-[12.5px] rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5 sm:col-span-1"
+                onClick={() => handleSendBunch(bunchSize)}
+                disabled={saving || drafts.length === 0}
+                className="px-3.5 py-2.5 bg-[#10B981] hover:bg-[#059669] text-white font-bold text-[12px] rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5"
+                title={`Send next bunch of ${Math.min(bunchSize, drafts.length)} drafts via ${selectedSenderEmail}`}
               >
-                <span>🚀 Bulk Approve &amp; Send Remaining ({drafts.length})</span>
+                <Send className="w-3.5 h-3.5" />
+                <span>Dispatch Bunch of {Math.min(bunchSize, drafts.length)} ({selectedSenderEmail})</span>
+              </button>
+
+              <button
+                onClick={handleSendAll}
+                disabled={saving || drafts.length === 0}
+                className="px-3.5 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-[12px] rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5"
+                title={`Approve & send all ${drafts.length} drafts via ${selectedSenderEmail}`}
+              >
+                <span>🚀 Send All ({drafts.length})</span>
               </button>
 
               <button
                 onClick={handleRejectAll}
-                disabled={saving}
-                className="px-4 py-2.5 bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#DC2626] font-bold text-[12.5px] rounded-xl border border-[#FECACA] transition-colors flex items-center justify-center gap-1.5"
+                disabled={saving || drafts.length === 0}
+                className="px-3.5 py-2.5 bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#DC2626] font-bold text-[12px] rounded-xl border border-[#FECACA] transition-colors flex items-center justify-center gap-1.5"
               >
                 <XCircle className="w-4 h-4" />
                 <span>Reject All Drafts ({drafts.length})</span>

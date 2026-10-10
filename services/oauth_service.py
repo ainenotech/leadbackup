@@ -22,10 +22,10 @@ def get_msal_app() -> msal.ConfidentialClientApplication:
         client_credential=client_secret
     )
 
-def build_auth_url_and_flow(scopes: list[str], redirect_uri: str) -> Dict[str, Any]:
+def build_auth_url_and_flow(scopes: list[str], redirect_uri: str, prompt: Optional[str] = "select_account") -> Dict[str, Any]:
     """Build the authorization URL and internal PKCE flow state."""
     app = get_msal_app()
-    flow = app.initiate_auth_code_flow(scopes=scopes, redirect_uri=redirect_uri)
+    flow = app.initiate_auth_code_flow(scopes=scopes, redirect_uri=redirect_uri, prompt=prompt)
     if "error" in flow:
         raise ValueError(flow.get("error_description") or flow.get("error") or "Failed to initiate Microsoft OAuth flow")
     return flow
@@ -73,7 +73,7 @@ def build_google_auth_url_and_flow(scopes: list[str], redirect_uri: str) -> Dict
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
         "access_type": "offline",
-        "prompt": "consent"
+        "prompt": "select_account consent"
     })
     
     flow = {

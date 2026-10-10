@@ -56,6 +56,7 @@ def init_db():
     import Backend.domain_models
     import Backend.channels_models
     import Backend.master_db_models
+    import Backend.sender_models
 
     Base.metadata.create_all(bind=engine)
     new_cols = [
@@ -98,6 +99,19 @@ def init_db():
                 if col_name not in existing_cols:
                     try:
                         conn.execute(text(f"ALTER TABLE campaign_log ADD COLUMN {col_name} {col_type};"))
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+
+    # Non-destructive migration: add optional columns to org_sending_domains
+    if "org_sending_domains" in inspector.get_table_names():
+        domain_cols = {col["name"] for col in inspector.get_columns("org_sending_domains")}
+        domain_new = [("description", "TEXT"), ("notes", "TEXT")]
+        with engine.connect() as conn:
+            for col_name, col_type in domain_new:
+                if col_name not in domain_cols:
+                    try:
+                        conn.execute(text(f"ALTER TABLE org_sending_domains ADD COLUMN {col_name} {col_type};"))
                         conn.commit()
                     except Exception:
                         conn.rollback()

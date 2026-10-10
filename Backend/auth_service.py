@@ -584,6 +584,40 @@ def remove_org_member(
 # 7. ORGANIZATION SETTINGS & CONFIGURATION
 # ─────────────────────────────────────────────────────────────
 
+def _sync_env_file(updates: Dict[str, str]) -> None:
+    """Safely update key-value pairs in the project .env file if it exists."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_path = os.path.join(project_root, ".env")
+    if not os.path.isfile(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        new_lines = []
+        updated_keys = set()
+        for line in lines:
+            line_str = line.strip()
+            matched = False
+            for k, v in updates.items():
+                if line_str.startswith(f"{k}=") or line_str.startswith(f"{k} ="):
+                    new_lines.append(f"{k}={v}\n")
+                    updated_keys.add(k)
+                    matched = True
+                    break
+            if not matched:
+                new_lines.append(line)
+
+        for k, v in updates.items():
+            if k not in updated_keys:
+                new_lines.append(f"{k}={v}\n")
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+    except Exception as e:
+        logger.warning("Could not auto-sync .env file: %s", e)
+
+
 def get_organization_by_id(db: Session, org_id: str) -> Optional[Organization]:
     """Retrieve organization entity by ID."""
     return db.query(Organization).filter(Organization.id == org_id).first()
@@ -629,6 +663,23 @@ def update_organization_settings(
         current_sender = current_settings.get("sender", {})
         current_sender.update(sender_config)
         current_settings["sender"] = current_sender
+
+        # Automatically synchronize in-memory environment & root .env file
+        sender_email = sender_config.get("sender_email")
+        reply_to = sender_config.get("reply_to")
+        env_updates = {}
+        if sender_email:
+            os.environ["MS_SENDER_EMAIL"] = sender_email
+            os.environ["SES_FROM_EMAIL"] = sender_email
+            os.environ["SENDER_EMAIL"] = sender_email
+            env_updates["MS_SENDER_EMAIL"] = sender_email
+            env_updates["SES_FROM_EMAIL"] = sender_email
+            env_updates["SENDER_EMAIL"] = sender_email
+        if reply_to:
+            os.environ["SES_REPLY_TO"] = reply_to
+            env_updates["SES_REPLY_TO"] = reply_to
+        if env_updates:
+            _sync_env_file(env_updates)
 
     if booking_config:
         current_booking = current_settings.get("booking", {})

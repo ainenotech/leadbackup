@@ -81,9 +81,56 @@ def run_campaign():
             drafted_count += 1
             print(f"Drafted email for {lead.email} (Awaiting approval in dashboard)")
         else:
+            sender_email = os.getenv("SENDER_EMAIL")
+            sender_account_id = None
+            if not sender_email:
+                try:
+                    from Backend.auth_models import Organization
+                    org = db.query(Organization).filter(Organization.status == "active").first()
+                    if org and org.settings:
+                        sender_email = org.settings.get("sender", {}).get("sender_email") or org.settings.get("sender_email")
+                except Exception:
+                    pass
+
+            if not sender_email:
+                try:
+                    from Backend.sender_models import SenderAccount
+                    first_ready = db.query(SenderAccount).filter(SenderAccount.enabled == True).first()
+                    if first_ready:
+                        sender_email = first_ready.email
+                except Exception:
+                    pass
+
+            if sender_email:
+                try:
+                    from services.sender_account_service import check_sender_eligibility, record_sender_send
+                    from Backend.sender_models import SenderAccount
+                    sender_rec = db.query(SenderAccount).filter(SenderAccount.email == sender_email.lower().strip()).first()
+                    if sender_rec:
+                        eligibility = check_sender_eligibility(db, sender_rec.organization_id, sender_rec.id)
+                        if not eligibility.get("eligible"):
+                            print(f"Skipping {lead.email}: Sender '{sender_email}' not eligible: {eligibility.get('reason')}")
+                            mark_failed(db, entry.id, f"Sender not eligible: {eligibility.get('reason')}")
+                            failed_count += 1
+                            continue
+                        sender_account_id = sender_rec.id
+                except Exception as se:
+                    print(f"Sender eligibility check warning: {se}")
+
             try:
-                mailer.send_email(to_email=lead.email, subject=result["subject"], body=result["body"], token=token)
+                mailer.send_email(
+                    to_email=lead.email,
+                    subject=result["subject"],
+                    body=result["body"],
+                    token=token,
+                    from_email=sender_email,
+                )
                 mark_sent(db, entry.id)
+                if sender_account_id:
+                    try:
+                        record_sender_send(db, sender_account_id)
+                    except Exception:
+                        pass
                 sent_count += 1
                 try:
                     from leads import update_lead_sheet_status

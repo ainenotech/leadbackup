@@ -210,6 +210,8 @@ export interface SendingDomain {
   ses_identity_arn?: string;
   verification_method?: string;
   reputation_score?: number;
+  description?: string;
+  notes?: string;
   created_at?: string;
   verified_at?: string;
   last_checked_at?: string;
@@ -225,6 +227,44 @@ export interface SendingDomain {
     required?: boolean;
     last_result?: string;
   }>;
+}
+
+export interface SenderAccount {
+  id: string;
+  organization_id: string;
+  email: string;
+  display_name?: string;
+  domain_id?: string;
+  domain_name: string;
+  provider: "ses_only" | "microsoft_365" | "google_workspace" | "smtp_imap";
+  provider_connection_id?: string | null;
+  ses_identity_status: "ready" | "pending" | "failed" | "not_started" | "error";
+  mailbox_connection_status: "connected" | "disconnected" | "not_required" | "error" | "needs_reconnect";
+  sending_status: "ready" | "blocked" | "rate_limited" | "disabled";
+  reply_monitoring_status: "active" | "inactive" | "not_configured" | "not_available";
+  overall_status: "active" | "disabled" | "ses_pending" | "mailbox_disconnected" | "rate_limited" | "blocked";
+  is_send_ready: boolean;
+  enabled: boolean;
+  hourly_limit?: number;
+  daily_limit?: number;
+  sends_this_hour: number;
+  sends_today: number;
+  hour_reset_at?: string | null;
+  day_reset_at?: string | null;
+  warmup_enabled: boolean;
+  warmup_daily_increment?: number;
+  warmup_current_limit?: number;
+  last_checked_at?: string | null;
+  last_send_at?: string | null;
+  last_error?: string | null;
+  notes?: string | null;
+  readiness_checklist: Array<{
+    label: string;
+    passed: boolean;
+    detail: string;
+  }>;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SuperAdminMetrics {
@@ -445,12 +485,20 @@ export const api = {
     organization: AuthOrganization;
     organizations: AuthOrganization[];
   }> {
-    const res = await fetch(`/api/auth/oauth/ticket?ticket=${encodeURIComponent(ticket)}`);
+    let res = await fetch("/api/auth/oauth/exchange-ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login_ticket: ticket, ticket }),
+    });
+    if (!res.ok && res.status === 404) {
+      res = await fetch(`/api/auth/oauth/ticket?ticket=${encodeURIComponent(ticket)}`);
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "OAuth login exchange failed" }));
       throw new Error(err.detail || "OAuth login exchange failed");
     }
-    const data = await res.json();
+    const json = await res.json();
+    const data = (json && json.data) ? json.data : json;
     if (data.access_token) {
       setStoredToken(data.access_token);
     }
@@ -505,14 +553,14 @@ export const api = {
       return this.getDomains(orgId);
     }
     const json = await res.json();
-    return json.domains || [];
+    return json.domains || json.data || (Array.isArray(json) ? json : []);
   },
 
-  async addEmailDomain(orgId: string, domain: string): Promise<any> {
+  async addEmailDomain(orgId: string, domain: string, description?: string, notes?: string): Promise<any> {
     const res = await fetch(`/api/organizations/${orgId}/email-domains`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ domain }),
+      body: JSON.stringify({ domain, description, notes }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Failed to add domain" }));
@@ -564,11 +612,11 @@ export const api = {
     });
     if (!res.ok) return [];
     const json = await res.json();
-    return json.domains || [];
+    return json.domains || json.data || (Array.isArray(json) ? json : []);
   },
 
-  async registerDomain(orgId: string, domain: string): Promise<any> {
-    return this.addEmailDomain(orgId, domain);
+  async registerDomain(orgId: string, domain: string, description?: string, notes?: string): Promise<any> {
+    return this.addEmailDomain(orgId, domain, description, notes);
   },
 
   async verifyDomain(orgId: string, domainId: string): Promise<any> {
@@ -577,6 +625,96 @@ export const api = {
 
   async deleteDomain(orgId: string, domainId: string): Promise<any> {
     return this.deleteEmailDomain(orgId, domainId);
+  },
+
+  // ── Sender Accounts (Mail IDs) ──
+  async getSenders(params?: {
+    domain_id?: string;
+    provider?: string;
+    status?: string;
+    search?: string;
+  }): Promise<SenderAccount[]> {
+    const query = new URLSearchParams();
+    if (params?.domain_id) query.append("domain_id", params.domain_id);
+    if (params?.provider) query.append("provider", params.provider);
+    if (params?.status) query.append("status_filter", params.status);
+    if (params?.search) query.append("search", params.search);
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    const res = await fetch(`/api/senders${qs}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.data || [];
+  },
+
+  async createSender(payload: {
+    email: string;
+    display_name?: string;
+    domain_id?: string;
+    provider?: string;
+    hourly_limit?: number;
+    daily_limit?: number;
+    warmup_enabled?: boolean;
+    notes?: string;
+  }): Promise<SenderAccount> {
+    const res = await fetch("/api/senders", {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to create sender account" }));
+      throw new Error(err.detail || "Failed to create sender account");
+    }
+    const json = await res.json();
+    return json.data;
+  },
+
+  async updateSender(senderId: string, payload: {
+    display_name?: string;
+    hourly_limit?: number;
+    daily_limit?: number;
+    warmup_enabled?: boolean;
+    notes?: string;
+    enabled?: boolean;
+    provider?: string;
+  }): Promise<SenderAccount> {
+    const res = await fetch(`/api/senders/${senderId}`, {
+      method: "PATCH",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to update sender account" }));
+      throw new Error(err.detail || "Failed to update sender account");
+    }
+    const json = await res.json();
+    return json.data;
+  },
+
+  async deleteSender(senderId: string): Promise<void> {
+    const res = await fetch(`/api/senders/${senderId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to delete sender account" }));
+      throw new Error(err.detail || "Failed to delete sender account");
+    }
+  },
+
+  async refreshSenderReadiness(senderId: string): Promise<SenderAccount> {
+    const res = await fetch(`/api/senders/${senderId}/refresh`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to refresh sender readiness" }));
+      throw new Error(err.detail || "Failed to refresh sender readiness");
+    }
+    const json = await res.json();
+    return json.data;
   },
 
   // ── Pipeline & Telemetry Endpoints ──
@@ -706,9 +844,11 @@ export const api = {
     return res.json();
   },
 
-  async approveAndSendDraft(id: string): Promise<any> {
+  async approveAndSendDraft(id: string, sender_email?: string): Promise<any> {
     const res = await fetch(`/api/drafts/${id}/approve`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender_email: sender_email || undefined }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Approval failed" }));
@@ -774,9 +914,19 @@ export const api = {
     return res.json();
   },
 
-  async sendAllDrafts(): Promise<{ sent_count: number; failed_count: number; errors: string[] }> {
+  async sendAllDrafts(options?: {
+    sender_email?: string;
+    batch_size?: number;
+    draft_ids?: string[];
+  }): Promise<{ sent_count: number; failed_count: number; errors: string[]; sender_email?: string }> {
     const res = await fetch("/api/drafts/send-all", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender_email: options?.sender_email || undefined,
+        batch_size: options?.batch_size || undefined,
+        draft_ids: options?.draft_ids || undefined,
+      }),
     });
     if (!res.ok) throw new Error("Failed to dispatch drafts in batch");
     return res.json();

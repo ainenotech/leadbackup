@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import Sidebar, { PageId } from "@/components/layout/Sidebar";
 import AuthView from "@/components/views/AuthView";
 import PipelineOverview from "@/components/views/PipelineOverview";
@@ -59,6 +59,8 @@ function AppContent() {
   const [events, setEvents] = useState<ActivityFeedEvent[]>([]);
   const [recentLogs, setRecentLogs] = useState<CampaignLogItem[]>([]);
 
+  const exchangingTicketRef = useRef<boolean>(false);
+
   // Check existing session or handle OAuth login ticket on mount
   useEffect(() => {
     setMounted(true);
@@ -68,6 +70,14 @@ function AppContent() {
         const urlParams = new URLSearchParams(window.location.search);
         const ticket = urlParams.get("login_ticket");
         if (ticket) {
+          // Immediately clean the query param from URL without reload to prevent re-execution
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete("login_ticket");
+          window.history.replaceState({}, "", cleanUrl.toString());
+
+          if (exchangingTicketRef.current) return;
+          exchangingTicketRef.current = true;
+
           try {
             const data = await api.exchangeTicket(ticket);
             if (data && data.user) {
@@ -81,10 +91,6 @@ function AppContent() {
                 setActiveSenderEmail("mohit@nenotechnology.us");
               }
               setIsAuthenticated(true);
-              // Clean the query param from URL without reload
-              const cleanUrl = new URL(window.location.href);
-              cleanUrl.searchParams.delete("login_ticket");
-              window.history.replaceState({}, "", cleanUrl.toString());
               setIsAuthChecking(false);
               return;
             }
@@ -109,11 +115,16 @@ function AppContent() {
           const org = me.active_organization || me.organization || me.organizations?.[0];
           setCurrentOrg(org || null);
           setOrganizations(me.organizations || (org ? [org] : []));
-          try {
-            const mb = await api.getSystemMailbox();
-            setActiveSenderEmail(mb.sender_email || "mohit@nenotechnology.us");
-          } catch {
-            setActiveSenderEmail("mohit@nenotechnology.us");
+          const orgEmail = org?.settings?.sender?.sender_email || org?.settings?.sender_email;
+          if (orgEmail) {
+            setActiveSenderEmail(orgEmail);
+          } else {
+            try {
+              const mb = await api.getSystemMailbox();
+              setActiveSenderEmail(mb.sender_email || "mohit@nenotechnology.us");
+            } catch {
+              setActiveSenderEmail("mohit@nenotechnology.us");
+            }
           }
           setIsAuthenticated(true);
         } else {
@@ -205,11 +216,16 @@ function AppContent() {
     setCurrentUser(user);
     setCurrentOrg(org);
     setOrganizations(orgs);
-    try {
-      const mb = await api.getSystemMailbox();
-      setActiveSenderEmail(mb.sender_email || "mohit@nenotechnology.us");
-    } catch {
-      setActiveSenderEmail("mohit@nenotechnology.us");
+    const orgEmail = org?.settings?.sender?.sender_email || org?.settings?.sender_email;
+    if (orgEmail) {
+      setActiveSenderEmail(orgEmail);
+    } else {
+      try {
+        const mb = await api.getSystemMailbox();
+        setActiveSenderEmail(mb.sender_email || "mohit@nenotechnology.us");
+      } catch {
+        setActiveSenderEmail("mohit@nenotechnology.us");
+      }
     }
     setIsAuthenticated(true);
     fetchTelemetry();
@@ -227,7 +243,12 @@ function AppContent() {
   const handleSwitchOrg = async (orgId: string) => {
     try {
       const res = await api.switchOrg(orgId);
-      setCurrentOrg(res.organization);
+      const switchedOrg = res.organization;
+      setCurrentOrg(switchedOrg);
+      const orgEmail = switchedOrg?.settings?.sender?.sender_email || switchedOrg?.settings?.sender_email;
+      if (orgEmail) {
+        setActiveSenderEmail(orgEmail);
+      }
       fetchTelemetry();
     } catch (err: any) {
       alert("Failed to switch workspace: " + err.message);
@@ -318,7 +339,20 @@ function AppContent() {
         {activePage === "knowledge_base" && <KnowledgeBaseView />}
 
         {activePage === "org_settings" && (
-          <WorkspaceSettingsView currentOrg={currentOrg} onSettingsUpdated={fetchTelemetry} />
+          <WorkspaceSettingsView
+            currentOrg={currentOrg}
+            onSettingsUpdated={(updatedOrg, newSenderEmail) => {
+              if (newSenderEmail) {
+                setActiveSenderEmail(newSenderEmail);
+              }
+              if (updatedOrg) {
+                setCurrentOrg(updatedOrg);
+                const s = updatedOrg.settings?.sender?.sender_email || updatedOrg.settings?.sender_email;
+                if (s) setActiveSenderEmail(s);
+              }
+              fetchTelemetry();
+            }}
+          />
         )}
 
         {activePage === "team" && (

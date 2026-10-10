@@ -29,6 +29,8 @@ import utils.dns_patch
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from Email.outlook_mailer import OutlookMailer
+
 
 # Ensure UTF-8 output on Windows consoles
 if hasattr(sys.stdout, "reconfigure"):

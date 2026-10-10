@@ -17,19 +17,24 @@ from .base import (
 logger = logging.getLogger("ses_provider")
 
 
+
 def has_aws_credentials() -> bool:
-    """Return True if AWS credentials or IAM role are available."""
-    # 1. Check explicit environment variables
+    """Return True if the configured AWS credentials can be resolved."""
     if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         return True
 
-    # 2. Check if boto3 can find credentials (e.g. IAM instance profile, ECS role, ~/.aws/credentials)
     try:
-        session = boto3.Session()
-        creds = session.get_credentials()
-        return creds is not None
+        profile = os.getenv("AWS_PROFILE")
+        session = (
+            boto3.Session(profile_name=profile)
+            if profile
+            else boto3.Session()
+        )
+        return session.get_credentials() is not None
     except Exception:
+        logger.exception("Could not resolve AWS credentials")
         return False
+
 
 
 class SESProvider:
@@ -38,6 +43,15 @@ class SESProvider:
     def __init__(self, region_name: Optional[str] = None):
         self.region_name = region_name or os.getenv("AWS_REGION", "us-east-1")
         self._client = None
+
+        profile = os.getenv("AWS_PROFILE")
+        if profile:
+            self._session = boto3.Session(
+            profile_name=profile,
+            region_name=self.region_name,
+            )
+        else:
+            self._session = boto3.Session(region_name=self.region_name)
 
     @property
     def client(self):
@@ -94,11 +108,16 @@ class SESProvider:
         dkim_attrs = resp.get("DkimAttributes", {})
         tokens = dkim_attrs.get("Tokens", [])
 
+        signing_zone = dkim_attrs.get(
+            "SigningHostedZone",
+            "dkim.amazonses.com",
+        ).rstrip(".")
+
         dkim_records = [
             DkimRecordData(
                 record_type="CNAME",
                 host=f"{token}._domainkey.{clean_domain}",
-                value=f"{token}.dkim.amazonses.com",
+                value=f"{token}.{signing_zone}",
             )
             for token in tokens
         ]

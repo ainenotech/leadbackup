@@ -33,7 +33,7 @@ class OutlookMailer(Mailer):
     support@nenotechnology.com) via app-only Graph credentials.
     """
 
-    def send_email(self, to_email: str, subject: str, body: str, token: Optional[str] = None) -> str:
+    def send_email(self, to_email: str, subject: str, body: str, token: Optional[str] = None, from_email: Optional[str] = None, **kwargs) -> str:
         # Resolve token for live open and click tracking
         clean_body = (body or "").strip()
         api_base_url = os.getenv("TRACKING_API_URL","https://tracking.nenotechnology.com").rstrip("/")
@@ -198,8 +198,9 @@ class OutlookMailer(Mailer):
             "saveToSentItems": "true",
         }
 
+        effective_from = from_email or MS_SENDER_EMAIL
         resp = requests.post(
-            f"{GRAPH_BASE}/users/{MS_SENDER_EMAIL}/sendMail",
+            f"{GRAPH_BASE}/users/{effective_from}/sendMail",
             headers=get_graph_headers(),
             json=payload,
             timeout=30,

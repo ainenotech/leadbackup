@@ -1,22 +1,18 @@
 
-from .base import Mailer
-from .config import EMAIL_PROVIDER
+from Email.config import EMAIL_PROVIDER
 
 
-def get_mailer() -> Mailer:
+def get_mailer():
     """Return the configured email provider."""
     if EMAIL_PROVIDER == "outlook":
-        from .outlook_mailer import OutlookMailer
+        from Email.outlook_mailer import OutlookMailer
         return OutlookMailer()
 
     if EMAIL_PROVIDER == "ses":
-        from .ses import SESMailer
+        from Email.ses import SESMailer
         return SESMailer()
 
     raise ValueError(
         f"Unsupported EMAIL_PROVIDER: {EMAIL_PROVIDER!r}. "
         "Use 'outlook' or 'ses'."
     )
-
-
-__all__ = ["Mailer", "get_mailer"]
