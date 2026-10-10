@@ -107,7 +107,7 @@ class GoogleOAuthChannel(SendChannel):
         raw_string = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
         
         # Send via Gmail API
-        url = "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send"
+        url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
         
         max_retries = 3
         backoff = 2
@@ -136,7 +136,9 @@ class GoogleOAuthChannel(SendChannel):
                         continue
                 raise Exception(f"Gmail API 403 Forbidden: {resp.text}")
                 
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                raise Exception(f"Gmail API error ({resp.status_code}): {resp.text}")
+
             data = resp.json()
             return {"provider_message_id": data.get("id"), "status": "sent"}
             

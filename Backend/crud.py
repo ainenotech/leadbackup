@@ -223,6 +223,7 @@ def approve_and_send_entry(db: Session, entry_id: str, sender_email: Optional[st
 
     try:
         dispatched_oauth = False
+        oauth_conn = None
         try:
             from Backend.channels_models import OrgMailConnection
             oauth_conn = db.query(OrgMailConnection).filter(
@@ -262,19 +263,43 @@ def approve_and_send_entry(db: Session, entry_id: str, sender_email: Optional[st
                     )
                     dispatched_oauth = True
         except Exception as oauth_err:
-            print(f"[dispatch] OAuth channel dispatch check skipped/failed: {oauth_err}")
+            print(f"[dispatch] OAuth channel dispatch failed: {oauth_err}")
+            if oauth_conn or (active_from_email and any(g in active_from_email.lower() for g in ("@gmail.", "@googlemail."))):
+                raise oauth_err
 
         if not dispatched_oauth:
-            mailer = get_mailer()
-            mailer.send_email(
-                to_email=entry.email,
-                subject=entry.subject,
-                body=entry.body,
-                token=entry.token,
-                from_email=active_from_email,
-                display_name=display_name,
-                reply_to=active_from_email,
-            )
+            if active_from_email and any(g in active_from_email.lower() for g in ("@gmail.", "@googlemail.")):
+                raise ValueError(
+                    f"Sender '{active_from_email}' is a Gmail account but has no active OAuth mailbox connected. "
+                    "Please connect it in Settings > Email Connections before sending."
+                )
+            try:
+                mailer = get_mailer()
+                mailer.send_email(
+                    to_email=entry.email,
+                    subject=entry.subject,
+                    body=entry.body,
+                    token=entry.token,
+                    from_email=active_from_email,
+                    display_name=display_name,
+                    reply_to=active_from_email,
+                )
+            except Exception as mailer_err:
+                err_str = str(mailer_err)
+                if ("AccessDenied" in err_str or "not authorized" in err_str) and os.getenv("MS_CLIENT_ID"):
+                    print(f"[dispatch] Primary mailer failed ({mailer_err}), falling back to Microsoft Graph...")
+                    from Email.outlook_mailer import OutlookMailer
+                    OutlookMailer().send_email(
+                        to_email=entry.email,
+                        subject=entry.subject,
+                        body=entry.body,
+                        token=entry.token,
+                        from_email=active_from_email,
+                        display_name=display_name,
+                        reply_to=active_from_email,
+                    )
+                else:
+                    raise mailer_err
 
         if sender_account_id:
             try:
